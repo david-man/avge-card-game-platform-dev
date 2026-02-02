@@ -12,7 +12,9 @@ class GenericCard():
     def remove_from_player(self):
         self.owner = None
         self.uuid = None
-    @override
+    def play_card(self, game_env, args = []):
+        #card-specific actions should be encoded in this
+        pass
     def __str__(self):
         pass
 class GenericCardholder():
@@ -76,11 +78,11 @@ class GenericCardholder():
         #peek @ top id & top card
         return next(iter(self.cards_holding.items()))
 
-    def action(self, action : str) -> bool:
+    def action(self, args : list = []) -> bool:
         pass
 
-    def get_actions(self) -> list[str]:
-        #this function gets the list of actions -- strs -- that can be made
+    def get_actions(self) -> list:
+        #this function gets the list of actions that can be made. actions can be of any type
         pass
 
     def on_entry(self) -> None:

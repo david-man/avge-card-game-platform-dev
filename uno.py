@@ -8,10 +8,8 @@ class Color(StrEnum):
     YELLOW = auto()
     BLUE = auto()
     GREEN = auto()
-    NONE = auto()
     
 class Type(StrEnum):
-    REVERSE = auto()
     ONE = auto()
     TWO = auto()
     THREE = auto()
@@ -21,18 +19,87 @@ class Type(StrEnum):
     SEVEN = auto()
     EIGHT = auto()
     NINE = auto()
-    SKIP = auto()
-    PLUS2 = auto()
-    PLUS4 = auto()
-    WILDCARD = auto()
+    WILD = auto()
 
+class UnoSkip(GenericCard):
+    def __init__(self, color : Color):
+        super().__init__()
+        self.color = color
+    def __str__(self):
+        return f"{self.color} Skip"
+    @override
+    def play_card(self, game_env : GameEnvironment, args : list = []):
+        player_game_id = args[0]
+        discard_function = args[1]
+        game_env.cardholder_turn = game_env.next_player(player_game_id)
+        discard_function()
+class UnoReverse(GenericCard):
+    def __init__(self, color : Color):
+        super().__init__()
+        self.color = color
+    def __str__(self):
+        return f"{self.color} Reverse"
+    @override
+    def play_card(self, game_env : GameEnvironment, args : list = []):
+        player_game_id = args[0]
+        discard_function = args[1]
+        game_env.cardholder_order = list(reversed(game_env.cardholder_order))
+        game_env.cardholder_turn = player_game_id
+        discard_function()
+class UnoPlus2(GenericCard):
+    def __init__(self, color : Color):
+        super().__init__()
+        self.color = color
+    def __str__(self):
+        return f"{self.color} Plus2"
+    @override
+    def play_card(self, game_env : GameEnvironment, args : list = []):
+        player_game_id = args[0]
+        discard_function = args[1]
+        deck = game_env.get_cardholder(-1)
+        next_player = game_env.next_player(player_game_id)
+        for _ in range(min(deck.num_cards(), 2)):
+            top_card_id = deck.peek()[0]
+            game_env.transfer_card(-1, next_player, top_card_id)
+        discard_function()
+class UnoPlus4(GenericCard):
+    def __init__(self):
+        super().__init__()
+    def __str__(self):
+        return f"Plus4"
+    @override
+    def play_card(self, game_env : GameEnvironment, args : list = []):
+        player_game_id = args[0]
+        discard_function = args[1]
+        deck = game_env.get_cardholder(-1)
+        next_player = game_env.next_player(player_game_id)
+        for _ in range(min(deck.num_cards(), 4)):
+            top_card_id = deck.peek()[0]
+            game_env.transfer_card(-1, next_player, top_card_id)
+        discard_function()
+class UnoWildcard(GenericCard):
+    def __init__(self):
+        super().__init__()
+    def __str__(self):
+        return f"Wildcard"
+    @override
+    def play_card(self, game_env : GameEnvironment, args : list = []):
+        player_game_id = args[0]
+        discard_function = args[1]
+        discard_function()
 class UnoCard(GenericCard):
     def __init__(self, type : Type, color : Color):
         super().__init__()
         self.type = type
         self.color = color
     def __str__(self):
-        return f"Color: {self.color}, Type: {self.type}"
+        return f"{self.color} {self.type}"
+    @override
+    def play_card(self, game_env : GameEnvironment, args : list = []):
+        player_game_id = args[0]
+        discard_function = args[1]
+        discard_function()
+
 class Deck(GenericCardholder):
     def __init__(self):
         super().__init__(npc = True)
@@ -51,11 +118,15 @@ class UnoPlayer(GenericCardholder):
             raise RuntimeError("Trying to get action before full init process")
         for card_id in self.cards_holding.keys():
             card : UnoCard = self.cards_holding[card_id]
-            if(card.type == Type.WILDCARD or card.type == Type.PLUS4):
+            if(isinstance(card, UnoWildcard) or isinstance(card, UnoPlus4)):
                 for color in [Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW]:
-                    available_actions.append(f"colorswap_{card.type}_{color}_{card_id}")
-            elif(card.type == next_card.type or card.color == next_card.color):
-                available_actions.append(f"play_{card.type}_{card.color}_{card_id}")
+                    available_actions.append(f"colorswap_{str(card)}_{color}_{card_id}")
+            elif(card.color == next_card.color or
+                 (isinstance(card, UnoCard) and isinstance(next_card, UnoCard) and (card.type == next_card.type))
+                   or (isinstance(card, UnoReverse) and isinstance(next_card, UnoReverse))
+                   or (isinstance(card, UnoSkip) and isinstance(next_card, UnoSkip))
+                   or (isinstance(card, UnoPlus2) and isinstance(next_card, UnoPlus2))):
+                available_actions.append(f"play_{str(card)}_{card_id}")
                 
         return available_actions
     @override 
@@ -76,60 +147,51 @@ class UnoPlayer(GenericCardholder):
             str_split = action.split("_")
             color_requested = str_split[2]
             card_id_requested = int(str_split[3])
+            def discard_function():
+                #function that disposes of a card after playing it
+                parent_env.get_cardholder(-1).add_card(parent_env.top_of_pile)#places old top of pile at the back
+                pseudo_card = UnoCard(Type.WILD, color_requested)
+                parent_env.top_of_pile = pseudo_card#places this card at the top of the pile
+                parent_env.discard_card(self.game_id, card_id_requested)#discards this card from the user's pile
+                if(len(self.cards_holding.keys()) == 0):#check for win
+                    parent_env.winner_flag = self.game_id
             if(card_id_requested not in self.cards_holding.keys()):
                 return False
             elif(color_requested not in [Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW]):
                 return False
             else:
-                card : UnoCard = self.cards_holding[card_id_requested]
-                if(card.type != Type.WILDCARD and card.type != Type.PLUS4):
+                card = self.cards_holding[card_id_requested]
+                if(not(isinstance(card, UnoWildcard) or isinstance(card, UnoPlus4))):
                     return False
                 else:
-                    card.color = color_requested
-                    parent_env.get_cardholder(-1).add_card(parent_env.top_of_pile)#places old top of pile at the back
-                    
-                    parent_env.top_of_pile = card#places this card at the top of the pile
-
-                    parent_env.discard_card(self.game_id, card_id_requested)#discards this card from the user's pile
-                    
-                    
-                    if(card.type == Type.PLUS4):
-                        deck = parent_env.get_cardholder(-1)
-                        next_player = parent_env.next_player(self.game_id)
-                        for _ in range(min(deck.num_cards(), 4)):
-                            top_card_id = deck.peek()[0]
-                            parent_env.transfer_card(-1, next_player, top_card_id)
-                        
-                    if(len(self.cards_holding.keys()) == 0):#check for win
-                        parent_env.winner_flag = self.game_id
+                    card.play_card(self.game_environment, [
+                        self.game_id,
+                        discard_function
+                    ])
                     return True
         elif(action[:5] == 'play_'):
             str_split = action.split("_")
-            card_id_requested = int(str_split[3])
+            card_id_requested = int(str_split[2])
             if(card_id_requested not in self.cards_holding.keys()):
                 return False
             else:
                 card : UnoCard = self.cards_holding[card_id_requested]
                 top_card : UnoCard = parent_env.top_of_pile
-                if(card.type == top_card.type or card.color == top_card.color):
-                    if(card.type == Type.REVERSE):
-                        parent_env.cardholder_order = list(reversed(parent_env.cardholder_order))
-                        parent_env.cardholder_turn = parent_env.cardholder_order.index(self.game_id)
-                    elif(card.type == Type.SKIP):
-                        parent_env.cardholder_turn = parent_env.next_player(self.game_id)
-                    elif(card.type == Type.PLUS2):
-                        deck = parent_env.get_cardholder(-1)
-                        next_player = parent_env.next_player(self.game_id)
-                        for _ in range(min(deck.num_cards(), 2)):
-                            top_card_id = deck.peek()[0]
-                            parent_env.transfer_card(-1, next_player, top_card_id)
+                def discard_function():#function that disposes of a card after playing it
                     parent_env.get_cardholder(-1).add_card(parent_env.top_of_pile)#places old top of pile at the back
-                
                     parent_env.top_of_pile = card#places this card at the top of the pile
-
                     parent_env.discard_card(self.game_id, card_id_requested)#discards this card from the user's pile
                     if(len(self.cards_holding.keys()) == 0):#check for win
                         parent_env.winner_flag = self.game_id
+                if(card.color == top_card.color or
+                    (isinstance(card, UnoCard) and (card.type == top_card.type))
+                   or (isinstance(card, UnoReverse) and isinstance(top_card, UnoReverse))
+                   or (isinstance(card, UnoSkip) and isinstance(top_card, UnoSkip))
+                   or (isinstance(card, UnoPlus2) and isinstance(top_card, UnoPlus2))):
+                    card.play_card(self.game_environment,[
+                                       self.game_id,
+                                       discard_function
+                                   ])
                     return True
         else:
             return False
@@ -142,13 +204,17 @@ class UnoEnvironment(GameEnvironment):
         #register cardholders and register cards under Deck cardholder
         deck_of_cards = []
         for color in [Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW]:
+            for _ in range(100):
+                deck_of_cards.append(UnoReverse(color))
+            deck_of_cards.append(UnoPlus2(color))
+            deck_of_cards.append(UnoSkip(color))
             for type in [Type.ONE, Type.TWO, Type.THREE, Type.FOUR, Type.FIVE, Type.SIX, Type.SEVEN, 
-                         Type.EIGHT, Type.NINE, Type.REVERSE, Type.SKIP, Type.PLUS2]:
+                         Type.EIGHT, Type.NINE]:
                 for _ in range(2):
                     deck_of_cards.append(UnoCard(type, color))
         for _ in range(4):
-            deck_of_cards.append(UnoCard(Type.WILDCARD, Color.NONE))
-            deck_of_cards.append(UnoCard(Type.PLUS4, Color.NONE))
+            deck_of_cards.append(UnoWildcard())
+            deck_of_cards.append(UnoPlus4())
         shuffle(deck_of_cards)
         deck = Deck()
         self.add_cardholder(-1, deck, deck_of_cards)
