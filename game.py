@@ -178,6 +178,8 @@ class GameEnvironment():
             raise RuntimeError("Tried to get the next player when there are no more turns in game") 
         elif(current_player not in self.card_holders.keys()):
             raise RuntimeError("Tried to find the player after one that doesn't exist")
+        if(self.winner_flag):
+            raise RuntimeError("Tried to get the next player when a winner has been announced")
         index_of_cardholder = self.cardholder_order.index(current_player)
         if(index_of_cardholder == len(self.cardholder_order) - 1):
             next_turn = self.cardholder_order[0]
@@ -192,7 +194,7 @@ class GameEnvironment():
         if(self.cardholder_turn is None):
             raise RuntimeError("Tried to move to the next turn when current turn is undefined")
         elif(self.winner_flag is not None or self.active_participants <= 1):
-            return 
+            raise RuntimeError("Tried to move onto the next person when there's only 1 person left or a winner has been announced")
         else:
             if(self.participants[self.cardholder_turn]):
                 self.card_holders[self.cardholder_turn].on_exit()
