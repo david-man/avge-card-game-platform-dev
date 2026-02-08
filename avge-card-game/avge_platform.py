@@ -16,6 +16,7 @@ class AVGECharacterCard(GenericCard):
         self.game_environment : 'AVGEEnvironment' = None
         self.cardholder : 'AVGECardholder' = None
         self.player : 'AVGEPlayer' = None
+        self.cleanup_flag : bool = False#a flag that tells us if the card needs to be cleaned up or not
         #this dictionary maps each type of energy to how many of it the card is holding
         for type in Type:
             self.energies_attached[type] = 0
@@ -23,11 +24,12 @@ class AVGECharacterCard(GenericCard):
         #a damage injection is a special type of injection that injects itself
         #right before and right after a character card takes damage
 
-        #it returns how much damage the card should take
+        #it returns how much damage the card should take and if the card passive should be cleaned up after
         #it takes in the card itself, the attacking type, the type of attack, and the original damage number
         self.dmg_injections : dict[DamageFlow, dict[str, DmgInjection]] = {}
         for flow in DamageFlow:
             self.dmg_injections[flow] = {}
+        #note that giving an attack_dmg to post_dmg WILL call damage twice
 
         #you need to override these when you make your card!
         self.type : Type = None
@@ -143,7 +145,7 @@ class AVGECharacterCard(GenericCard):
             if(self.ingame_id in card.dmg_injections[phase]):
                 del card.dmg_injections[phase][self.ingame_id]
             else:
-                raise Exception("Tried to purify an ability from a flow state, but ability uuid was not found!")
+                raise Exception("Tried to purify an ability from a flow state, but card id was not found!")
         else:
             purified = False
             for _phase in Flow:
@@ -151,7 +153,7 @@ class AVGECharacterCard(GenericCard):
                     del card.dmg_injections[_phase][self.ingame_id]
                     purified = True
             if(not purified):
-                raise Exception("Tried to purify an ability from a player's flow, but ability uuid was not found!")
+                raise Exception("Tried to purify an ability from a player's flow, but card id was not found!")
     
     def inject(self, player : 'AVGEPlayer', phase : Flow, 
                ability : FlowInjection) -> None:
@@ -602,7 +604,7 @@ class AVGEPlayer(GenericPlayer):
                                 self.make_notif("ATK 2 Failed!")
                                 self.turn_flow.append(Flow.ATTACK)
                             else:
-                                print("ATK 1 Succeeded")
+                                print("ATK 2 Succeeded")
                                 self.turn_flow.append(Flow.POST_ATTACK)
                     else:
                         self.make_notif("ATK Failed!")
@@ -842,10 +844,10 @@ class AVGEEnvironment(GameEnvironment):
                         else:
                             transfer_card(card.ingame_id, self.players[player_id].card_holders[Pile.BENCH],
                                         self.players[player_id].card_holders[Pile.DISCARD])
-                        
                         if(not card.cleanup()):#try to perform a card cleanup
                             raise Exception("Cleanup failed!")
-
+                        else:
+                            card.cleanup_flag = False#performed the cleanup, no longer needs to
                         #increment ko's for the other player
                         self.players[self.players[player_id].opponent.ingame_id].kos += 1
             #check both player's kos for win conditions
@@ -867,7 +869,18 @@ class AVGEEnvironment(GameEnvironment):
                         self.players[player_id].has_lost = True
                         to_ret = True
             return to_ret
-        
+    def check_cleanups(self) -> bool:
+        for player_id in self.players.keys():   
+            active_card = self.get_active_card(player_id)
+            cards = self.players[player_id].card_holders[Pile.BENCH].get_cards() + [active_card]
+            for card in cards:
+                if(isinstance(card, AVGECharacterCard)):
+                    if(card.cleanup_flag):
+                        if(not card.cleanup()):
+                            raise Exception("Cleanup failed!")
+                        else:
+                            card.cleanup_flag = False#performed cleanup, can move on now
+        return True
     def run(self) -> bool:
         #runs the game
         while(self.winner_flag is None):
@@ -878,9 +891,12 @@ class AVGEEnvironment(GameEnvironment):
                 next_turn = current_player.turn_flow.pop()
                 print(next_turn)
                 end_of_turn = current_player.action([next_turn])[0]
-                #after each action, check through all player's bench and active slot for dead characters
+                #after each action, clean up, and then
+                # check through all player's bench and active slot for dead characters
+                
+                self.check_cleanups()
                 end_of_game = self.check_hp()
-                print("Checked HP")
+                
                 if(end_of_game or end_of_turn):
                     break
             if(self.winner_flag is None):

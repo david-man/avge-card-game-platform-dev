@@ -6,26 +6,23 @@ class AverageJoe(AVGECharacterCard):
         self.max_hp = 100
         self.current_hp = 100
         self.has_passive_ability = True
-        self.passive_used = False
         self.has_move_2 = True
         self.type = Type.STRING
     def __str__(self):
-        return f"Jo, {self.current_hp}, {self.ingame_id}, {self.energies_attached[Type.ALL]}"
+        return f"Jo, {self.current_hp}, {self.ingame_id}"
     @override
     def passive(self):
-        def func(cardholder, attacking_type, attack_type, damage):
-            if(self.passive_used):
-                return damage
-            else:
-                self.passive_used = True
-                return damage / 2
+        def func(card, attacking_type, attack_type, damage):
+            self.cleanup_flag = True#tells the game to clean up after this turn
+            damage = damage / 2
+            return damage
         self.dmg_inject(self, DamageFlow.PRE_DMG, func)
         return True
     @override
     def move_two(self):
         game_env : AVGEEnvironment = self.game_environment
         active_card = game_env.get_active_card(self.cardholder.player.opponent.ingame_id)
-        active_card.damage(self.type, 100, ActionTypes.ATK_2)#does 100 dmg
+        active_card.damage(self.type, 50, ActionTypes.ATK_2)#does 50 dmg
         return True
     @override
     def can_play_move_2(self):
