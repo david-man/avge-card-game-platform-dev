@@ -9,6 +9,11 @@ class Card():
         self.cardholder : 'cardholder.Cardholder' = None
         self.env : 'environment.Environment' = None
         self.owned_listeners : list[event_listener.AbstractEventListener] = []
+
+        #data cache to store any extra variables you want to use
+        #please limit keys and vals to basic objects and primitive variables, since this gets deepcopied
+        self.data_cache = {}
+
     def __eq__(self, other : Card):
         return self.unique_id == other.unique_id
     def attach_to_cardholder(self, cardholder : 'cardholder.Cardholder'):

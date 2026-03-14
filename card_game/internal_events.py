@@ -5,7 +5,7 @@ from .avge_abstracts.AVGEPlayer import *
 from .avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from .avge_abstracts.AVGECardholder import AVGEStadiumCardholder, AVGEToolCardholder
 from .constants import *
-
+from copy import deepcopy
 class AVGECardAttributeChange(AVGEEvent):
     def __init__(self, 
                  target_card : AVGECharacterCard,
@@ -131,7 +131,9 @@ class PlayCharacterCard(AVGEEvent):
         super().__init__([AVGEFlag.PLAY_CHAR_CARD], catalyst_action,caller_card)
         self.card = card
         self.card_action = card_action
+        self.cache_snapshot = None
     def core(self, args : Data = {}) -> Response:
+        self.cache_snapshot = deepcopy(self.card.data_cache)
         if(self.card_action == ActionTypes.SKIP):
             return self.generate_core_response()
         else:
@@ -141,7 +143,9 @@ class PlayCharacterCard(AVGEEvent):
             else:
                 return self.generate_core_response(ResponseType.REQUIRES_QUERY)
     def invert_core(self, args : Data = {}):
-        return#since a card can only propose events and add event listeners, there's not actually anything to invert
+        #since a card can only propose events and add event listeners, the only thing to invert is the cache
+        self.card.data_cache = self.cache_snapshot
+        return
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
@@ -158,9 +162,11 @@ class PlayNonCharacterCard(AVGEEvent):
         super().__init__([AVGEFlag.PLAY_NONCHAR_CARD], catalyst_action,caller_card)
         self.card = card
     def core(self, args : Data = {}) -> Response:
+        self.cache_snapshot = deepcopy(self.card.data_cache)
         return self.card.play_card(args)
     def invert_core(self, args : Data = {}):
-        return#since a card can only propose events and add event listeners, there's not actually anything to invert
+        self.card.data_cache = self.cache_snapshot
+        return
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):

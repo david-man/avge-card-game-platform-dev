@@ -4,7 +4,7 @@ from . import event
 from . import event_listener
 from .engine_constants import *
 from card_game.constants import *
-from copy import deepcopy
+from copy import copy
 
 
 class Engine():
@@ -77,7 +77,7 @@ class Engine():
             #prepares a new packet from the current queue to run
             self.packet_running = self._queue.pop()
             #set a savestate for external listeners
-            self.external_listener_savestate = deepcopy(self.external_listeners)
+            self.external_listener_savestate = [copy(listener) for listener in self.external_listeners]
             #resets event stack
             self.event_stack = []
             return Response(self, response_type=ResponseType.NEXT_PACKET)
