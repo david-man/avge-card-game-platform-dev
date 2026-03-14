@@ -1,8 +1,9 @@
 from . import environment, cardholder
+from ..constants import *
 class Player():
     def __init__(self, unique_id : str):
         self.unique_id = unique_id
-        self.cardholders : dict[str, 'cardholder.Cardholder'] = {}
+        self.cardholders : dict[Pile , 'cardholder.Cardholder'] = {}
         self.env : 'environment.Environment' = None
     def attach_to_env(self, env : 'environment.Environment'):
         self.env = env

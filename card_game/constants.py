@@ -1,12 +1,18 @@
+from __future__ import annotations
 from enum import Enum, StrEnum
 from typing import Any
 from .engine.engine_constants import Flag
 Data = dict[str, Any]
+
 cards_per_deck = 30
 initial_hand_size = 5
 max_bench_size = 5
 initial_tokens = 100
 kos_to_win = 3
+
+per_turn_token_add = 1
+per_turn_supporter = 1
+per_turn_swaps = 1
 class ResponseType(StrEnum):
     SKIP = "SKIP"
     ACCEPT = 'ACCEPT'
@@ -15,9 +21,13 @@ class ResponseType(StrEnum):
     CORE = "CORE"
 
     NO_MORE_EVENTS = "NO_MORE_EVENTS"
+    NEXT_EVENT = "NEXT_EVENT"
+    NEXT_PACKET = 'NEXT_PACKET'
 class Response():
+    import card_game.engine.event
+    import card_game.engine.event_listener
     def __init__(self, 
-                 source,
+                 source : card_game.engine.event.Event | card_game.engine.event_listener.AbstractEventListener | None,#None source reserved for very edge-case circumstances.
                  response_type : ResponseType = ResponseType.ACCEPT, 
                  data : Data = {},
                  announce : bool = False):
@@ -92,6 +102,7 @@ class ActionTypes(StrEnum):
     SKIP = "SKIP"#an action type used when someone fucks up and has no energy for any attack going into the attack phase
 
     ENV = "ENV"
+    PLAYER_CHOICE = "CHOICE"#exclusively for phase 2 and atk phase selection processes
 class Type(StrEnum):
     ALL = "ALL"#treat this as a sort of "true" element that has no resistance and can be used for all energy
     WOODWIND = "WW"

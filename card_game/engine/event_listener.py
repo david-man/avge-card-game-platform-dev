@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Callable
 from . import event
 from . import engine
 from . import engine_constants
@@ -15,30 +16,43 @@ class AbstractEventListener():
         self.group = group
         self.flags = flags
         self.internal = internal
-    def is_valid(self) -> bool:
-        #determines if this event listener is okay to be used. 
-        #for internal listeners, this is just always True
-        return True
+        self.external_validity_constraints : list[Callable[[None], bool]] = []
     def attach_to_event(self, e : event.Event):
         self.attached_event = e
         self.engine = e.engine
-    def propose_event(self, e : event.Event, priority : int = 0):
-        self.engine._propose_event(e, priority)
+
+    def is_valid(self) -> bool:
+        """
+        Determines if, according to this event listeners constraints, this event listener should continue being used 
+        
+        DOES NOT GUARANTEE THAT EVENT LISTENER ABILITY WILL RUN, since there may be external constraints. 
+        
+        Is_valid is also used to test if an event listener believes it should continue to run and be stored in the engine's external listeners
+        
+        Must be overriden.
+        """
+        raise NotImplementedError()
+    def _is_valid_header(self):
+        for constraint in self.external_validity_constraints:
+            if(not constraint()):
+                return False
+        return self.is_valid()
     def make_announcement(self) -> bool:
         raise NotImplementedError()
     def package(self):
         raise NotImplementedError()
     def on_event_completion(self):
-        #a function that gets called at the end if the attached event is completed successfully
-        #particularly useful for 'one-use' event listeners
+        """
+        a function that gets called at the end if the attached event is completed successfully
+        particularly useful for 'one-use' event listeners
+        """
         return
     def generate_response(self, 
-                          response_type : ResponseType,
-                          to_expire : bool = False,
+                          response_type : ResponseType = ResponseType.ACCEPT,
                           data : Data = {}) -> Response:
         #Helper function to generate a response packet easier
-        return Response(self, to_expire, response_type,data, 
-                                         self.make_announcement() or response_type==ResponseType.REQUIRES_QUERY)
+        return Response(self, response_type,data, 
+                        self.make_announcement() or response_type==ResponseType.REQUIRES_QUERY)
 class ModifierEventListener(AbstractEventListener):
     def __init__(self, group : engine_constants.EngineGroup = None, 
                  flags : list[engine_constants.Flag] = [], 
@@ -59,10 +73,21 @@ class ReactorEventListener(AbstractEventListener):
             super().__init__(engine_constants.EngineGroup.EXTERNAL_REACTORS, flags, internal)
     def react(self, args : Data = {}) -> Response:
         raise NotImplementedError()
-    def propose_event(self, e : event.Event, priority : int = 0):
-        self.engine._propose_event(e, priority)
+    def propose(self, e : event.Event | event.EventPacket, priority : int = 0):
+        self.engine._propose(e, priority)
 class AssessorEventListener(AbstractEventListener):
-    def __init__(self, group : engine_constants.EngineGroup = None, 
+    def __init__(self, group : engine_constants.EngineGroup, 
+                 flags : list[engine_constants.Flag] = [], 
+                 internal : bool = False):
+        super().__init__(group, flags, internal)
+    def assess(self, args : Data = {}) -> Response:
+        raise NotImplementedError()
+    def inject_event(self, e : event.Event | event.EventPacket, priority : int = 0):
+        """ONLY to be used for skip-and-run responses"""
+        self.engine._inject_event(e, priority)
+
+class PostCheckEventListener(AbstractEventListener):
+    def __init__(self, group : engine_constants.EngineGroup, 
                  flags : list[engine_constants.Flag] = [], 
                  internal : bool = False):
         super().__init__(group, flags, internal)

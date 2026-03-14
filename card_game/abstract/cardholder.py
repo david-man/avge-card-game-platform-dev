@@ -33,3 +33,5 @@ class Cardholder():
         return self.cards_by_id[card_id]
     def num_cards(self) -> int:
         return len(self.cards_by_id)
+    def __contains__(self, item : 'card.Card'):
+        return item.unique_id in self.cards_by_id

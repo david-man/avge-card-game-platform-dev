@@ -1,4 +1,6 @@
+from __future__ import annotations
 from ..abstract.card import Card
+from ..engine.event_listener import AbstractEventListener
 from ..constants import *
 class AVGECharacterCard(Card):
     def __init__(self, unique_id : str):
@@ -19,36 +21,59 @@ class AVGECharacterCard(Card):
         self.has_atk_2 : bool = False
         self.has_passive : bool = False#any ability that activates when the card gets put in play
         self.has_active : bool = False#any ability that can be activated whenever
-    def atk_1(self, args = {}) -> bool:
+
+        self.owned_listeners : list[AbstractEventListener] = []
+    def atk_1(owner_card : 'AVGECharacterCard', args = {}) -> bool:
         raise NotImplementedError()
-    def atk_2(self, args = {}) -> bool:
+    def atk_2(owner_card : 'AVGECharacterCard', args = {}) -> bool:
         raise NotImplementedError()
-    def active(self, args = {}) -> bool:
+    def active(owner_card : 'AVGECharacterCard', self, args = {}) -> bool:
         raise NotImplementedError()
-    def passive(self, args = {}) -> bool:
+    def passive(owner_card : 'AVGECharacterCard', self, args = {}) -> bool:
         raise NotImplementedError()
     def play_card(self, args = {}) -> bool:
         if(args['type'] == ActionTypes.ATK_1):
-            return self.atk_1(args)
+            return self.atk_1(args)#automatically populates owner_card with self
         elif(args['type'] == ActionTypes.ATK_2):
             return self.atk_2(args)
         elif(args['type'] == ActionTypes.ACTIVATE_ABILITY):
             return self.active(args)
+        elif(args['type'] == ActionTypes.PASSIVE):
+            return self.passive(args)
+    def deactivate_card(self):
+        raise NotImplementedError()
+
 
 class AVGESupporterCard(Card):
     def __init__(self, unique_id):
         super().__init__(unique_id)
+    def play_card(self, args : Data = {}) -> Response:
+        raise NotImplementedError()
+    def deactivate_card(self):
+        raise NotImplementedError()
 
 class AVGEItemCard(Card):
     def __init__(self, unique_id):
         super().__init__(unique_id)
+    def play_card(self, args : Data = {}) -> Response:
+        raise NotImplementedError()
+    def deactivate_card(self):
+        raise NotImplementedError()
 
 class AVGEToolCard(Card):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-        self.card_attached : AVGECharacterCard = None
+        self.card_attached : AVGECharacterCard = None#the character card this AVGE tool card is attached to. None if not attached
+    def play_card(self, args : Data = {}) -> Response:
+        raise NotImplementedError()
+    def deactivate_card(self):
+        raise NotImplementedError()
     
 class AVGEStadiumCard(Card):
     def __init__(self ,unique_id):
         super().__init__(unique_id)
         self.is_active : bool = False#is this card the active stadium
+    def play_card(self, args : Data = {}) -> Response:
+        raise NotImplementedError()
+    def deactivate_card(self):
+        raise NotImplementedError()

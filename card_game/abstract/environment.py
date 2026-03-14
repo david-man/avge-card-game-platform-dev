@@ -22,9 +22,10 @@ class Environment():
             card = self.cards[card]
         cardholder_from.remove_card_by_id(card.unique_id)
         cardholder_to.add_card(card)
-    def propose_event(self, e : Event, priority : int = 0):
+    def propose(self, e : Event, priority : int = 0):
         #opens engine in limited manner to cards and players
-        self._engine._propose_event(e, priority=priority)
+        self._engine._propose(e, priority=priority)
     def add_external_listener(self, el : AbstractEventListener):
+        el.internal = False
         #opens engine in limited manner to cards and players
         self._engine.add_external_listener(el)

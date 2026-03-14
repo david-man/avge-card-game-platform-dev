@@ -2,13 +2,16 @@ from __future__ import annotations
 from ..abstract.cardholder import Cardholder
 from ..abstract.card import Card
 from typing import Type
+from ..constants import Pile
 
 class AVGECardholder(Cardholder):
     def __init__(self, unique_id : str,
+                 pile_type : Pile,
                  expected_classes : list[Type] = None,
                  max_size : int = None):
         super().__init__(unique_id)
         self.max_size = max_size
+        self.pile_type = pile_type
         self.expected_classes = expected_classes
     def add_card(self, card : 'Card'):
         if(self.max_size is not None and len(self.cards_by_id) == self.max_size):

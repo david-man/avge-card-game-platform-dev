@@ -5,11 +5,11 @@ from ..constants import *
 class AVGEPlayer(Player):
     def __init__(self, unique_id : PlayerID):
         super().__init__(str(unique_id))
-        deck = AVGECardholder(unique_id + "_" + Pile.DECK)
-        discard = AVGECardholder(unique_id + "_" + Pile.DISCARD)
-        hand = AVGECardholder(unique_id + "_" + Pile.HAND)
-        bench = AVGECardholder(unique_id + "_" + Pile.BENCH, [AVGECharacterCard], max_bench_size)
-        active = AVGECardholder(unique_id + "_" + Pile.ACTIVE, [AVGECharacterCard], 1)
+        deck = AVGECardholder(unique_id + "_" + Pile.DECK, Pile.DECK)
+        discard = AVGECardholder(unique_id + "_" + Pile.DISCARD, Pile.DISCARD)
+        hand = AVGECardholder(unique_id + "_" + Pile.HAND, Pile.HAND)
+        bench = AVGECardholder(unique_id + "_" + Pile.BENCH, Pile.BENCH, [AVGECharacterCard])
+        active = AVGECardholder(unique_id + "_" + Pile.ACTIVE, Pile.ACTIVE, [AVGECharacterCard])
         self.add_cardholder(deck)
         self.add_cardholder(discard)
         self.add_cardholder(hand)
@@ -24,3 +24,7 @@ class AVGEPlayer(Player):
             AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN: 1,
             AVGEPlayerAttribute.TOTAL_ENERGY_TOKENS: initial_tokens
         }
+
+        self.opponent : AVGEPlayer = None
+    def get_active_card(self):
+        return self.cardholders[Pile.ACTIVE].peek_n(1)
