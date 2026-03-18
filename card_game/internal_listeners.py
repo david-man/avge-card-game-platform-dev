@@ -70,26 +70,26 @@ class AVGECardAttributeChangeReactor(ReactorEventListener):
             parent_player : AVGEPlayer = event.target_card.player
             packet = []
             if(parent_player.get_active_card() == event.target_card):
-                if(parent_player.cardholders[Pile.BENCH].num_cards() == 0):
+                if(len(parent_player.cardholders[Pile.BENCH]) == 0):
                     e : AVGEEnvironment = event.target_card.env
                     e.winner = parent_player.opponent
                     return self.generate_response()
                 if('swap_with' in args):
                     if(isinstance(args['swap_with'], AVGECharacterCard) and args['swap_with'] in parent_player.cardholders[Pile.BENCH]):
                         packet.append(TransferCard(args['swap_with'],
-                                                        parent_player.cardholders[Pile.ACTIVE],
                                                         parent_player.cardholders[Pile.BENCH],
+                                                        parent_player.cardholders[Pile.ACTIVE],
                                                         ActionTypes.ENV,
                                                         None))#propose the swap from the bench, and then propose the discard
                 else:
                     return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'ko_replace', 'target_player': parent_player})
             packet.append(TransferCard(event.target_card,
-                                            parent_player.cardholders[Pile.DISCARD],
                                             event.target_card.cardholder,
+                                            parent_player.cardholders[Pile.DISCARD],
                                             ActionTypes.ENV,
                                             None))
             self.propose(packet, 1)
-            return self.generate_response()
+        return self.generate_response()
 
 class AVGECardAttributeChangePostCheck(PostCheckEventListener):
     def __init__(self):
@@ -173,7 +173,7 @@ class AVGETransferValidityCheck(AssessorEventListener):
            event.pile_from.pile_type == Pile.HAND and 
            event.pile_to.pile_type == Pile.BENCH):#tried to add a card to the bench but bench is full / card isn't character
             bench = event.pile_to
-            if(not isinstance(event.card, AVGECharacterCard) or bench.num_cards() == max_bench_size):
+            if(not isinstance(event.card, AVGECharacterCard) or len(bench) == max_bench_size):
                 return self.generate_response(ResponseType.SKIP, {'msg': 'can\'t add this card to bench!'})
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE and 
            event.pile_from.pile_type == Pile.BENCH and 
@@ -182,6 +182,7 @@ class AVGETransferValidityCheck(AssessorEventListener):
             player :AVGEPlayer = event.card.player
             if(player.attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
                 return self.generate_response(ResponseType.SKIP, {'msg': 'no more swaps this turn!'})
+        return self.generate_response()
 
 class AVGEPlayCharacterCardValidityCheck(AssessorEventListener):
     def __init__(self):
@@ -228,6 +229,6 @@ class AVGEPlayNonCharacterCardValidityCheck(AssessorEventListener):
             if(isinstance(event.card, AVGESupporterCard)):
                 card : AVGESupporterCard = event.card
                 player : AVGEPlayer = card.player
-                if(player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN]):
+                if(player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] == 0):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'cannot use any more supporter cards this turn!'})
         return self.generate_response()

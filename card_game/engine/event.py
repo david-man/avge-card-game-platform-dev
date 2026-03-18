@@ -28,19 +28,21 @@ class Event():
         raise NotImplementedError()
     def package(self):
         #function that actually packages the event into an announcement
-        return NotImplementedError()
+        raise NotImplementedError()
     
-    def core_wrapper(self, args : Data = {}) -> Response:
+    def core_wrapper(self, args : Data | None = None) -> Response:
+        if(args is None):
+            args = {}
         r = self.core(args)
         if(r.response_type == ResponseType.CORE):
             self.core_args = args
         return r
     
-    def core(self, args :Data = {}) ->Response:
+    def core(self, args :Data | None = None) ->Response:
         #you should override this!
         #note that, in place of ACCEPT, you should return CORE 
         raise NotImplementedError()
-    def invert_core(self, args : Data = {}) -> None:
+    def invert_core(self, args : Data | None = None) -> None:
         #this will only be relevant once core() is successfully run
         raise NotImplementedError()
 
@@ -50,9 +52,11 @@ class Event():
     
     def generate_core_response(self, 
                           response_type : ResponseType =ResponseType.CORE,
-                          data :Data = {}) ->Response:
+                          data :Data | None = None) ->Response:
         #Helper function to generate a response packet for core() easier
         #Announce is true if Requires_Query OR if make_announcement() & CORE
+        if(data is None):
+            data = {}
         return Response(self, response_type, data, 
                             (self.make_announcement() and response_type==ResponseType.CORE)
                             or (response_type==ResponseType.REQUIRES_QUERY))
@@ -89,7 +93,9 @@ class Event():
             listener.attach_to_event(self)
     def propose(self, e : Event | EventPacket, priority : int = 0):
         self.engine._propose(e, priority)
-    def forward(self, args :Data = {}) ->Response:
+    def forward(self, args :Data | None = None) ->Response:
+        if(args is None):
+            args = {}
         if(self.group_on == engine_constants.EngineGroup.INTERNAL_4 
            and len(self.event_listener_groups[engine_constants.EngineGroup.INTERNAL_4]) == 0):
             #case 1: there's nothing left to run
@@ -112,7 +118,7 @@ class Event():
              and not self.external_modifiers_ordered):
             #case 4: we haven't ordered modifiers and we need to
             if(args != {}):
-                if(self._validate_ordering(args['group_ordering'])):
+                if(self._validate_ordering(self.group_on, args['group_ordering'])):
                     self.event_listener_groups[self.group_on] = args['group_ordering']
                     self.external_modifiers_ordered = True
                     return Response(self, ResponseType.ACCEPT, {})
@@ -124,13 +130,13 @@ class Event():
              and not self.external_reactors_ordered):
             #case 5: we haven't ordered reactors and we need to
             if(args != {}):
-                if(self._validate_ordering(args['group_ordering'])):
+                if(self._validate_ordering(self.group_on, args['group_ordering'])):
                     self.event_listener_groups[self.group_on] = args['group_ordering']
                     self.external_reactors_ordered = True
                     return Response(self, ResponseType.ACCEPT, {})
-                return Response(self, ResponseType.REQUIRES_QUERY,
-                                {"query_type": "ext_reactor_order", 'unordered_groups': self.event_listener_groups[self.group_on]},
-                                True)
+            return Response(self, ResponseType.REQUIRES_QUERY,
+                            {"query_type": "ext_reactor_order", 'unordered_groups': self.event_listener_groups[self.group_on]},
+                            True)
         else:
             #case 6: we have a listener to take care of
             next_listener = self.event_listener_groups[self.group_on].pop(0)

@@ -5,13 +5,12 @@ from typing import Type
 from ..constants import Pile
 
 class AVGECardholder(Cardholder):
-    def __init__(self, unique_id : str,
+    def __init__(self,
                  pile_type : Pile,
                  expected_classes : list[Type] = None,
                  max_size : int = None):
-        super().__init__(unique_id)
+        super().__init__(pile_type)
         self.max_size = max_size
-        self.pile_type = pile_type
         self.expected_classes = expected_classes
     def add_card(self, card : 'Card'):
         if(self.max_size is not None and len(self.cards_by_id) == self.max_size):
@@ -26,16 +25,14 @@ class AVGECardholder(Cardholder):
             super().add_card(card)
             
 class AVGEToolCardholder(AVGECardholder):
-    def __init__(self, unique_id : str):
-        from .AVGECards import AVGEToolCard
-        super().__init__(unique_id, [AVGEToolCard])
-        self.attached_to_card : bool = False
-        self.parent_card : Card = None
+    def __init__(self):
+        from .AVGECards import AVGEToolCard, AVGECharacterCard
+        super().__init__(Pile.TOOL, [AVGEToolCard])
+        self.parent_card : AVGECharacterCard = None
 
 class AVGEStadiumCardholder(AVGECardholder):
-    def __init__(self, unique_id : str):
+    def __init__(self):
         from .AVGECards import AVGEStadiumCard
-        super().__init__(unique_id, [AVGEStadiumCard])
-        self.attached_to_env : bool = False
-        self.parent_env : Card = None
+        super().__init__(Pile.STADIUM, [AVGEStadiumCard])
+        self.player = None
         

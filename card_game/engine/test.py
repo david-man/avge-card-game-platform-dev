@@ -62,18 +62,19 @@ class TestEvent2(event.Event):
         global number
         number /= 20
         
-eng = engine.Engine()
-test_event = TestEvent()
-test_event_2 = TestEvent2()
-eng.add_external_listener(k)
-eng._propose([test_event, test_event_2])
-while(True):
-    response = eng.forward()
-    if(response.announce):
-        print(response.source.package())
-    if(response.response_type == ResponseType.NO_MORE_EVENTS):
-        break
-print(number)
-for i in eng.external_listeners:
-    print(i.overrides)
+if __name__ == "__main__":
+    eng = engine.Engine()
+    test_event = TestEvent()
+    test_event_2 = TestEvent2()
+    eng.add_external_listener(k)
+    eng._propose([test_event, test_event_2])
+    while(True):
+        response = eng.forward()
+        if(response.announce):
+            print(response.source.package())
+        if(response.response_type == ResponseType.NO_MORE_EVENTS):
+            break
+    print(number)
+    for i in eng.external_listeners:
+        print(i.overrides)
    

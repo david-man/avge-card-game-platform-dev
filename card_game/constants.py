@@ -29,9 +29,11 @@ class Response():
     def __init__(self, 
                  source : card_game.engine.event.Event | card_game.engine.event_listener.AbstractEventListener | None,#None source reserved for very edge-case circumstances.
                  response_type : ResponseType = ResponseType.ACCEPT, 
-                 data : Data = {},
+                 data : Data | None = None,
                  announce : bool = False):
         self.response_type = response_type
+        if(data is None):
+            data = {}
         self.data = data
         self.source = source
         self.announce = announce

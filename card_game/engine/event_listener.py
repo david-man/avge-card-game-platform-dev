@@ -7,13 +7,15 @@ from card_game.constants import *
 
 class AbstractEventListener():
     def __init__(self, group : engine_constants.EngineGroup, 
-                 flags : list[engine_constants.Flag] = [], 
+                 flags : list[engine_constants.Flag] | None = None, 
                  internal : bool = False):
         self.engine : engine.Engine = None
         self.attached_event : event.Event = None 
         if(group is None):
             raise Exception("Listener group needs to be defined!")
         self.group = group
+        if(flags is None):
+            flags = []
         self.flags = flags
         self.internal = internal
         self.external_validity_constraints : list[Callable[[None], bool]] = []
@@ -49,38 +51,40 @@ class AbstractEventListener():
         return
     def generate_response(self, 
                           response_type : ResponseType = ResponseType.ACCEPT,
-                          data : Data = {}) -> Response:
+                          data : Data | None = None) -> Response:
         #Helper function to generate a response packet easier
+        if(data is None):
+            data = {}
         return Response(self, response_type,data, 
                         self.make_announcement() or response_type==ResponseType.REQUIRES_QUERY)
 class ModifierEventListener(AbstractEventListener):
     def __init__(self, group : engine_constants.EngineGroup = None, 
-                 flags : list[engine_constants.Flag] = [], 
+                 flags : list[engine_constants.Flag] | None = None, 
                  internal : bool = False):
         if(internal):
             super().__init__(group, flags, internal)
         else:
             super().__init__(engine_constants.EngineGroup.EXTERNAL_MODIFIERS, flags, internal)
-    def modify(self, args : Data = {}) -> Response:
+    def modify(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
 class ReactorEventListener(AbstractEventListener):
     def __init__(self, group : engine_constants.EngineGroup = None, 
-                 flags : list[engine_constants.Flag] = [], 
+                 flags : list[engine_constants.Flag] | None = None, 
                  internal : bool = False):
         if(internal):
             super().__init__(group, flags, internal)
         else:
             super().__init__(engine_constants.EngineGroup.EXTERNAL_REACTORS, flags, internal)
-    def react(self, args : Data = {}) -> Response:
+    def react(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
     def propose(self, e : event.Event | event.EventPacket, priority : int = 0):
         self.engine._propose(e, priority)
 class AssessorEventListener(AbstractEventListener):
     def __init__(self, group : engine_constants.EngineGroup, 
-                 flags : list[engine_constants.Flag] = [], 
+                 flags : list[engine_constants.Flag] | None = None, 
                  internal : bool = False):
         super().__init__(group, flags, internal)
-    def assess(self, args : Data = {}) -> Response:
+    def assess(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
     def inject_event(self, e : event.Event | event.EventPacket, priority : int = 0):
         """ONLY to be used for skip-and-run responses"""
@@ -88,8 +92,8 @@ class AssessorEventListener(AbstractEventListener):
 
 class PostCheckEventListener(AbstractEventListener):
     def __init__(self, group : engine_constants.EngineGroup, 
-                 flags : list[engine_constants.Flag] = [], 
+                 flags : list[engine_constants.Flag] | None = None, 
                  internal : bool = False):
         super().__init__(group, flags, internal)
-    def assess(self, args : Data = {}) -> Response:
+    def assess(self, args : Data | None = None) -> Response:
         raise NotImplementedError()

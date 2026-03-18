@@ -7,17 +7,12 @@ class Environment():
     def __init__(self):
         #you should override these values!
         self.players : dict[str, 'player.Player'] = {}
-        self.cardholders : dict[str, 'cardholder.Cardholder'] = {}
         self.cards : dict[str, 'card.Card'] = {}
         self._engine : Engine = Engine()
     def transfer_card(self, card : str | card.Card, 
-                      cardholder_from : str | cardholder.Cardholder, 
-                      cardholder_to : str | cardholder.Cardholder):
-        #transfers a card from one cardholder to another
-        if(isinstance(cardholder_from, str)):
-            cardholder_from = self.cardholders[cardholder_from]
-        if(isinstance(cardholder_to, str)):
-            cardholder_to = self.cardholders[cardholder_to]
+                      cardholder_from : cardholder.Cardholder, 
+                      cardholder_to : cardholder.Cardholder):
+        #transfers a card from one cardholder to another. does NOT change the player who owns the card(that has to be done manually)
         if(isinstance(card, str)):
             card = self.cards[card]
         cardholder_from.remove_card_by_id(card.unique_id)
@@ -29,3 +24,6 @@ class Environment():
         el.internal = False
         #opens engine in limited manner to cards and players
         self._engine.add_external_listener(el)
+    def add_player(self, player : player.Player):
+        player.attach_to_env(self)
+        self.players[player.unique_id] = player

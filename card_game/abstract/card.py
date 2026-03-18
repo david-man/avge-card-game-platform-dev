@@ -25,7 +25,7 @@ class Card():
         must use this interface"""
         self.env.add_external_listener(listener)
         self.owned_listeners.append(listener)
-    def play_card(self, args : Data = {}) -> Response:
+    def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
     def deactivate_card(self):
         #deactivates the card and any lingering effects it may have

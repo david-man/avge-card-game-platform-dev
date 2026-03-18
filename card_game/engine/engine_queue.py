@@ -63,4 +63,10 @@ class EngineQueue(Generic[T]):
     def remove_from_buffer(self, to_remove : T):
         #removes from the buffered queue if the current queue status is buffered
         if(self.queue_status == QueueStatus.BUFFERED):
-            self.buffered_queue.remove(to_remove)
+            idx = None
+            for i, (_, item) in enumerate(self.buffered_queue):
+                if(item == to_remove):
+                    idx = i
+                    break
+            if(idx is not None):
+                self.buffered_queue.pop(idx)

@@ -37,7 +37,7 @@ class Engine():
             new_event = [new_event]
         for e in new_event:
             e.attach_to_engine(self)
-        self._queue.inject(e, priority)
+        self._queue.inject(new_event, priority)
 
     def _refresh(self, event_succeeded : bool = False):
         #refreshes the engine after an EVENT finishes running
@@ -61,7 +61,9 @@ class Engine():
         #dispose of the event
         self.event_running = None
     
-    def forward(self, args : Data = {}) -> Response:
+    def forward(self, args : Data | None = None) -> Response:
+        if(args is None):
+            args = {}
         if(self.event_running is None and len(self.packet_running) == 0 and self._queue.queue_len() == 0):
             return Response(self, response_type=ResponseType.NO_MORE_EVENTS)
         elif(self.event_running is None and len(self.packet_running) > 0):
