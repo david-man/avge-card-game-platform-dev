@@ -43,3 +43,5 @@ class Cardholder():
         return self.cards_by_id[card_id]
     def __contains__(self, item : 'card.Card'):
         return item.unique_id in self.cards_by_id
+    def __iter__(self):
+        return (x for x in self.cards_by_id.values())

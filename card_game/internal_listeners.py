@@ -74,15 +74,15 @@ class AVGECardAttributeChangeReactor(ReactorEventListener):
                     e : AVGEEnvironment = event.target_card.env
                     e.winner = parent_player.opponent
                     return self.generate_response()
-                if('swap_with' in args):
-                    if(isinstance(args['swap_with'], AVGECharacterCard) and args['swap_with'] in parent_player.cardholders[Pile.BENCH]):
-                        packet.append(TransferCard(args['swap_with'],
+                swap_with = args.get('swap_with')
+                if(swap_with is None):
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'ko_replace', 'target_player': parent_player})
+                if(isinstance(swap_with, AVGECharacterCard) and swap_with in parent_player.cardholders[Pile.BENCH]):
+                    packet.append(TransferCard(swap_with,
                                                         parent_player.cardholders[Pile.BENCH],
                                                         parent_player.cardholders[Pile.ACTIVE],
                                                         ActionTypes.ENV,
                                                         None))#propose the swap from the bench, and then propose the discard
-                else:
-                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'ko_replace', 'target_player': parent_player})
             packet.append(TransferCard(event.target_card,
                                             event.target_card.cardholder,
                                             parent_player.cardholders[Pile.DISCARD],
@@ -184,6 +184,31 @@ class AVGETransferValidityCheck(AssessorEventListener):
                 return self.generate_response(ResponseType.SKIP, {'msg': 'no more swaps this turn!'})
         return self.generate_response()
 
+class AVGEDiscardReactor(ReactorEventListener):
+    def __init__(self):
+        super().__init__(group = EngineGroup.INTERNAL_3,
+                         flags = [AVGEFlag.CARD_TRANSITION],
+                         internal = True)
+    def is_valid(self) -> bool:
+        return True
+    def make_announcement(self) -> bool:
+        return False
+    def package(self):
+        return ""
+    def react(self, args) -> Response:
+        from .internal_events import TransferCard
+        event : TransferCard = self.attached_event
+        if(isinstance(event.card, AVGECharacterCard)):#character card getting discarded
+            event.card.deactivate_card()
+            for tool in event.card.tools_attached:
+                self.propose(TransferCard(tool,
+                                          event.card.tools_attached,
+                                          event.card.player.cardholders[Pile.DISCARD],
+                                          ActionTypes.ENV,
+                                          None))
+        elif(isinstance(event.card, AVGEToolCard) or isinstance(event.card, AVGEStadiumCard)):
+            event.card.deactivate_card()
+        return self.generate_response()
 class AVGEPlayCharacterCardValidityCheck(AssessorEventListener):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
@@ -209,6 +234,9 @@ class AVGEPlayCharacterCardValidityCheck(AssessorEventListener):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'no atk 2 to play!'})
                 if(event.card.attributes[AVGECardAttribute.ENERGY_ATTACHED] < event.card.attributes[AVGECardAttribute.MV_2_COST]):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'not enough energy!'})
+            elif(event.card_action == ActionTypes.ACTIVATE_ABILITY):
+                if(not event.card.can_play_active()):
+                    return self.generate_response(ResponseType.SKIP, {'msg': 'cannot play ability right!'})
         return self.generate_response()
     
 class AVGEPlayNonCharacterCardValidityCheck(AssessorEventListener):
@@ -231,4 +259,34 @@ class AVGEPlayNonCharacterCardValidityCheck(AssessorEventListener):
                 player : AVGEPlayer = card.player
                 if(player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] == 0):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'cannot use any more supporter cards this turn!'})
+        return self.generate_response()
+    
+class RNG(ModifierEventListener):
+    def __init__(self):
+        super().__init__(group = EngineGroup.INTERNAL_1,
+                         flags = [AVGEFlag.PLAY_NONCHAR_CARD, AVGEFlag.PLAY_CHAR_CARD],
+                         internal = True)
+    def is_valid(self) -> bool:
+        return True
+    def make_announcement(self) -> bool:
+        return False
+    def package(self):
+        return ""
+    def modify(self, args) -> Response:
+        from .internal_events import PlayNonCharacterCard, PlayCharacterCard
+        if(isinstance(self.attached_event, PlayCharacterCard)):
+            if(self.attached_event.card.RNG_type[self.attached_event.card_action] is not None):
+                resp = args.get("rng_response")
+                if(resp is None):
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(self.attached_event.card.RNG_type[self.attached_event.card_action])})
+                else:
+                    self.attached_event.card.data_cache['rng'] = int(resp)
+        elif(isinstance(self.attached_event, PlayNonCharacterCard)):
+            if(self.attached_event.card.RNG_type is not None):
+                resp = args.get("rng_response")
+                if(resp is None):
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(self.attached_event.card.RNG_type)})
+                else:
+                    self.attached_event.card.data_cache['rng'] = int(resp)
+                    
         return self.generate_response()

@@ -1,7 +1,11 @@
 from __future__ import annotations
 from enum import Enum, StrEnum
-from typing import Any
-from .engine.engine_constants import Flag
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from card_game.engine.event import Event
+    from card_game.engine.event_listener import AbstractEventListener
+    from card_game.abstract.card import Card
 Data = dict[str, Any]
 
 cards_per_deck = 30
@@ -24,10 +28,8 @@ class ResponseType(StrEnum):
     NEXT_EVENT = "NEXT_EVENT"
     NEXT_PACKET = 'NEXT_PACKET'
 class Response():
-    import card_game.engine.event
-    import card_game.engine.event_listener
     def __init__(self, 
-                 source : card_game.engine.event.Event | card_game.engine.event_listener.AbstractEventListener | None,#None source reserved for very edge-case circumstances.
+                 source : Event | AbstractEventListener | Card | None,#None source reserved for very edge-case circumstances.
                  response_type : ResponseType = ResponseType.ACCEPT, 
                  data : Data | None = None,
                  announce : bool = False):
@@ -63,7 +65,7 @@ class AVGECardAttribute(StrEnum):
     MV_2_COST = "MV_2_COST"
     ENERGY_ATTACHED = "ENERGY_ATTACHED"
     STATUS_ATTACHED = "STATUS_ATTACHED"
-
+from .engine.engine_constants import Flag
 class AVGEFlag(Flag):
     #a list of AVGE-specific event flags
 
@@ -120,6 +122,10 @@ class StatusEffect(Enum):
     #only with an event listener do they actually do anything meaningful
     NONE = 0
 
+class RNGType(StrEnum):
+    D6 = "D6"#response should be 1-6
+    COIN = "COIN"#tails = 0, heads = 1
+    
 type_weaknesses = {
     Type.STRING: Type.GUITAR,
     Type.GUITAR: Type.WOODWIND,

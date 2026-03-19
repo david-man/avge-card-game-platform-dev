@@ -44,6 +44,7 @@ class Event():
         raise NotImplementedError()
     def invert_core(self, args : Data | None = None) -> None:
         #this will only be relevant once core() is successfully run
+        #args is populated instantaneously
         raise NotImplementedError()
 
     def generate_internal_listeners(self):
@@ -72,11 +73,9 @@ class Event():
         if(listener.flags == []):
             return True
         else:
-            if(len(self.flags) == len(listener.flags)):
-                for flag in self.flags:
-                    if(flag not in listener.flags):
-                        return False
-                return True
+            for flag in self.flags:
+                if(flag in listener.flags):
+                    return True
             return False
     def _validate_ordering(self, group : engine_constants.EngineGroup, new_ordering : list[event_listener.AbstractEventListener]) -> bool:
         #validates that the new ordering has all the required elements
@@ -117,9 +116,10 @@ class Event():
              and len(self.event_listener_groups[self.group_on]) > 1
              and not self.external_modifiers_ordered):
             #case 4: we haven't ordered modifiers and we need to
-            if(args != {}):
-                if(self._validate_ordering(self.group_on, args['group_ordering'])):
-                    self.event_listener_groups[self.group_on] = args['group_ordering']
+            group_ordering = args.get('group_ordering')
+            if(group_ordering is not None):
+                if(self._validate_ordering(self.group_on, group_ordering)):
+                    self.event_listener_groups[self.group_on] = group_ordering
                     self.external_modifiers_ordered = True
                     return Response(self, ResponseType.ACCEPT, {})
             return Response(self, ResponseType.REQUIRES_QUERY,
@@ -129,9 +129,10 @@ class Event():
              and len(self.event_listener_groups[self.group_on]) > 1
              and not self.external_reactors_ordered):
             #case 5: we haven't ordered reactors and we need to
-            if(args != {}):
-                if(self._validate_ordering(self.group_on, args['group_ordering'])):
-                    self.event_listener_groups[self.group_on] = args['group_ordering']
+            group_ordering = args.get('group_ordering')
+            if(group_ordering is not None):
+                if(self._validate_ordering(self.group_on, group_ordering)):
+                    self.event_listener_groups[self.group_on] = group_ordering
                     self.external_reactors_ordered = True
                     return Response(self, ResponseType.ACCEPT, {})
             return Response(self, ResponseType.REQUIRES_QUERY,

@@ -228,31 +228,42 @@ class Phase2(AVGEEvent):
             args = {}
         env : AVGEEnvironment = self.player.env
         active_card : AVGECharacterCard = env.get_active_card(self.player.unique_id)
-        if(args['next'] == 'atk'):
-            self.propose(AtkPhase(self.player, 
-                                        ActionTypes.PLAYER_CHOICE,
-                                        None))
+        next_action = args.get('next')
+
+        if(next_action is None):
+            return self.generate_core_response(ResponseType.REQUIRES_QUERY,
+                                            {'query_type': 'phase2', 'player_involved': self.player})
+
+        if(next_action == 'atk'):
+            self.propose(AtkPhase(self.player,
+                                  ActionTypes.PLAYER_CHOICE,
+                                  None))
             return self.generate_core_response()
-        elif(args['next'] == 'tool'):
-            if('tool' in args and isinstance(args['tool'], AVGEToolCard)
-               and args['tool'] in self.player.cardholders[Pile.HAND]
-               and 'attach_to' in args and isinstance(args['attach_to'], AVGECharacterCard)):
-                event_1 = TransferCard(args['tool'], 
-                                                self.player.cardholders[Pile.HAND], 
-                                                args['attach_to'].tools_attached,
-                                                ActionTypes.PLAYER_CHOICE,
-                                                None)
-                event_2 = PlayNonCharacterCard(args['tool'],
-                                            ActionTypes.PLAYER_CHOICE,
-                                            None)
+
+        elif(next_action == 'tool'):
+            tool = args.get('tool')
+            attach_to = args.get('attach_to')
+            if(isinstance(tool, AVGEToolCard)
+               and tool in self.player.cardholders[Pile.HAND]
+               and isinstance(attach_to, AVGECharacterCard)):
+                event_1 = TransferCard(tool,
+                                       self.player.cardholders[Pile.HAND],
+                                       attach_to.tools_attached,
+                                       ActionTypes.PLAYER_CHOICE,
+                                       None)
+                event_2 = PlayNonCharacterCard(tool,
+                                               ActionTypes.PLAYER_CHOICE,
+                                               None)
                 self.propose([event_1, event_2])
                 return self.generate_core_response()
-        elif(args['next'] == 'supporter'):
-            if('supporter_card' in args and isinstance(args['supporter_card'], AVGESupporterCard)
-               and args['supporter_card'] in self.player.cardholders[Pile.HAND]):
-                event_1 = PlayNonCharacterCard(args['supporter_card'],
-                                            ActionTypes.PLAYER_CHOICE,
-                                            None)
+
+        elif(next_action == 'supporter'):
+            supporter_card = args.get('supporter_card')
+            if(isinstance(supporter_card, AVGESupporterCard)
+               and supporter_card in self.player.cardholders[Pile.HAND]):
+                event_1 = PlayNonCharacterCard(supporter_card,
+                                               ActionTypes.PLAYER_CHOICE,
+                                               None)
                 event_2 = AVGEPlayerAttributeChange(
                     self.player,
                     AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN,
@@ -261,62 +272,67 @@ class Phase2(AVGEEvent):
                     ActionTypes.PLAYER_CHOICE,
                     None
                 )
-                event_3 = TransferCard(args['supporter_card'],
-                                       args['supporter_card'].cardholder,
-                                       args['supporter_card'].player.cardholders[Pile.DISCARD],
+                event_3 = TransferCard(supporter_card,
+                                       supporter_card.cardholder,
+                                       supporter_card.player.cardholders[Pile.DISCARD],
                                        ActionTypes.PLAYER_CHOICE,
                                        None)
                 self.propose([event_1, event_2, event_3])
                 return self.generate_core_response()
-        elif(args['next'] == 'item'):
-            if('item_card' in args and isinstance(args['item_card'], AVGEItemCard)
-               and args['item_card'] in self.player.cardholders[Pile.HAND]):
+
+        elif(next_action == 'item'):
+            item_card = args.get('item_card')
+            if(isinstance(item_card, AVGEItemCard)
+               and item_card in self.player.cardholders[Pile.HAND]):
                 packet = []
-                packet.append(PlayNonCharacterCard(args['item_card'], 
-                                                ActionTypes.PLAYER_CHOICE,
-                                                None))
-                packet.append(TransferCard(args['item_card'],
-                                       args['item_card'].cardholder,
-                                       args['item_card'].player.cardholders[Pile.DISCARD],
-                                       ActionTypes.PLAYER_CHOICE,
-                                       None))
+                packet.append(PlayNonCharacterCard(item_card,
+                                                   ActionTypes.PLAYER_CHOICE,
+                                                   None))
+                packet.append(TransferCard(item_card,
+                                           item_card.cardholder,
+                                           item_card.player.cardholders[Pile.DISCARD],
+                                           ActionTypes.PLAYER_CHOICE,
+                                           None))
                 self.propose(packet)
                 return self.generate_core_response()
-        elif(args['next'] == 'stadium'):
-            if('stadium_card' in args and isinstance(args['stadium_card'], AVGEStadiumCard)
-               and args['stadium_card'] in self.player.cardholders[Pile.HAND]):
+
+        elif(next_action == 'stadium'):
+            stadium_card = args.get('stadium_card')
+            if(isinstance(stadium_card, AVGEStadiumCard)
+               and stadium_card in self.player.cardholders[Pile.HAND]):
                 packet = []
-                old_stadium = None
                 if(len(env.stadium_cardholder) > 0):
                     old_stadium : AVGEStadiumCard = env.stadium_cardholder.peek()
-                    packet.append(TransferCard(old_stadium,  
-                                                env.stadium_cardholder,
-                                                old_stadium.original_owner.cardholders[Pile.DISCARD],
-                                                ActionTypes.PLAYER_CHOICE,
-                                                None))
-                packet.append(TransferCard(args['stadium_card'],  
-                                        self.player.cardholders[Pile.HAND],
-                                        env.stadium_cardholder,
-                                        ActionTypes.PLAYER_CHOICE,
-                                        None))
-                packet.append(PlayNonCharacterCard(args['stadium_card'],
-                                            ActionTypes.PLAYER_CHOICE,
-                                            None))
+                    packet.append(TransferCard(old_stadium,
+                                               env.stadium_cardholder,
+                                               old_stadium.original_owner.cardholders[Pile.DISCARD],
+                                               ActionTypes.PLAYER_CHOICE,
+                                               None))
+                packet.append(TransferCard(stadium_card,
+                                           self.player.cardholders[Pile.HAND],
+                                           env.stadium_cardholder,
+                                           ActionTypes.PLAYER_CHOICE,
+                                           None))
+                packet.append(PlayNonCharacterCard(stadium_card,
+                                                   ActionTypes.PLAYER_CHOICE,
+                                                   None))
                 self.propose(packet)
                 return self.generate_core_response()
-        elif(args['next'] == 'swap'):
-            if('bench_card' in args and isinstance(args['bench_card'], AVGECharacterCard) and
-               args['bench_card'] in self.player.cardholders[Pile.BENCH]):
-                event_1 = TransferCard(args['bench_card'], 
-                                                self.player.cardholders[Pile.BENCH], 
-                                                self.player.cardholders[Pile.ACTIVE],
-                                                ActionTypes.PLAYER_CHOICE,
-                                                None)
-                event_2 = TransferCard(active_card, 
-                                                self.player.cardholders[Pile.ACTIVE], 
-                                                self.player.cardholders[Pile.BENCH],
-                                                ActionTypes.PLAYER_CHOICE,
-                                                None)
+
+        elif(next_action == 'swap'):
+            bench_card = args.get('bench_card')
+            if(isinstance(bench_card, AVGECharacterCard)
+               and bench_card in self.player.cardholders[Pile.BENCH]):
+                event_1 = TransferCard(bench_card,
+                                       self.player.cardholders[Pile.BENCH],
+                                       self.player.cardholders[Pile.ACTIVE],
+                                       ActionTypes.PLAYER_CHOICE,
+                                       None)
+                event_2 = TransferCard(active_card,
+                                       self.player.cardholders[Pile.ACTIVE],
+                                       self.player.cardholders[Pile.BENCH],
+                                       ActionTypes.PLAYER_CHOICE,
+                                       None)
                 event_3 = AVGEPlayerAttributeChange(
                     self.player,
                     AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN,
@@ -327,14 +343,16 @@ class Phase2(AVGEEvent):
                 )
                 self.propose([event_1, event_2, event_3])
                 return self.generate_core_response()
-        elif(args['next'] == 'energy'):
-            if('attach_to' in args and isinstance(args['attach_to'], AVGECharacterCard)):
-                event_1 = AVGECardAttributeChange(args['attach_to'],
-                                            AVGECardAttribute.ENERGY_ATTACHED,
-                                            1,
-                                            AVGEAttributeModifier.ADDITIVE,
-                                            ActionTypes.PLAYER_CHOICE,
-                                            None)
+
+        elif(next_action == 'energy'):
+            attach_to = args.get('attach_to')
+            if(isinstance(attach_to, AVGECharacterCard)):
+                event_1 = AVGECardAttributeChange(attach_to,
+                                                  AVGECardAttribute.ENERGY_ATTACHED,
+                                                  1,
+                                                  AVGEAttributeModifier.ADDITIVE,
+                                                  ActionTypes.PLAYER_CHOICE,
+                                                  None)
                 event_2 = AVGEPlayerAttributeChange(
                     self.player,
                     AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN,
@@ -351,25 +369,27 @@ class Phase2(AVGEEvent):
                     None)
                 self.propose([event_1, event_2, event_3])
                 return self.generate_core_response()
-            
-        elif(args['next'] == 'hand2bench'):
-            if('hand2bench' in args and isinstance(args['hand2bench'], AVGECharacterCard) and
-               args['hand2bench'] in self.player.cardholders[Pile.HAND]):
+
+        elif(next_action == 'hand2bench'):
+            hand2bench_card = args.get('hand2bench')
+            if(isinstance(hand2bench_card, AVGECharacterCard)
+               and hand2bench_card in self.player.cardholders[Pile.HAND]):
                 packet = []
-                packet.append(TransferCard(args['hand2bench'], 
-                                                self.player.cardholders[Pile.HAND], 
-                                                self.player.cardholders[Pile.BENCH],
-                                                ActionTypes.PLAYER_CHOICE,
-                                                None))
-                if(args['hand2bench'].has_passive):
-                    packet.append(PlayCharacterCard(args['hand2bench'],
+                packet.append(TransferCard(hand2bench_card,
+                                           self.player.cardholders[Pile.HAND],
+                                           self.player.cardholders[Pile.BENCH],
+                                           ActionTypes.PLAYER_CHOICE,
+                                           None))
+                if(hand2bench_card.has_passive):
+                    packet.append(PlayCharacterCard(hand2bench_card,
                                                     ActionTypes.PASSIVE,
                                                     ActionTypes.PLAYER_CHOICE,
                                                     None))
                 self.propose(packet)
                 return self.generate_core_response()
+
         return self.generate_core_response(ResponseType.REQUIRES_QUERY,
-                                            {'query_type': 'phase2', 'player_involved': self.player})
+                                           {'query_type': 'phase2', 'player_involved': self.player})
     def invert_core(self, args : Data | None = None):
         raise Exception("A phase should never be canceled")
     def make_announcement(self):
@@ -398,11 +418,12 @@ class AtkPhase(AVGEEvent):
         if(args is None):
             args = {}
         env : AVGEEnvironment = self.player.env
-        active_card = env.get_active_card(self.player.unique_id)
-        if(args['type'] == ActionTypes.ATK_1 or args['type'] == ActionTypes.ATK_2):
+        active_card = env.get_active_card(self.player.opponent.unique_id)
+        atk_type = args.get('type')
+        if(atk_type == ActionTypes.ATK_1 or atk_type == ActionTypes.ATK_2):
             self.propose(PlayCharacterCard(
                 active_card,
-                args['type'],
+                atk_type,
                 ActionTypes.PLAYER_CHOICE,
                 None
             ))

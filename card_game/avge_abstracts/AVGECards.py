@@ -2,6 +2,12 @@ from __future__ import annotations
 from ..abstract.card import Card
 from ..engine.event_listener import AbstractEventListener
 from ..constants import *
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    
+    from .AVGEPlayer import AVGEPlayer
+    from .AVGEEnvironment import AVGEEnvironment
 
 class AVGECharacterCard(Card):
     def __init__(self, unique_id : str):
@@ -18,21 +24,33 @@ class AVGECharacterCard(Card):
             AVGECardAttribute.SWITCH_COST: None,
             AVGECardAttribute.ENERGY_ATTACHED: 0
         }
+        
         self.has_atk_1 : bool = False
         self.has_atk_2 : bool = False
         self.has_passive : bool = False#any ability that activates when the card gets put in play
         self.has_active : bool = False#any ability that can be activated whenever
 
         self.owned_listeners : list[AbstractEventListener] = []
-    def atk_1(owner_card : 'AVGECharacterCard', args : Data | None = None) -> bool:
+        self.player : AVGEPlayer = self.player
+        self.env : AVGEEnvironment = self.env
+
+        self.RNG_type : dict[ActionTypes, RNGType] = {
+            ActionTypes.ATK_1: None,
+            ActionTypes.ATK_2: None,
+            ActionTypes.ACTIVATE_ABILITY: None,
+            ActionTypes.PASSIVE: None,
+        }
+    def atk_1(owner_card : 'AVGECharacterCard', args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def atk_2(owner_card : 'AVGECharacterCard', args : Data | None = None) -> bool:
+    def atk_2(owner_card : 'AVGECharacterCard', args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def active(owner_card : 'AVGECharacterCard', args : Data | None = None) -> bool:
+    def can_play_active(owner_card : 'AVGECharacterCard') -> bool:
         raise NotImplementedError()
-    def passive(owner_card : 'AVGECharacterCard', args : Data | None = None) -> bool:
+    def active(owner_card : 'AVGECharacterCard', args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def play_card(self, args : Data | None = None) -> bool:
+    def passive(owner_card : 'AVGECharacterCard', args : Data | None = None) -> Response:
+        raise NotImplementedError()
+    def play_card(self, args : Data | None = None) -> Response:
         if(args is None):
             args = {}
         if(args['type'] == ActionTypes.ATK_1):
@@ -44,7 +62,8 @@ class AVGECharacterCard(Card):
         elif(args['type'] == ActionTypes.PASSIVE):
             return self.passive(args)
     def deactivate_card(self):
-        raise NotImplementedError()
+        #need to add to this if there's passives and stuff
+        super().deactivate_card()
 
 
 class AVGESupporterCard(Card):
@@ -52,16 +71,13 @@ class AVGESupporterCard(Card):
         super().__init__(unique_id)
     def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def deactivate_card(self):
-        raise NotImplementedError()
 
 class AVGEItemCard(Card):
     def __init__(self, unique_id):
         super().__init__(unique_id)
     def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def deactivate_card(self):
-        raise NotImplementedError()
+
 
 class AVGEToolCard(Card):
     def __init__(self, unique_id):
@@ -70,7 +86,7 @@ class AVGEToolCard(Card):
     def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
     def deactivate_card(self):
-        raise NotImplementedError()
+        super().deactivate_card()
     
 class AVGEStadiumCard(Card):
     def __init__(self ,unique_id):
@@ -89,4 +105,4 @@ class AVGEStadiumCard(Card):
     def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
     def deactivate_card(self):
-        raise NotImplementedError()
+        super().deactivate_card()
