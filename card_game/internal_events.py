@@ -43,7 +43,7 @@ class AVGECardAttributeChange(AVGEEvent):
         from .internal_listeners import AVGECardAttributeChangeAssessment, AVGECardAttributeChangePostCheck, AVGECardAttributeChangeReactor, AVGECardAttributeChangeModifier
         self.attach_listener(AVGECardAttributeChangeAssessment())
         self.attach_listener(AVGECardAttributeChangeModifier())
-        self.attach_listener(AVGECardAttributeChangeReactor())#this needs to go first!
+        self.attach_listener(AVGECardAttributeChangeReactor())#this needs to go first!(we need to react and then quit for discards)
         self.attach_listener(AVGECardAttributeChangePostCheck())
     
     def package(self):
@@ -122,8 +122,9 @@ class TransferCard(AVGEEvent):
         self.card.env.transfer_card(self.card, self.pile_to, self.pile_from)
 
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGETransferValidityCheck
+        from .internal_listeners import AVGETransferValidityCheck, AVGEDiscardReactor
         self.attach_listener(AVGETransferValidityCheck())
+        self.attach_listener(AVGEDiscardReactor())
     
     def package(self):
         return f"{self.card} from {self.pile_from} to {self.pile_to}"
@@ -160,8 +161,10 @@ class PlayCharacterCard(AVGEEvent):
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEPlayCharacterCardValidityCheck
+        from .internal_listeners import AVGEPlayCharacterCardValidityCheck, RNG_Ephemerality, RNG
         self.attach_listener(AVGEPlayCharacterCardValidityCheck())
+        self.attach_listener(RNG())
+        self.attach_listener(RNG_Ephemerality())
     def package(self):
         return f"{self.card_action} action from {self.card}"
     
@@ -186,8 +189,10 @@ class PlayNonCharacterCard(AVGEEvent):
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck
+        from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck, RNG, RNG_Ephemerality
         self.attach_listener(AVGEPlayNonCharacterCardValidityCheck())
+        self.attach_listener(RNG())
+        self.attach_listener(RNG_Ephemerality())
     def package(self):
         return f"{self.card} was played!"
 

@@ -64,7 +64,7 @@ class AVGECardAttributeChangeReactor(ReactorEventListener):
     def package(self):
         return ""
     def react(self, args) -> Response:
-        from .internal_events import AVGECardAttributeChange, TransferCard
+        from .internal_events import AVGECardAttributeChange, TransferCard, AVGEPlayerAttributeChange
         event : AVGECardAttributeChange = self.attached_event
         if(event.attribute == AVGECardAttribute.HP and event.target_card.attributes[AVGECardAttribute.HP] <= 0):
             parent_player : AVGEPlayer = event.target_card.player
@@ -88,6 +88,12 @@ class AVGECardAttributeChangeReactor(ReactorEventListener):
                                             parent_player.cardholders[Pile.DISCARD],
                                             ActionTypes.ENV,
                                             None))
+            packet.append(AVGEPlayerAttributeChange(event.target_card.player.opponent,
+                                                    AVGEPlayerAttribute.KO_COUNT,
+                                                    1,
+                                                    AVGEAttributeModifier.ADDITIVE,
+                                                    ActionTypes.ENV,
+                                                    None))
             self.propose(packet, 1)
         return self.generate_response()
 
@@ -277,16 +283,44 @@ class RNG(ModifierEventListener):
         if(isinstance(self.attached_event, PlayCharacterCard)):
             if(self.attached_event.card.RNG_type[self.attached_event.card_action] is not None):
                 resp = args.get("rng_response")
+                rng_type = self.attached_event.card.RNG_type[self.attached_event.card_action]
                 if(resp is None):
-                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(self.attached_event.card.RNG_type[self.attached_event.card_action])})
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(rng_type)})
                 else:
-                    self.attached_event.card.data_cache['rng'] = int(resp)
+                    self.attached_event.card.data_cache[rng_type] = int(resp)
         elif(isinstance(self.attached_event, PlayNonCharacterCard)):
             if(self.attached_event.card.RNG_type is not None):
                 resp = args.get("rng_response")
+                rng_type = self.attached_event.card.RNG_type
                 if(resp is None):
-                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(self.attached_event.card.RNG_type)})
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(rng_type)})
                 else:
-                    self.attached_event.card.data_cache['rng'] = int(resp)
+                    self.attached_event.card.data_cache[rng_type] = int(resp)
+                    
+        return self.generate_response()
+
+class RNG_Ephemerality(ReactorEventListener):
+    def __init__(self):
+        super().__init__(group = EngineGroup.INTERNAL_4,
+                         flags = [AVGEFlag.PLAY_NONCHAR_CARD, AVGEFlag.PLAY_CHAR_CARD],
+                         internal = True)
+    def is_valid(self) -> bool:
+        return True
+    def make_announcement(self) -> bool:
+        return False
+    def package(self):
+        return ""
+    def react(self, args) -> Response:
+        from .internal_events import PlayNonCharacterCard, PlayCharacterCard
+        if(isinstance(self.attached_event, PlayCharacterCard)):
+            if(self.attached_event.card.RNG_type[self.attached_event.card_action] is not None):
+                rng_type = self.attached_event.card.RNG_type[self.attached_event.card_action]
+                if(rng_type in self.attached_event.card.data_cache):
+                    del self.attached_event.card.data_cache[rng_type]
+        elif(isinstance(self.attached_event, PlayNonCharacterCard)):
+            if(self.attached_event.card.RNG_type is not None):
+                rng_type = self.attached_event.card.RNG_type
+                if(rng_type in self.attached_event.card.data_cache):
+                    del self.attached_event.card.data_cache[rng_type]
                     
         return self.generate_response()
