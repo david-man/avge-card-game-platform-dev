@@ -161,10 +161,10 @@ class PlayCharacterCard(AVGEEvent):
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEPlayCharacterCardValidityCheck, RNG_Ephemerality, RNG
+        from .internal_listeners import AVGEPlayCharacterCardValidityCheck, AVGERNGEphemerality, AVGERNGHook
         self.attach_listener(AVGEPlayCharacterCardValidityCheck())
-        self.attach_listener(RNG())
-        self.attach_listener(RNG_Ephemerality())
+        self.attach_listener(AVGERNGHook())
+        self.attach_listener(AVGERNGEphemerality())
     def package(self):
         return f"{self.card_action} action from {self.card}"
     
@@ -189,10 +189,10 @@ class PlayNonCharacterCard(AVGEEvent):
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck, RNG, RNG_Ephemerality
+        from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck, AVGERNGHook, AVGERNGEphemerality
         self.attach_listener(AVGEPlayNonCharacterCardValidityCheck())
-        self.attach_listener(RNG())
-        self.attach_listener(RNG_Ephemerality())
+        self.attach_listener(AVGERNGHook())
+        self.attach_listener(AVGERNGEphemerality())
     def package(self):
         return f"{self.card} was played!"
 
@@ -423,7 +423,7 @@ class AtkPhase(AVGEEvent):
         if(args is None):
             args = {}
         env : AVGEEnvironment = self.player.env
-        active_card = env.get_active_card(self.player.opponent.unique_id)
+        active_card = env.get_active_card(self.player.unique_id)
         atk_type = args.get('type')
         if(atk_type == ActionTypes.ATK_1 or atk_type == ActionTypes.ATK_2):
             self.propose(PlayCharacterCard(

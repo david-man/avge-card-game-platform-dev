@@ -38,28 +38,6 @@ class Engine():
         for e in new_event:
             e.attach_to_engine(self)
         self._queue.inject(new_event, priority)
-
-    def _refresh(self, event_succeeded : bool = False):
-        #refreshes the engine after an EVENT finishes running
-        if(event_succeeded):
-            self._queue.flush_buffer()#actualize all proposed changes in the queue
-
-            
-        else:
-            #revert to old external listeners
-            self.external_listeners = self.external_listener_savestate
-            #dispose of all proposed changes
-            self._queue.clear_buffer()
-            #dispose of the packet completely
-            self.packet_running = []
-        
-        #remove all dead external event listeners to prepare for the next event
-        for listener in self.external_listeners:
-            if(not listener.is_valid()):
-                self.remove_external_listener(listener)
-
-        #dispose of the event
-        self.event_running = None
     
     def forward(self, args : Data | None = None) -> Response:
 

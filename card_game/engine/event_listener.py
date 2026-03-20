@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable
+from typing import Callable, Self
 from . import event
 from . import engine
 from . import engine_constants
@@ -18,7 +18,10 @@ class AbstractEventListener():
             flags = []
         self.flags = flags
         self.internal = internal
-        self.external_validity_constraints : list[Callable[[None], bool]] = []
+        self.external_validity_constraints : list[Callable[[Self, event.Event], bool]] = []
+    
+    def add_external_validity_constraint(self, constraint : Callable[[Self, event.Event], bool]):
+        self.external_validity_constraints.append(constraint)
     def attach_to_event(self, e : event.Event):
         self.attached_event = e
         self.engine = e.engine
@@ -34,9 +37,14 @@ class AbstractEventListener():
         Must be overriden.
         """
         raise NotImplementedError()
-    def _is_valid_header(self):
+    def invalidate(self):
+        """
+        Invalidates this event listener by overriding is_valid
+        """
+        self.is_valid = lambda s : False
+    def _is_valid_header(self, event : event.Event):
         for constraint in self.external_validity_constraints:
-            if(not constraint()):
+            if(not constraint(self, event)):
                 return False
         return self.is_valid()
     def make_announcement(self) -> bool:

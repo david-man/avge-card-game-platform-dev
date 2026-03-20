@@ -87,7 +87,7 @@ class Event():
         return False
     def attach_listener(self, listener : event_listener.AbstractEventListener):
         #attempts to add a listener if its flags overlap and it's valid
-        if(listener._is_valid_header() and self._check_listener(listener)):
+        if(self._check_listener(listener) and listener._is_valid_header(self)):
             self.event_listener_groups[listener.group].append(listener)
             listener.attach_to_event(self)
     def propose(self, e : Event | EventPacket, priority : int = 0):

@@ -12,7 +12,7 @@ class Card():
 
         #data cache to store any extra variables you want to use
         #please limit keys and vals to basic objects and primitive variables, since each value only gets shallowcopied
-        self.data_cache = {"rng": None}
+        self.data_cache = {}
 
         #RNG-specific
         self.RNG_type : RNGType = None

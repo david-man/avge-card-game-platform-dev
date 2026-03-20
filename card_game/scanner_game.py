@@ -7,6 +7,7 @@ from .internal_events import *
 import tkinter as tk
 import threading
 from typing import Any
+from .catalog import daniel
 
 
 root = tk.Tk()
@@ -195,7 +196,13 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
 
 
 if __name__ == "__main__":
-    env = AVGEEnvironment([BasicCharacterCard] * 20, [BasicCharacterCard] * 20)
+    env = AVGEEnvironment([daniel] + [BasicCharacterCard] * 20, [BasicCharacterCard] + [daniel] + [BasicCharacterCard] * 19)
+    env.transfer_card(env.players[PlayerID.P1].cardholders[Pile.DECK].peek(), 
+                        env.players[PlayerID.P1].cardholders[Pile.DECK],
+                        env.players[PlayerID.P1].cardholders[Pile.ACTIVE])
+    env.transfer_card(env.players[PlayerID.P2].cardholders[Pile.DECK].peek(), 
+                        env.players[PlayerID.P2].cardholders[Pile.DECK],
+                        env.players[PlayerID.P2].cardholders[Pile.ACTIVE])
     for i in range(3):
         env.transfer_card(env.players[PlayerID.P1].cardholders[Pile.DECK].peek(), 
                           env.players[PlayerID.P1].cardholders[Pile.DECK],
@@ -203,12 +210,13 @@ if __name__ == "__main__":
         env.transfer_card(env.players[PlayerID.P2].cardholders[Pile.DECK].peek(), 
                           env.players[PlayerID.P2].cardholders[Pile.DECK],
                           env.players[PlayerID.P2].cardholders[Pile.BENCH])
-    env.transfer_card(env.players[PlayerID.P1].cardholders[Pile.DECK].peek(), 
-                        env.players[PlayerID.P1].cardholders[Pile.DECK],
-                        env.players[PlayerID.P1].cardholders[Pile.ACTIVE])
-    env.transfer_card(env.players[PlayerID.P2].cardholders[Pile.DECK].peek(), 
-                        env.players[PlayerID.P2].cardholders[Pile.DECK],
-                        env.players[PlayerID.P2].cardholders[Pile.ACTIVE])
+    for player in env.players.values():
+        for card in player.cardholders[Pile.BENCH]:
+            if(card.has_passive):
+                card.passive()
+        for card in player.cardholders[Pile.ACTIVE]:
+            if(card.has_passive):
+                card.passive()  
     env.player_turn = env.players[PlayerID.P1]
     env.propose(Phase2(env.player_turn, ActionTypes.ENV, None))
     label = tk.Label(root, text=str(env), font=("Arial", 12))

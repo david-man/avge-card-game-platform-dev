@@ -12,3 +12,5 @@ class Player():
     def add_cardholder(self, cardholder : 'cardholder.Cardholder'):
         self.cardholders[cardholder.pile_type] = cardholder
         cardholder.attach_to_player(self)
+    def __eq__(self, player2 : 'Player'):
+        return self.unique_id == player2.unique_id

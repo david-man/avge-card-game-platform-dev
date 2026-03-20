@@ -215,6 +215,7 @@ class AVGEDiscardReactor(ReactorEventListener):
         elif(isinstance(event.card, AVGEToolCard) or isinstance(event.card, AVGEStadiumCard)):
             event.card.deactivate_card()
         return self.generate_response()
+
 class AVGEPlayCharacterCardValidityCheck(AssessorEventListener):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
@@ -267,7 +268,7 @@ class AVGEPlayNonCharacterCardValidityCheck(AssessorEventListener):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'cannot use any more supporter cards this turn!'})
         return self.generate_response()
     
-class RNG(ModifierEventListener):
+class AVGERNGHook(ModifierEventListener):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
                          flags = [AVGEFlag.PLAY_NONCHAR_CARD, AVGEFlag.PLAY_CHAR_CARD],
@@ -299,7 +300,8 @@ class RNG(ModifierEventListener):
                     
         return self.generate_response()
 
-class RNG_Ephemerality(ReactorEventListener):
+class AVGERNGEphemerality(ReactorEventListener):
+    #a reactor listener that simply ensures that no RNG values are lingering
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_4,
                          flags = [AVGEFlag.PLAY_NONCHAR_CARD, AVGEFlag.PLAY_CHAR_CARD],

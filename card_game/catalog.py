@@ -1,6 +1,6 @@
 from __future__ import annotations
 from card_game.avge_abstracts.AVGECards import AVGECharacterCard
-from card_game.constants import AVGECardAttribute, AVGEAttributeModifier, ActionTypes, ResponseType, Type
+from card_game.constants import AVGECardAttribute, AVGEAttributeModifier, ActionTypes, ResponseType, Type, RNGType, Response
 from card_game.engine.event_listener import ModifierEventListener, ReactorEventListener
 
 class daniel(AVGECharacterCard):
@@ -9,7 +9,7 @@ class daniel(AVGECharacterCard):
         self.attributes = {
             AVGECardAttribute.TYPE: Type.WOODWIND,
             AVGECardAttribute.HP: 120,
-            AVGECardAttribute.MV_1_COST: 3,
+            AVGECardAttribute.MV_1_COST: 0,
             AVGECardAttribute.MV_2_COST: 0,
             AVGECardAttribute.SWITCH_COST: 2,
             AVGECardAttribute.ENERGY_ATTACHED: 0,
@@ -18,12 +18,15 @@ class daniel(AVGECharacterCard):
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
-    def atk_1(card, args=None) -> bool:
+
+        self.RNG_type[ActionTypes.ATK_1] = RNGType.D6
+    def atk_1(card, args=None) -> Response:
         from card_game.internal_events import AVGECardAttributeChange
-        if(args is None or 'dice_roll' not in args):
-            return False
+        if(RNGType.D6 not in card.data_cache):
+            print("NO RNG RECEIVED. DOING NOTHING")
+            return card.generate_response()
         target_card = card.player.opponent.get_active_card()
-        dmg_amount = 10 * int(args['dice_roll'])
+        dmg_amount = 10 * int(card.data_cache[RNGType.D6])
         card.env.propose(AVGECardAttributeChange(
             target_card,
             AVGECardAttribute.HP,
@@ -41,12 +44,16 @@ class daniel(AVGECharacterCard):
             def __init__(self):
                 from card_game.constants import AVGEFlag
                 super().__init__(flags=[AVGEFlag.CARD_ATTR_CHANGE])
+                from card_game.internal_events import AVGECardAttributeChange
+                def constraint(slf : ReactorEventListener, event : AVGECardAttributeChange):
+                    return event.target_card.player == owner_card.player
+                self.add_external_validity_constraint(constraint)
             def is_valid(self) -> bool:
                 return True
             def make_announcement(self) -> bool:
-                return False
+                return True
             def package(self):
-                return ""
+                return "Daniel Modifier"
             def modify(self, args = None):
                 from card_game.internal_events import AVGECardAttributeChange
                 if(args is None):
@@ -64,7 +71,7 @@ class daniel(AVGECharacterCard):
                 owner_hp = owner_card.attributes[AVGECardAttribute.HP]
                 max_redirect = min(30, damage, owner_hp - 1)
                 raw_amt = args.get("redirect_damage")
-                if(raw_amt is None or raw_amt > max_redirect):
+                if(raw_amt is None or int(raw_amt) > max_redirect):
                     return self.generate_response(
                         ResponseType.REQUIRES_QUERY,
                         {
@@ -83,12 +90,18 @@ class daniel(AVGECharacterCard):
             def __init__(self):
                 from card_game.constants import AVGEFlag
                 super().__init__(flags=[AVGEFlag.CARD_ATTR_CHANGE])
+
+                from card_game.internal_events import AVGECardAttributeChange
+                
+                def constraint(slf : ReactorEventListener, event : AVGECardAttributeChange):
+                    return event.target_card.player == owner_card.player
+                self.add_external_validity_constraint(constraint)
             def is_valid(self) -> bool:
                 return True
             def make_announcement(self) -> bool:
-                return False
+                return True
             def package(self):
-                return ""
+                return "Daniel Reactor"
             def react(self, args=None):
                 from card_game.internal_events import AVGECardAttributeChange
                 event: AVGECardAttributeChange = self.attached_event
@@ -99,14 +112,14 @@ class daniel(AVGECharacterCard):
                         AVGECardAttributeChange(
                             owner_card,
                             AVGECardAttribute.HP,
-                            -event.target_card.data_cache['redirect_dmg'],
+                            -owner_card.data_cache['redirect_dmg'],
                             AVGEAttributeModifier.ADDITIVE,
                             ActionTypes.PASSIVE,
                             owner_card,
                             owner_card.attributes[AVGECardAttribute.TYPE],
                         )
                     )
-                    del event.target_card.data_cache['redirect_dmg']
+                    del owner_card.data_cache['redirect_dmg']
                 return self.generate_response()
         card.add_external_listener(_RedirectDamageModifier())
         card.add_external_listener(_RedirectDamageReactor())
