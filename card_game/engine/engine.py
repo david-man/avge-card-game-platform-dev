@@ -81,9 +81,12 @@ class Engine():
                     self.event_stack.append(self.event_running)#tells the engine that this packet has run properly
 
                 #make sure that all event listeners are still valid
+                listeners_to_remove = []
                 for listener in self.external_listeners:
-                    if(not listener.is_valid()):
-                        self.remove_external_listener(listener)
+                    if(not listener.is_active()):
+                        listeners_to_remove.append(listener)
+                for listener in listeners_to_remove:
+                    self.remove_external_listener(listener)
                 
                 #notify all valid event listeners that their event is over
                 for listeners in self.event_running.event_listener_groups.values():
@@ -102,6 +105,8 @@ class Engine():
                 while(len(self.event_stack) > 0):
                     e = self.event_stack.pop()#FILO order
                     e.invert_core(e.core_args)
+                if(self.event_running.core_args is not None):
+                    self.event_running.invert_core(self.event_running.core_args)
                 #dispose of the packet and event completely
                 self.packet_running = []
                 self.event_running = None

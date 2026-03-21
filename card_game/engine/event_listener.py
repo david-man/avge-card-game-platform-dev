@@ -26,27 +26,27 @@ class AbstractEventListener():
         self.attached_event = e
         self.engine = e.engine
 
-    def is_valid(self) -> bool:
+    def is_active(self) -> bool:
         """
         Determines if, according to this event listeners constraints, this event listener should continue being used 
         
         DOES NOT GUARANTEE THAT EVENT LISTENER ABILITY WILL RUN, since there may be external constraints. 
         
-        Is_valid is also used to test if an event listener believes it should continue to run and be stored in the engine's external listeners
+        Is_active is also used to test if an event listener believes it should continue to run and be stored in the engine's external listeners
         
         Must be overriden.
         """
         raise NotImplementedError()
     def invalidate(self):
         """
-        Invalidates this event listener by overriding is_valid
+        Invalidates this event listener by forcing is_active to be False
         """
-        self.is_valid = lambda s : False
-    def _is_valid_header(self, event : event.Event):
+        self.is_active = lambda : False
+    def _is_valid_now(self, event : event.Event):
         for constraint in self.external_validity_constraints:
             if(not constraint(self, event)):
                 return False
-        return self.is_valid()
+        return self.is_active()
     def make_announcement(self) -> bool:
         raise NotImplementedError()
     def package(self):

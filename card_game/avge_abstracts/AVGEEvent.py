@@ -9,3 +9,4 @@ class AVGEEvent(Event):
         super().__init__(flags)
         self.catalyst_action = catalyst_action
         self.caller_card = caller_card
+        self.temp_cache = {}

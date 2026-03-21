@@ -22,7 +22,8 @@ class AVGEPlayer(Player):
             AVGEPlayerAttribute.KO_COUNT: 0,
             AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN: 1,
             AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN: 1,
-            AVGEPlayerAttribute.TOTAL_ENERGY_TOKENS: initial_tokens
+            AVGEPlayerAttribute.TOTAL_ENERGY_TOKENS: initial_tokens,
+            AVGEPlayerAttribute.ATTACKS_LEFT: 1,
         }
 
         self.opponent : AVGEPlayer = None

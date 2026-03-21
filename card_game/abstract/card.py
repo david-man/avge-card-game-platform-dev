@@ -9,11 +9,6 @@ class Card():
         self.cardholder : 'cardholder.Cardholder' = None
         self.env : 'environment.Environment' = None
         self.owned_listeners : list[event_listener.AbstractEventListener] = []
-
-        #data cache to store any extra variables you want to use
-        #please limit keys and vals to basic objects and primitive variables, since each value only gets shallowcopied
-        self.data_cache = {}
-
         #RNG-specific
         self.RNG_type : RNGType = None
 
@@ -32,7 +27,7 @@ class Card():
         raise NotImplementedError()
     def deactivate_card(self):
         for listener in self.owned_listeners:
-            listener.is_valid = lambda : False#deactivate all owned listeners, since this card is no longer in play
+            listener.invalidate()#invalidate all owned listeners, since this card is no longer in play
         return
     def generate_response(self, response_type : ResponseType = ResponseType.ACCEPT, data = None):
         return Response(self, response_type, data, announce = (response_type == ResponseType.REQUIRES_QUERY))

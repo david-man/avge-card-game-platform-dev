@@ -61,9 +61,6 @@ class AVGECharacterCard(Card):
             return self.active(args)
         elif(args['type'] == ActionTypes.PASSIVE):
             return self.passive(args)
-    def deactivate_card(self):
-        #need to add to this if there's passives and stuff
-        super().deactivate_card()
 
 
 class AVGESupporterCard(Card):
@@ -85,8 +82,6 @@ class AVGEToolCard(Card):
         self.card_attached : AVGECharacterCard = None#the character card this AVGE tool card is attached to. None if not attached
     def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def deactivate_card(self):
-        super().deactivate_card()
     
 class AVGEStadiumCard(Card):
     def __init__(self ,unique_id):
@@ -104,5 +99,3 @@ class AVGEStadiumCard(Card):
         return super().attach_to_cardholder(cardholder)
     def play_card(self, args : Data | None = None) -> Response:
         raise NotImplementedError()
-    def deactivate_card(self):
-        super().deactivate_card()

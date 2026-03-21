@@ -4,7 +4,7 @@ from .AVGEPlayer import AVGEPlayer
 from ..abstract.card import Card
 from ..constants import *
 from enum import StrEnum
-from typing import Type
+from typing import Type, Tuple, Any
 
 class GamePhase(StrEnum):
     INIT = 'init'
@@ -13,6 +13,39 @@ class GamePhase(StrEnum):
     PHASE_2 = 'phase_2'
     ATK_PHASE = 'phase_atk'
     TURN_END = 'end'
+
+class EnvironmentCache():
+    def __init__(self, card_ids : list[str]):
+        self.cache = {k : {} for k in card_ids}
+        self.buffered_cache : list[Tuple[Card, str, Any]]= []
+        self.delete_buffer : list[Tuple[Card, str]] = []
+        self._buffering = False
+    def set(self, card : Card, key : str, value):
+        if(self._buffering):
+            self.buffered_cache.append((card, key, value))
+        else:
+            self.cache[card.unique_id][key] = value
+    def get(self, card : Card, key : str):
+        """Gets value in committed data cache."""
+        return self.cache[card.unique_id].get(key, None)
+    def delete(self, card : Card, key : str):
+        """Deletes a value in committed data cache"""
+        if(self._buffering):
+            self.delete_buffer.append((card, key))
+        else:
+            del self.cache[card.unique_id][key]
+    def _release_buffer(self):
+        self._buffering = False
+        for c, k, v in self.buffered_cache:
+            self.set(c, k, v)
+        for c, k in self.delete_buffer:
+            self.delete(c, k)
+        self._clr_buffer()
+    def _close_buffer(self):
+        self._buffering = True
+    def _clr_buffer(self):
+        self.buffered_cache = []
+        self.delete_buffer = []
 class AVGEEnvironment(Environment):
     def __init__(self, p1_deck : list[Type[Card]], p2_deck : list[Type[Card]]):
         super().__init__()
@@ -41,7 +74,10 @@ class AVGEEnvironment(Environment):
         self.winner : AVGEPlayer = None
 
         self.game_phase : GamePhase = GamePhase.INIT 
-        self.round = 1#round gets increments once every time both players finish
+        self.round = (1, False)#tuple that holds the round number and whether the round should be incremented at the next turn_end
+        #will increment every 2 turn-end's
+
+        self.card_data_cache = EnvironmentCache(list(self.cards.keys()))
 
     def _format_card(self, c : Card | None) -> str:
         if(c is None):
@@ -124,4 +160,17 @@ class AVGEEnvironment(Environment):
 
     def get_active_card(self, player_id : PlayerID):
         return self.players[player_id].cardholders[Pile.ACTIVE].peek()
+
+    def forward(self, args : Data | None = None) -> Response:
+        resp = super().forward(args)
+        if(resp.response_type == ResponseType.FINISHED):
+            self.card_data_cache._release_buffer()
+        elif(resp.response_type == ResponseType.NEXT_EVENT):
+            self.card_data_cache._clr_buffer()
+            self.card_data_cache._close_buffer()
+        elif(resp.response_type == ResponseType.SKIP):
+            self.card_data_cache._clr_buffer()
+            self.card_data_cache._close_buffer()
+        return resp
+        
     

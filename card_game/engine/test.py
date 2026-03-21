@@ -25,7 +25,7 @@ class InternalAsessor(event_listener.AssessorEventListener):
             return self.generate_response()
     def make_announcement(self):
         return True
-    def is_valid(self):
+    def is_active(self):
         return (self.overrides <= 2)
 
 k = InternalAsessor()
