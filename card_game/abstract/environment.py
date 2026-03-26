@@ -32,5 +32,5 @@ class Environment():
     def add_player(self, player : player.Player):
         player.attach_to_env(self)
         self.players[player.unique_id] = player
-    def forward(self, args : Data | None = None):
+    def forward(self, args : Data = {}):
         return self._engine.forward(args)

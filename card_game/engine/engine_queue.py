@@ -11,10 +11,6 @@ class EngineQueue(Generic[T]):
         self.queue_status : QueueStatus = QueueStatus.OPEN
         self.event_counter : int = 0
     
-    def inject(self, item : T, priority : int = 0):
-        #forcibly injects an event into the main queue regardless of what the queue status is
-        _heap.heappush(self.main_queue, (priority, self.event_counter, item))
-        self.event_counter += 1
     def propose(self, item : T, priority : int = 0):
         #Proposes an event addition, which does different things based on what the queue status is
         if(self.queue_status == QueueStatus.OPEN):
@@ -33,7 +29,6 @@ class EngineQueue(Generic[T]):
             return _heap.heappop(self.main_queue)[2]
         else:
             return None
-        
     def flush_buffer(self):
         #Flushes the buffer into the active queue and transitions into an open state
         if(self.queue_status == QueueStatus.BUFFERED):
@@ -42,8 +37,8 @@ class EngineQueue(Generic[T]):
                 self.propose(item, priority)
             self.buffered_queue = []
 
-    def clear_buffer(self):
-        #Clears the buffer and opens the active queue
+    def clear_buffer(self) -> list[T]:
+        #Returns the buffer, clears it, and opens the active queue
         self.queue_status = QueueStatus.OPEN
         self.buffered_queue = []
     def set_status(self, status : QueueStatus):

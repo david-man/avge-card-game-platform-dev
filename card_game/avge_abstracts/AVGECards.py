@@ -9,15 +9,26 @@ if TYPE_CHECKING:
     from .AVGEPlayer import AVGEPlayer
     from .AVGEEvent import AVGEEvent
     from .AVGEEnvironment import AVGEEnvironment
+    from .AVGECardholder import AVGECardholder
+    from .AVGEEventListeners import AVGEAbstractEventListener
+    from .AVGEConstrainer import AVGEConstraint
 
-class AVGECharacterCard(Card):
+class AVGECard(Card):
+    def __init__(self, unique_id : str):
+        super().__init__(unique_id)
+        self.player : AVGEPlayer = None
+        self.cardholder : AVGECardholder = None
+        self.env : AVGEEnvironment = None
+        self.owned_listeners : list[AVGEAbstractEventListener] = []
+        self.owned_constraints : list[AVGEConstraint] = []
+class AVGECharacterCard(AVGECard):
     def __init__(self, unique_id : str):
         from .AVGECardholder import AVGEToolCardholder
         super().__init__(unique_id)
         self.tools_attached : AVGEToolCardholder = AVGEToolCardholder()
         self.statuses_attached : dict[StatusEffect, int] = {}
         #up to you to redefine all of these!
-        self.attributes : dict[AVGECardAttribute, Type | float] = {
+        self.attributes : dict[AVGECardAttribute, CardType | float] = {
             AVGECardAttribute.TYPE: None,
             AVGECardAttribute.HP: None,
             AVGECardAttribute.MV_1_COST: None,
@@ -33,35 +44,26 @@ class AVGECharacterCard(Card):
 
         self.player : AVGEPlayer = self.player
         self.env : AVGEEnvironment = self.env
-
-        self.RNG_tuple : dict[ActionTypes, Tuple[RNGType, Callable[[], int]]] = {
-            ActionTypes.ATK_1: None,
-            ActionTypes.ATK_2: None,
-            ActionTypes.ACTIVATE_ABILITY: None,
-            ActionTypes.PASSIVE: None,
-        }
     @staticmethod
-    def atk_1(owner_card : 'AVGECharacterCard', parent_event : AVGEEvent, args : Data | None = None) -> Response:
+    def atk_1(owner_card : 'AVGECharacterCard', parent_event : AVGEEvent, args : Data = {}) -> Response:
         raise NotImplementedError()
     @staticmethod
-    def atk_2(owner_card : 'AVGECharacterCard', parent_event : AVGEEvent, args : Data | None = None) -> Response:
+    def atk_2(owner_card : 'AVGECharacterCard', parent_event : AVGEEvent, args : Data = {}) -> Response:
         raise NotImplementedError()
     
     def can_play_active(self) -> bool:
         raise NotImplementedError()
     @staticmethod
-    def active(owner_card : 'AVGECharacterCard', parent_event : AVGEEvent, args : Data | None = None) -> Response:
+    def active(owner_card : 'AVGECharacterCard', parent_event : AVGEEvent, args : Data = {}) -> Response:
         raise NotImplementedError()
     
-    def passive(self, parent_event : AVGEEvent, args : Data | None = None) -> Response:
+    def passive(self, parent_event : AVGEEvent, args : Data = {}) -> Response:
         raise NotImplementedError()
-    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard, args : Data | None = None) -> Response:
+    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard, args : Data = {}) -> Response:
         if(parent_event is None):
             raise ValueError("parent_event is required")
-        if(args is None):
-            args = {}
         if(args['type'] == ActionTypes.ATK_1):
-            return self.atk_1(card_for, parent_event, args)#automatically populates owner_card with self
+            return self.atk_1(card_for, parent_event, args)
         elif(args['type'] == ActionTypes.ATK_2):
             return self.atk_2(card_for, parent_event, args)
         elif(args['type'] == ActionTypes.ACTIVATE_ABILITY):
@@ -70,31 +72,34 @@ class AVGECharacterCard(Card):
             return self.passive(parent_event, args)
 
 
-class AVGESupporterCard(Card):
+class AVGESupporterCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data | None = None) -> Response:
+    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data = {}) -> Response:
         raise NotImplementedError()
 
-class AVGEItemCard(Card):
+class AVGEItemCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data | None = None) -> Response:
+    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data = {}) -> Response:
         raise NotImplementedError()
 
 
-class AVGEToolCard(Card):
+class AVGEToolCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
         self.card_attached : AVGECharacterCard = None#the character card this AVGE tool card is attached to. None if not attached
-    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard, args : Data | None = None) -> Response:
+    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard, args : Data = {}) -> Response:
         raise NotImplementedError()
     
-class AVGEStadiumCard(Card):
-    def __init__(self ,unique_id, original_owner : AVGEPlayer):
+class AVGEStadiumCard(AVGECard):
+    def __init__(self ,unique_id):
         super().__init__(unique_id)
-        self.original_owner : AVGEPlayer = original_owner#original owner of the card before it became the stadium. should be static
-    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data | None = None) -> Response:
+        self.original_owner : AVGEPlayer = None#original owner of the card before it became the stadium.
+    def attach_to_cardholder(self, cardholder):
+        if(cardholder.player is not None):
+            self.original_owner = cardholder.player
+    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data = {}) -> Response:
         raise NotImplementedError()
     def _is_active_stadium(self):
         return (

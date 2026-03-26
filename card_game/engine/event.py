@@ -1,26 +1,49 @@
 from __future__ import annotations
 from . import engine
 from . import event_listener
-from typing import Any
+from typing import Type, Callable
 from card_game.constants import *
 from . import engine_constants
 from . import constrainer
 
-type EventPacket = list[Event]
+type AssemblyPacket = list[EventAssembler | Event]
+class EventAssembler():
+    def __init__(self, event_class : Type, kwargs : dict):
+        self.event_class = event_class
+        self.kwargs = kwargs
+    def assemble(self):
+        #Assemble event, resolving all runtime-delayed kwargs until after
+        resolved_kwargs = {
+            k: (v() if isinstance(v, Callable) else v)
+            for k, v in self.kwargs.items()
+        }
+        return self.event_class(**resolved_kwargs)
 class Event():
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.engine : engine.Engine = None
         self.event_listener_groups : dict[engine_constants.EngineGroup, list[event_listener.AbstractEventListener]] = {group : [] for group in engine_constants.EngineGroup}
         self.group_on = engine_constants.EngineGroup.INTERNAL_1
-        self.groups_preprocessed : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
+        self.groups_ordered : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
+        self.groups_constrained : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
 
         self.core_args : Data = None
+        self.core_ran : bool = False
 
+        self._ready = False
+
+        self._kwargs = kwargs
+
+    def _prepare_post_assemble(self):
+        if(self._ready):
+            raise Exception("Tried to prepare post assembly when already ready")
         self.generate_internal_listeners()
         for group in self.event_listener_groups.values():
             for listener in group:
                 listener.attach_to_event(self)
+        self._ready = True
 
+    def _package_into_assembler(self):
+        return EventAssembler(type(self), self._kwargs)
     
     def make_announcement(self) -> bool:
         #function that decides whether we should make an announcement. 
@@ -34,19 +57,18 @@ class Event():
             for listener in group:
                 if(constraint.match(listener)):
                     listener.invalidate()
-    def core_wrapper(self, args : Data | None = None) -> Response:
-        if(args is None):
-            args = {}
+    def core_wrapper(self, args : Data = {}) -> Response:
         r = self.core(args)
         if(r.response_type == ResponseType.CORE):
             self.core_args = args
+            self.core_ran = True
         return r
     
-    def core(self, args :Data | None = None) ->Response:
+    def core(self, args :Data = {}) ->Response:
         #you should override this!
         #note that, in place of ACCEPT, you should return CORE 
         raise NotImplementedError()
-    def invert_core(self, args : Data | None = None) -> None:
+    def invert_core(self, args : Data = {}) -> None:
         #this will only be relevant once core() is successfully run
         #args is populated instantaneously
         raise NotImplementedError()
@@ -57,11 +79,9 @@ class Event():
     
     def generate_core_response(self, 
                           response_type : ResponseType =ResponseType.CORE,
-                          data :Data | None = None) ->Response:
+                          data :Data = {}) ->Response:
         #Helper function to generate a response packet for core() easier
         #Announce is true if Requires_Query OR if make_announcement() & CORE
-        if(data is None):
-            data = {}
         return Response(self, response_type, data, 
                             (self.make_announcement() and response_type==ResponseType.CORE)
                             or (response_type==ResponseType.REQUIRES_QUERY))
@@ -81,20 +101,16 @@ class Event():
                     return False
             return True
         return False
-    def attach_listener(self, listener : event_listener.AbstractEventListener) -> bool:
+    def attach_listener(self, listener : event_listener.AbstractEventListener):
         #attempts to add a listener if its a match. returns True if success
         if(listener._should_attach(self)):
             self.event_listener_groups[listener.group].append(listener)
             listener.attach_to_event(self)
-            return True
-        return False
-    def propose(self, e : Event | EventPacket, priority : int = 0):
+    def propose(self, e : Event | list[Event | EventAssembler] | EventAssembler, priority : int = 0):
         self.engine._propose(e, priority)
-    def forward(self, args :Data | None = None) ->Response:
-        if(args is None):
-            args = {}
-        if(self.group_on == engine_constants.EngineGroup.INTERNAL_4 
-           and len(self.event_listener_groups[engine_constants.EngineGroup.INTERNAL_4]) == 0):
+    def forward(self, constraints : list[constrainer.Constraint], args :Data = {}) ->Response:
+        if(self.group_on.value == engine_constants.MAX_GROUP
+           and len(self.event_listener_groups[self.group_on]) == 0):
             #case 1: there's nothing left to run
             return Response(self, ResponseType.FINISHED, {})
         elif(self.group_on == engine_constants.EngineGroup.CORE):
@@ -113,31 +129,33 @@ class Event():
         else:
             #case 4: we have a non-zero length group of listeners to attend to
             
-            #step 1: preprocess groups if we haven't
-            if(not self.groups_preprocessed[self.group_on]):
-                if(self.group_on in [engine_constants.EngineGroup.EXTERNAL_MODIFIERS, engine_constants.EngineGroup.EXTERNAL_REACTORS] 
+            #step 1: constrain all event listeners 
+            if(not self.groups_constrained[self.group_on] and len(self.event_listener_groups[self.group_on]) >= 1):
+                for listener in self.event_listener_groups[self.group_on]:
+                    for constraint in constraints:
+                        if(constraint._should_attach(listener)):
+                            self.event_listener_groups[self.group_on].remove(listener)
+                            return Response(self, ResponseType.ACCEPT, data = {'constrainer_announced': constraint.package()}, announce = constraint.make_announcement())
+            #if all event listeners constrained, we can mark the group as constrained
+            self.groups_constrained[self.group_on] = True
+            #step 2: consider ordering if must be
+            if(not self.groups_ordered[self.group_on]):
+                if(self.group_on in [engine_constants.EngineGroup.EXTERNAL_MODIFIERS_1, engine_constants.EngineGroup.EXTERNAL_MODIFIERS_2, engine_constants.EngineGroup.EXTERNAL_REACTORS] 
                      and len(self.event_listener_groups[self.group_on]) >= 2):
                     group_ordering = args.get('group_ordering')
                     if(group_ordering is not None):
                         if(self._validate_ordering(self.group_on, group_ordering)):
                             self.event_listener_groups[self.group_on] = group_ordering
-                            self.groups_preprocessed[self.group_on] = True
+                            self.groups_ordered[self.group_on] = True
                             return Response(self, ResponseType.ACCEPT, {})
                     return Response(self, ResponseType.REQUIRES_QUERY,
                                         {"query_type": "ordering", 'unordered_groups': self.event_listener_groups[self.group_on]}, True)
-                else:
-                    self.groups_preprocessed[self.group_on] = True
-                    return Response(self, ResponseType.ACCEPT, {})
-            #step 2: question whether to go through with the listener
+
+            self.groups_ordered[self.group_on] = True
+            #step 3: question whether to go through with the listener
             next_listener = self.event_listener_groups[self.group_on].pop(0)
-            to_run = (not next_listener._invalidated) and bool(next_listener.event_effect())
-            for constraint in next_listener.constraints:
-                if(not to_run):
-                    break
-                if(constraint.constrain_listener(next_listener)):
-                    to_run = False
-            if(not to_run):
-                #skip if constrained or invalidated
+            if(next_listener._invalidated or not bool(next_listener.event_effect())):
+                #skip if invalidated
                 return Response(self, ResponseType.ACCEPT)
             else:
                 if(isinstance(next_listener, event_listener.AssessorEventListener)):
@@ -151,6 +169,9 @@ class Event():
                 
                 if(response.response_type ==ResponseType.REQUIRES_QUERY):
                     #if requires query, we need to wait for args next time and try to run the same listener again -- since we used pop, we now need to insert back
+                    self.event_listener_groups[self.group_on].insert(0, next_listener)
+                elif(response.response_type == ResponseType.INTERRUPT):
+                    #if interrupt, when this event continues, it needs to run the listener again
                     self.event_listener_groups[self.group_on].insert(0, next_listener)
                 return response
         

@@ -2,9 +2,16 @@ from ..abstract.player import Player
 from .AVGECards import AVGECharacterCard
 from .AVGECardholder import AVGECardholder
 from ..constants import *
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .AVGECardholder import AVGECardholder
+    from .AVGEEnvironment import AVGEEnvironment
 class AVGEPlayer(Player):
     def __init__(self, unique_id : PlayerID):
         super().__init__(str(unique_id))
+        self.cardholders : dict[Pile, AVGECardholder] = {}
+        self.env : AVGEEnvironment = None
         deck = AVGECardholder(Pile.DECK)
         discard = AVGECardholder(Pile.DISCARD)
         hand = AVGECardholder(Pile.HAND)

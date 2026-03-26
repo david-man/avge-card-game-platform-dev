@@ -12,14 +12,8 @@ class Constraint(Generic[T]):
     
     def match(self, obj : AbstractEventListener | Constraint) -> bool:
         """
-        Function that checks whether its constraining functionality matches the object
-        """
-        raise NotImplementedError()
-    def constrain_listener(self, listener : AbstractEventListener):
-        """
-        Function that checks at runtime whether a listener who has this constraint attached to it should be constrained 
-
-        Called right before the listener itself is run
+        Function that checks whether its constraining functionality matches the object.
+        It matches to other constraints the moment it is added, but it matches to listeners at runtime
         """
         raise NotImplementedError()
     def update_status(self):
@@ -38,6 +32,3 @@ class Constraint(Generic[T]):
         raise NotImplementedError()
     def package(self):
         raise NotImplementedError()
-    def attempt_attach(self, listener : AbstractEventListener):
-        if(self._should_attach(listener)):
-            listener.constraints.append(self)

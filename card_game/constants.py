@@ -17,13 +17,16 @@ per_turn_token_add = 1
 per_turn_supporter = 1
 per_turn_swaps = 1
 per_turn_atks = 1
+INTERRUPT_KEY = "INTERRUPT_KEY"
 class ResponseType(StrEnum):
-    SKIP = "SKIP"
-    ACCEPT = 'ACCEPT'
-    REQUIRES_QUERY = "REQUIRES_QUERY"
-    FINISHED = "FINISHED"
-    FINISHED_PACKET = "FINISHED_PACKET"
-    CORE = "CORE"
+    SKIP = "SKIP"#something in the sequence went awry/was rejected, undo the whole packet
+    ACCEPT = 'ACCEPT'#accept and move to the next step
+    REQUIRES_QUERY = "REQUIRES_QUERY"#requires query, try again
+    INTERRUPT = "INTERRUPT"#packet interrupted: event needs to be finished first
+    FAST_FORWARD = "FF"#fast forward the event to its closing. if used right after an INTERRUPT, you can "override" an event completely.
+    FINISHED = "FINISHED"#event has finished naturally
+    FINISHED_PACKET = "FINISHED_PACKET"#packet has finished naturally
+    CORE = "CORE"#core was run successfully
 
     NO_MORE_EVENTS = "NO_MORE_EVENTS"
     NEXT_EVENT = "NEXT_EVENT"
@@ -32,11 +35,9 @@ class Response():
     def __init__(self, 
                  source : Event | AbstractEventListener | Card | None,#None source reserved for very edge-case circumstances.
                  response_type : ResponseType = ResponseType.ACCEPT, 
-                 data : Data | None = None,
+                 data : Data = {},
                  announce : bool = False):
         self.response_type = response_type
-        if(data is None):
-            data = {}
         self.data = data
         self.source = source
         self.announce = announce
@@ -92,9 +93,11 @@ class ActionTypes(StrEnum):
     PASSIVE = "PASSIVE"#an action type exclusively used for stuff like follow-up atks
     SKIP = "SKIP"#an action type used when someone fucks up and has no energy for any attack going into the attack phase
 
+    NONCHAR = 'NONCHAR'
+
     ENV = "ENV"
     PLAYER_CHOICE = "CHOICE"#exclusively for phase 2 and atk phase selection processes
-class Type(StrEnum):
+class CardType(StrEnum):
     ALL = "ALL"#treat this as a sort of "true" element that has no resistance and can be used for all energy
     WOODWIND = "WW"
     PERCUSSION = "PERC"
@@ -108,24 +111,17 @@ class StatusEffect(StrEnum):
     ARRANGER = 'ARR'
     MAID = 'MAID'
 
-class RNGType(StrEnum):
+class InputType(StrEnum):
     D6 = "D6"#response should be 1-6
     COIN = "COIN"#tails = 0, heads = 1. response can come in a list
+
+    DETERMINISTIC = "DETERMINISTIC"#deterministic/non-rng
 type_weaknesses = {
-    Type.STRING: Type.GUITAR,
-    Type.GUITAR: Type.WOODWIND,
-    Type.WOODWIND: Type.PERCUSSION,
-    Type.PERCUSSION: Type.CHOIR,
-    Type.CHOIR : Type.PIANO,
-    Type.PIANO : Type.BRASS,
-    Type.BRASS: Type.STRING
-}
-type_res = {
-    Type.STRING: Type.PIANO,
-    Type.PIANO: Type.PERCUSSION,
-    Type.PERCUSSION: Type.GUITAR,
-    Type.GUITAR: Type.BRASS,
-    Type.BRASS: Type.CHOIR,
-    Type.CHOIR: Type.WOODWIND,
-    Type.WOODWIND: Type.STRING
+    CardType.STRING: CardType.GUITAR,
+    CardType.GUITAR: CardType.WOODWIND,
+    CardType.WOODWIND: CardType.PERCUSSION,
+    CardType.PERCUSSION: CardType.CHOIR,
+    CardType.CHOIR : CardType.PIANO,
+    CardType.PIANO : CardType.BRASS,
+    CardType.BRASS: CardType.STRING
 }

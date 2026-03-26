@@ -11,8 +11,6 @@ class Card():
         self.env : 'environment.Environment' = None
         self.owned_listeners : list[event_listener.AbstractEventListener] = []
         self.owned_constraints : list[constrainer.Constraint] = []
-        #RNG-specific
-        self.RNG_tuple : Tuple[RNGType, Callable[[], int]] = None
 
     def __eq__(self, other : Card):
         return self.unique_id == other.unique_id
@@ -30,7 +28,7 @@ class Card():
         must use this interface"""
         self.env.add_constrainer(constrainer)
         self.owned_constraints.append(constrainer)
-    def play_card(self, parent_event : Event, args : Data | None = None) -> Response:
+    def play_card(self, parent_event : Event, args : Data = {}) -> Response:
         raise NotImplementedError()
     def deactivate_card(self):
         for listener in self.owned_listeners:

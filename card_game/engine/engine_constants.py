@@ -8,16 +8,21 @@ class QueueStatus(Enum):
 
 class EngineGroup(Enum):
     INTERNAL_1 = 1
-    FIRST_EXTERNAL_PRECHECK = 2
-    EXTERNAL_MODIFIERS = 3
-    SECOND_EXTERNAL_PRECHECK = 4
+    EXTERNAL_PRECHECK_1 = 2
+    EXTERNAL_MODIFIERS_1 = 3
+    EXTERNAL_PRECHECK_2 = 4
     INTERNAL_2 = 5
-    CORE = 6
-    INTERNAL_3 = 7
-    FIRST_EXTERNAL_POSTCHECK = 8
-    EXTERNAL_REACTORS = 9
-    SECOND_EXTERNAL_POSTCHECK = 10
+    EXTERNAL_PRECHECK_3 = 6
+    EXTERNAL_MODIFIERS_2 = 7
+    EXTERNAL_PRECHECK_4 = 8
+    INTERNAL_3 = 9
+    CORE = 10
     INTERNAL_4 = 11
+    EXTERNAL_POSTCHECK_1 = 12
+    EXTERNAL_REACTORS = 13
+    EXTERNAL_POSTCHECK_2 = 14
+    INTERNAL_5 = 15
     def succ(self):
         v = self.value + 1
         return EngineGroup(v)
+MAX_GROUP = max(member.value for member in EngineGroup)

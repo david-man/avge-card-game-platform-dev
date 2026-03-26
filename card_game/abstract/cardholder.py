@@ -1,11 +1,13 @@
 from __future__ import annotations
 from card_game.constants import *
 from . import environment, card, player
-from typing import Tuple
+from typing import Tuple, Generic, TypeVar
 
-class OrderedDict():
+T = TypeVar('T')
+
+class OrderedDict(Generic[T]):
     def __init__(self):
-        self._dict : dict[str, 'card.Card'] = {}
+        self._dict : dict[str, T] = {}
         self._order : list[str] = []
     def reorder(self, new_loc : int, k : str):
         if(k not in self._dict):
@@ -61,7 +63,7 @@ class OrderedDict():
 class Cardholder():
     def __init__(self, pile_type : Pile):
         self.pile_type = pile_type
-        self.cards_by_id : OrderedDict = OrderedDict()
+        self.cards_by_id : OrderedDict[Card] = OrderedDict()
         self.player : 'player.Player' = None
         self.env : 'environment.Environment' = None
     def __len__ (self):

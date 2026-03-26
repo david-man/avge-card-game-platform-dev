@@ -13,21 +13,23 @@ class AbstractEventListener(Generic[T]):
     def __init__(self, 
                  identifier : T,
                  group : engine_constants.EngineGroup, 
-                 internal : bool = False):
+                 internal : bool = False,
+                 requires_runtime_info : bool = True):
         
         self.engine : engine.Engine = None
-        self.constraints : list[Constraint] = [] 
-        self.attached_event : event.Event = None 
+        self.attached_event : event.Event = None
         if(group is None):
             raise Exception("Listener group needs to be defined!")
         self.group = group
         self.internal = internal
         self.identifier = identifier
         self._invalidated : bool = False
+        self.requires_runtime_info : bool = requires_runtime_info
+        
     
     def event_match(self, event : event.Event) -> bool:
         """
-        Function that checks whether the given event should be attached onto. Can consider many things
+        Function that checks whether the given event should be attached onto.
         Event match is called before the event has undergone ANY modification
         """
         raise NotImplementedError()
@@ -35,6 +37,8 @@ class AbstractEventListener(Generic[T]):
         """
         Function that checks whether, at runtime, the listener should react to its attached event
         """
+        if(not self.requires_runtime_info):
+            return True
         raise NotImplementedError()
     def attach_to_event(self, e : event.Event):
         self.attached_event = e
@@ -63,47 +67,22 @@ class AbstractEventListener(Generic[T]):
         return
     def generate_response(self, 
                           response_type : ResponseType = ResponseType.ACCEPT,
-                          data : Data | None = None) -> Response:
+                          data : Data = {}) -> Response:
         #Helper function to generate a response packet easier
-        if(data is None):
-            data = {}
         return Response(self, response_type,data, 
                         self.make_announcement() or response_type==ResponseType.REQUIRES_QUERY)
 class ModifierEventListener(AbstractEventListener[T], Generic[T]):
-    def __init__(self, 
-                 identifier : T,
-                 group : engine_constants.EngineGroup, 
-                 internal : bool = False):
-        super().__init__(identifier, group, internal)
-    def modify(self, args : Data | None = None) -> Response:
+    def modify(self, args : Data = {}) -> Response:
         raise NotImplementedError()
 class ReactorEventListener(AbstractEventListener[T], Generic[T]):
-    def __init__(self, 
-                 identifier : T,
-                 group : engine_constants.EngineGroup = None, 
-                 internal : bool = False):
-        super().__init__(identifier, group, internal)
-    def react(self, args : Data | None = None) -> Response:
+    def react(self, args : Data = {}) -> Response:
         raise NotImplementedError()
-    def propose(self, e : event.Event | event.EventPacket, priority : int = 0):
+    def propose(self, e : event.Event | event.AssemblyPacket | list[event.Event | event.AssemblyPacket], priority : int = 0):
         self.engine._propose(e, priority)
 class AssessorEventListener(AbstractEventListener[T], Generic[T]):
-    def __init__(self, 
-                 identifier : T,
-                 group : engine_constants.EngineGroup,  
-                 internal : bool = False):
-        super().__init__(identifier, group, internal)
-    def assess(self, args : Data | None = None) -> Response:
+    def assess(self, args : Data = {}) -> Response:
         raise NotImplementedError()
-    def inject_event(self, e : event.Event | event.EventPacket, priority : int = 0):
-        """ONLY to be used for skip-and-run responses"""
-        self.engine._inject_event(e, priority)
 
 class PostCheckEventListener(AbstractEventListener[T], Generic[T]):
-    def __init__(self, 
-                 identifier : T,
-                 group : engine_constants.EngineGroup, 
-                 internal : bool = False):
-        super().__init__(identifier, group, internal)
-    def assess(self, args : Data | None = None) -> Response:
+    def assess(self, args : Data = {}) -> Response:
         raise NotImplementedError()

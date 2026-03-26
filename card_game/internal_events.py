@@ -8,13 +8,13 @@ from .abstract.cardholder import Cardholder
 from .constants import *
 class AVGECardAttributeChange(AVGEEvent):
     def __init__(self, 
-                 target_card : AVGECharacterCard,
+                 target_card : AVGECharacterCard | Callable,#can be delayed to runtime
                  attribute : AVGECardAttribute,
-                 change_amount : int,
+                 change_amount : int | Callable,#can be delayed to runtime
                  attribute_modifier_type : AVGEAttributeModifier,
-                 catalyst_action : ActionTypes, 
+                 catalyst_action : ActionTypes,
                  caller_card : Card | None,
-                 change_type : Type = None):
+                 change_type : CardType = None):
         super().__init__(catalyst_action,caller_card)
         self.change_amount = change_amount
         self.attribute = attribute
@@ -23,12 +23,20 @@ class AVGECardAttributeChange(AVGEEvent):
         self.attribute_modifier_type = attribute_modifier_type
         self.old_amt = None
     
+    def get_kwargs(self):
+        return {
+            'target_card': self.target_card,
+            'attribute' : self.attribute,
+            'change_amount' : self.change_amount,
+            'attribute_modifier_type' : self.attribute_modifier_type,
+            'catalyst_action' : self.catalyst_action, 
+            'caller_card' : self.caller_card,
+            'change_type' : self.change_type
+        }
     def make_announcement(self):
         return True
     
-    def core(self, args :Data | None = None) -> Response:
-        if(args is None):
-            args = {}
+    def core(self, args :Data = {}) -> Response:
         self.old_amt = self.target_card.attributes[self.attribute]
         if(self.attribute_modifier_type == AVGEAttributeModifier.ADDITIVE):
             self.target_card.attributes[self.attribute] += self.change_amount
@@ -36,7 +44,7 @@ class AVGECardAttributeChange(AVGEEvent):
             self.target_card.attributes[self.attribute] = self.change_amount
         return self.generate_core_response()
     
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         self.target_card.attributes[self.attribute] = self.old_amt
 
     def generate_internal_listeners(self):
@@ -52,9 +60,9 @@ class AVGECardAttributeChange(AVGEEvent):
 
 class AVGEPlayerAttributeChange(AVGEEvent):
     def __init__(self, 
-                 target_player : AVGEPlayer,
+                 target_player : AVGEPlayer | Callable, #can be delayed to runtime if wanted
                  attribute : AVGEPlayerAttribute,
-                 change_amount : int,
+                 change_amount : int | Callable, #can be delayed to runtime if wanted
                  attribute_modifier_type : AVGEAttributeModifier,
                  catalyst_action : ActionTypes, 
                  caller_card : Card | None):
@@ -64,13 +72,21 @@ class AVGEPlayerAttributeChange(AVGEEvent):
         self.target_player = target_player
         self.attribute_modifier_type = attribute_modifier_type
         self.old_amt = None
+
+    def get_kwargs(self):
+        return {
+            'target_player': self.target_player,
+            'attribute': self.attribute,
+            'change_amount': self.change_amount,
+            'attribute_modifier_type': self.attribute_modifier_type,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
     
     def make_announcement(self):
         return True
     
-    def core(self, args :Data | None = None) -> Response:
-        if(args is None):
-            args = {}
+    def core(self, args :Data = {}) -> Response:
         self.old_amt = self.target_player.attributes[self.attribute]
         if(self.attribute_modifier_type == AVGEAttributeModifier.ADDITIVE):
             self.target_player.attributes[self.attribute] += self.change_amount
@@ -78,7 +94,7 @@ class AVGEPlayerAttributeChange(AVGEEvent):
             self.target_player.attributes[self.attribute] = self.change_amount
         return self.generate_core_response()
     
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         self.target_player.attributes[self.attribute] = self.old_amt
 
     def generate_internal_listeners(self):
@@ -91,12 +107,13 @@ class AVGEPlayerAttributeChange(AVGEEvent):
     
 class TransferCard(AVGEEvent):
     def __init__(self, 
-                 card : Card,
-                 pile_from : AVGECardholder,
-                 pile_to : AVGECardholder,
+                 card : Card | Callable, #can be delayed to runtime if wanted
+                 pile_from : AVGECardholder | Callable, #can be delayed to runtime if wanted
+                 pile_to : AVGECardholder | Callable, #can be delayed to runtime if wanted
                  catalyst_action : ActionTypes, 
                  caller_card : Card | None,
-                 new_idx : int = None):
+                 new_idx : int | Callable = None #can be delayed to runtime if wanted
+                 ):
         super().__init__(catalyst_action,caller_card)
         self.card = card
         self.pile_to = pile_to
@@ -105,13 +122,21 @@ class TransferCard(AVGEEvent):
         self.old_idx = pile_from.get_posn(self.card)
 
         self._previous_card = None#only for tools
+
+    def get_kwargs(self):
+        return {
+            'card': self.card,
+            'pile_from': self.pile_from,
+            'pile_to': self.pile_to,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+            'new_idx': self.new_idx,
+        }
     
     def make_announcement(self):
         return True
     
-    def core(self, args :Data | None = None) -> Response:
-        if(args is None):
-            args = {}
+    def core(self, args :Data = {}) -> Response:
         if(isinstance(self.card, AVGEToolCard) and isinstance(self.pile_from, AVGEToolCardholder)):
             if(self.card.card_attached is not None):
                 self._previous_card = self.card.card_attached
@@ -119,7 +144,7 @@ class TransferCard(AVGEEvent):
         self.card.env.transfer_card(self.card, self.pile_from, self.pile_to, self.new_idx)
         return self.generate_core_response()
     
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         if(isinstance(self.card, AVGEToolCard) and isinstance(self.pile_from, AVGEToolCardholder)):
             self.card.card_attached = self._previous_card
         self.card.env.transfer_card(self.card, self.pile_to, self.pile_from, self.old_idx)
@@ -135,19 +160,24 @@ class TransferCard(AVGEEvent):
 class ReorderCardholder(AVGEEvent):
     def __init__(self,
                  cardholder : Cardholder,
-                 new_order : list[str],
+                 new_order : list[str] | Callable, #can be delayed to runtime if wanted
                  catalyst_action : ActionTypes, 
                  caller_card : Card | None):
         super().__init__(catalyst_action, caller_card)
         self.cardholder = cardholder
         self.new_order = new_order
         self.original_order = [k for k in self.cardholder.get_order()]
-    def core(self, args : Data | None = None) -> Response:
-        if(args is None):
-            args = {}
+    def get_kwargs(self):
+        return {
+            'cardholder': self.cardholder,
+            'new_order': self.new_order,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         self.cardholder.reorder(self.new_order)
         return self.generate_core_response()
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         self.cardholder.reorder(self.original_order)
     def make_announcement(self):
         return True
@@ -159,6 +189,7 @@ class ReorderCardholder(AVGEEvent):
 #In PlayCharacter & PlayNoncharacter Card it is assumed that if the caller card is a character card,
 #the action should be done on behalf of the caller card. 
         
+#In addition, if a card requires an input, it is expected that they use the InputEvent. Don't use args
     
 class PlayCharacterCard(AVGEEvent):
     def __init__(self, 
@@ -170,23 +201,26 @@ class PlayCharacterCard(AVGEEvent):
         self.card = card
         self.card_action = card_action
         self.cache_snapshot = None
-    def core(self, args : Data | None = None) -> Response:
-        if(args is None):
-            args = {}
-        
+    def get_kwargs(self):
+        return {
+            'card': self.card,
+            'card_action': self.card_action,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         if(self.card_action == ActionTypes.SKIP):
             return self.generate_core_response()
         else:
             return self.card.play_card(self, self.caller_card if isinstance(self.caller_card, AVGECharacterCard) else self.card, 
                                        args)
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         return
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEPlayCharacterCardValidityCheck, AVGERNGHook
+        from .internal_listeners import AVGEPlayCharacterCardValidityCheck
         self.attach_listener(AVGEPlayCharacterCardValidityCheck())
-        self.attach_listener(AVGERNGHook())
     def package(self):
         return f"{self.card_action} action from {self.card}"
     
@@ -197,21 +231,21 @@ class PlayNonCharacterCard(AVGEEvent):
                  caller_card : Card | None):
         super().__init__(catalyst_action,caller_card)
         self.card = card
-    def core(self, args : Data | None = None) -> Response:
-        if(args is None):
-            args = {}
-        for rng_type in RNGType:
-            if(rng_type in self.temp_cache):
-                args[rng_type] = self.temp_cache[rng_type]
+    def get_kwargs(self):
+        return {
+            'card': self.card,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         return self.card.play_card(self, self.caller_card, args)
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         return
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck, AVGERNGHook
+        from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck
         self.attach_listener(AVGEPlayNonCharacterCardValidityCheck())
-        self.attach_listener(AVGERNGHook())
     def package(self):
         return f"{self.card} was played!"
 class PhasePickCard(AVGEEvent):
@@ -221,9 +255,13 @@ class PhasePickCard(AVGEEvent):
                  caller_card : Card | None):
         super().__init__(catalyst_action,caller_card)
         self.player = player
-    def core(self, args : Data | None = None) -> Response:
-        if(args is None):
-            args = {}
+    def get_kwargs(self):
+        return {
+            'player': self.player,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         if(len(self.player.cardholders[Pile.DECK]) > 0):
             deck = self.player.cardholders[Pile.DECK]
             hand = self.player.cardholders[Pile.HAND]
@@ -234,7 +272,7 @@ class PhasePickCard(AVGEEvent):
                                       ActionTypes.ENV,
                                       None))
         return self.generate_core_response()
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         raise Exception("A phase should never be canceled")
     def make_announcement(self):
         return True
@@ -250,18 +288,18 @@ class Phase2(AVGEEvent):
                  caller_card : Card | None):
         super().__init__(catalyst_action,caller_card)
         self.player = player
-    def core(self, args : Data | None = None) -> Response:
+    def get_kwargs(self):
+        return {
+            'player': self.player,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         from .avge_abstracts.AVGEEnvironment import GamePhase
-        if(args is None):
-            args = {}
         env : AVGEEnvironment = self.player.env
         env.game_phase = GamePhase.PHASE_2
         active_card : AVGECharacterCard = env.get_active_card(self.player.unique_id)
-        next_action = args.get('next')
-
-        if(next_action is None):
-            return self.generate_core_response(ResponseType.REQUIRES_QUERY,
-                                            {'query_type': 'phase2', 'player_involved': self.player})
+        next_action = args.get('next', "")
 
         if(next_action == 'atk'):
             self.propose(AtkPhase(self.player,
@@ -419,7 +457,7 @@ class Phase2(AVGEEvent):
 
         return self.generate_core_response(ResponseType.REQUIRES_QUERY,
                                            {'query_type': 'phase2', 'player_involved': self.player})
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         raise Exception("A phase should never be canceled")
     def make_announcement(self):
         return True
@@ -435,19 +473,22 @@ class AtkPhase(AVGEEvent):
                  caller_card : Card | None):
         super().__init__(catalyst_action,caller_card)
         self.player = player
+    def get_kwargs(self):
+        return {
+            'player': self.player,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
     def make_announcement(self):
         return True
     def generate_internal_listeners(self):
         return
     def package(self):
         return f"Atk phase"
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         raise Exception("A phase should never be canceled")
-    def core(self, args : Data | None = None) -> Response:
+    def core(self, args : Data = {}) -> Response:
         from .avge_abstracts.AVGEEnvironment import GamePhase
-        
-        if(args is None):
-            args = {}
         env : AVGEEnvironment = self.player.env
         env.game_phase = GamePhase.ATK_PHASE
         active_card = env.get_active_card(self.player.unique_id)
@@ -474,6 +515,56 @@ class AtkPhase(AVGEEvent):
             return self.generate_core_response(ResponseType.REQUIRES_QUERY, 
                                                {'query_type': 'atk', 'player_involved': self.player})
 
+class InputEvent(AVGEEvent):
+    def __init__(self,
+                 player_for : AVGEPlayer,
+                 input_keys : list[str],#keys on which to attach inputs to. these should be UNIQUE, and when accessing, you are expected to use get(one_look = True)
+                 input_type : InputType,#type of input
+                 input_validation : Callable[[list[Any]], bool],#function that validates all inputs
+                 catalyst_action : ActionTypes,
+                 caller_card : Card,#the caller card whose cache to use for inputs
+                 query_data : Data = {}):
+        super().__init__(catalyst_action, caller_card)
+        self.player_for = player_for
+        self.input_keys = input_keys
+        self.input_type = input_type
+        self.input_validation = input_validation
+        self.query_data = query_data
+    def get_kwargs(self):
+        return {
+            'player_for': self.player_for,
+            'input_keys': self.input_keys,
+            'input_type': self.input_type,
+            'input_validation': self.input_validation,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+            'query_data': self.query_data,
+        }
+    def core(self, args : Data = {}) -> Response:
+        if(not isinstance(args.get("input_result", []), list) 
+           or len(args.get("input_result", [])) != len(self.input_keys)
+           or not self.input_validation(args.get("input_result", []))):
+            return self.generate_core_response(ResponseType.REQUIRES_QUERY,
+                                               {'query_type': 'card_query',
+                                                'input_type': self.input_type, 
+                                                'inputs_required': len(self.input_keys),
+                                                } | ({} if self.query_data is None else self.query_data))
+        else:
+            env : AVGEEnvironment = self.caller_card.env
+            input_result = args.get("input_result", [])
+            for i in range(len(input_result)):
+                env.cache.set(self.caller_card, self.input_keys[i], input_result[i])
+            return self.generate_core_response()
+    def invert_core(self, args):
+        env : AVGEEnvironment = self.caller_card.env
+        for key in self.input_keys:
+            env.cache.delete(self.caller_card, key)
+    def make_announcement(self):
+        return True
+    def generate_internal_listeners(self):
+        return
+    def package(self):
+        return f"Input Event!"
 class ChangeStatus(AVGEEvent):
     def __init__(self,
                  card : AVGECharacterCard,
@@ -486,7 +577,15 @@ class ChangeStatus(AVGEEvent):
         self.change_type = change_type
         self.status=status
         self._old_count = None
-    def core(self, args : Data | None = None) -> Response:
+    def get_kwargs(self):
+        return {
+            'card': self.card,
+            'status': self.status,
+            'change_type': self.change_type,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         self._old_count = self.card.statuses_attached.get(self.status, 0)
         if(self.change_type == ChangeType.ADD):
             self.card.statuses_attached[self.status] = self.card.statuses_attached.get(self.status,0)+1
@@ -516,10 +615,14 @@ class TurnEnd(AVGEEvent):
                  caller_card : Card | None):
         super().__init__(catalyst_action,caller_card)
         self.env = environment
-    def core(self, args : Data | None = None) -> Response:
+    def get_kwargs(self):
+        return {
+            'environment': self.env,
+            'catalyst_action': self.catalyst_action,
+            'caller_card': self.caller_card,
+        }
+    def core(self, args : Data = {}) -> Response:
         from .avge_abstracts.AVGEEnvironment import GamePhase
-        if(args is None):
-            args = {}
         self.env.game_phase = GamePhase.TURN_END
         for player in self.env.players.values():
             player : AVGEPlayer = player
@@ -537,7 +640,7 @@ class TurnEnd(AVGEEvent):
                                    ActionTypes.ENV,
                                    None))
         return self.generate_core_response()
-    def invert_core(self, args : Data | None = None):
+    def invert_core(self, args : Data = {}):
         raise Exception("A phase should never be canceled")
     def make_announcement(self):
         return True

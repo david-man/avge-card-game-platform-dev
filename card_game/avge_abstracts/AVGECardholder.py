@@ -1,15 +1,20 @@
 from __future__ import annotations
-from ..abstract.cardholder import Cardholder
+from ..abstract.cardholder import Cardholder, OrderedDict
 from ..abstract.card import Card
-from typing import Type
+from typing import Type, TYPE_CHECKING
 from ..constants import Pile
-
+if TYPE_CHECKING:
+    from .AVGEPlayer import AVGEPlayer
+    from .AVGEEnvironment import AVGEEnvironment
 class AVGECardholder(Cardholder):
     def __init__(self,
                  pile_type : Pile,
                  expected_classes : list[Type] = None,
                  max_size : int = None):
         super().__init__(pile_type)
+        self.player : AVGEPlayer = None
+        self.env : AVGEEnvironment = None
+        
         self.max_size = max_size
         self.expected_classes = expected_classes
     def add_card(self, card : 'Card'):
