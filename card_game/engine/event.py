@@ -4,16 +4,15 @@ from . import event_listener
 from typing import Any
 from card_game.constants import *
 from . import engine_constants
+from . import constrainer
 
 type EventPacket = list[Event]
 class Event():
-    def __init__(self, flags : list[engine_constants.Flag]):
-        self.flags = flags
+    def __init__(self):
         self.engine : engine.Engine = None
         self.event_listener_groups : dict[engine_constants.EngineGroup, list[event_listener.AbstractEventListener]] = {group : [] for group in engine_constants.EngineGroup}
         self.group_on = engine_constants.EngineGroup.INTERNAL_1
-        self.external_modifiers_ordered = False
-        self.external_reactors_ordered = False
+        self.groups_preprocessed : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
 
         self.core_args : Data = None
 
@@ -29,7 +28,12 @@ class Event():
     def package(self):
         #function that actually packages the event into an announcement
         raise NotImplementedError()
-    
+    def _constrain_internal(self, constraint : constrainer.Constraint):
+        #checks the internal event listeners with a constrainer
+        for group in self.event_listener_groups.values():
+            for listener in group:
+                if(constraint.match(listener)):
+                    listener.invalidate()
     def core_wrapper(self, args : Data | None = None) -> Response:
         if(args is None):
             args = {}
@@ -69,14 +73,6 @@ class Event():
             for listener in self.event_listener_groups[group]:
                 listener.engine = engine
 
-    def _check_listener(self, listener : event_listener.AbstractEventListener) -> bool:
-        if(listener.flags == []):
-            return True
-        else:
-            for flag in self.flags:
-                if(flag in listener.flags):
-                    return True
-            return False
     def _validate_ordering(self, group : engine_constants.EngineGroup, new_ordering : list[event_listener.AbstractEventListener]) -> bool:
         #validates that the new ordering has all the required elements
         if(len(self.event_listener_groups[group]) == len(new_ordering)):
@@ -85,11 +81,13 @@ class Event():
                     return False
             return True
         return False
-    def attach_listener(self, listener : event_listener.AbstractEventListener):
-        #attempts to add a listener if its flags overlap and it's valid
-        if(self._check_listener(listener) and listener._is_valid_now(self)):
+    def attach_listener(self, listener : event_listener.AbstractEventListener) -> bool:
+        #attempts to add a listener if its a match. returns True if success
+        if(listener._should_attach(self)):
             self.event_listener_groups[listener.group].append(listener)
             listener.attach_to_event(self)
+            return True
+        return False
     def propose(self, e : Event | EventPacket, priority : int = 0):
         self.engine._propose(e, priority)
     def forward(self, args :Data | None = None) ->Response:
@@ -112,51 +110,48 @@ class Event():
             response = Response(self, ResponseType.ACCEPT, {})
             self.group_on = self.group_on.succ()
             return response
-        elif(self.group_on == engine_constants.EngineGroup.EXTERNAL_MODIFIERS 
-             and len(self.event_listener_groups[self.group_on]) > 1
-             and not self.external_modifiers_ordered):
-            #case 4: we haven't ordered modifiers and we need to
-            group_ordering = args.get('group_ordering')
-            if(group_ordering is not None):
-                if(self._validate_ordering(self.group_on, group_ordering)):
-                    self.event_listener_groups[self.group_on] = group_ordering
-                    self.external_modifiers_ordered = True
-                    return Response(self, ResponseType.ACCEPT, {})
-            return Response(self, ResponseType.REQUIRES_QUERY,
-                                {"query_type": "ext_modifier_order", 'unordered_groups': self.event_listener_groups[self.group_on]},
-                                True)
-        elif(self.group_on == engine_constants.EngineGroup.EXTERNAL_REACTORS 
-             and len(self.event_listener_groups[self.group_on]) > 1
-             and not self.external_reactors_ordered):
-            #case 5: we haven't ordered reactors and we need to
-            group_ordering = args.get('group_ordering')
-            if(group_ordering is not None):
-                if(self._validate_ordering(self.group_on, group_ordering)):
-                    self.event_listener_groups[self.group_on] = group_ordering
-                    self.external_reactors_ordered = True
-                    return Response(self, ResponseType.ACCEPT, {})
-            return Response(self, ResponseType.REQUIRES_QUERY,
-                            {"query_type": "ext_reactor_order", 'unordered_groups': self.event_listener_groups[self.group_on]},
-                            True)
         else:
-            #case 6: we have a listener to take care of
+            #case 4: we have a non-zero length group of listeners to attend to
+            
+            #step 1: preprocess groups if we haven't
+            if(not self.groups_preprocessed[self.group_on]):
+                if(self.group_on in [engine_constants.EngineGroup.EXTERNAL_MODIFIERS, engine_constants.EngineGroup.EXTERNAL_REACTORS] 
+                     and len(self.event_listener_groups[self.group_on]) >= 2):
+                    group_ordering = args.get('group_ordering')
+                    if(group_ordering is not None):
+                        if(self._validate_ordering(self.group_on, group_ordering)):
+                            self.event_listener_groups[self.group_on] = group_ordering
+                            self.groups_preprocessed[self.group_on] = True
+                            return Response(self, ResponseType.ACCEPT, {})
+                    return Response(self, ResponseType.REQUIRES_QUERY,
+                                        {"query_type": "ordering", 'unordered_groups': self.event_listener_groups[self.group_on]}, True)
+                else:
+                    self.groups_preprocessed[self.group_on] = True
+                    return Response(self, ResponseType.ACCEPT, {})
+            #step 2: question whether to go through with the listener
             next_listener = self.event_listener_groups[self.group_on].pop(0)
-            if(next_listener.internal and not self._check_listener(next_listener)):
-                #if the listener's flags don't match (for internal listeners), we simply move on
-                return Response(self, ResponseType.ACCEPT, {})
-            
-            if(isinstance(next_listener, event_listener.AssessorEventListener)):
-                response = next_listener.assess(args)
-            elif(isinstance(next_listener, event_listener.PostCheckEventListener)):
-                response = next_listener.assess(args)
-            elif(isinstance(next_listener, event_listener.ModifierEventListener)):
-                response = next_listener.modify(args)
-            elif(isinstance(next_listener, event_listener.ReactorEventListener)):
-                response = next_listener.react(args)
-            
-            if(response.response_type ==ResponseType.REQUIRES_QUERY):
-                #if requires query, we need to wait for args next time and try to run the same listener again -- since we used pop, we now need to insert back
-                self.event_listener_groups[self.group_on].insert(0, next_listener)
-            return response
+            to_run = (not next_listener._invalidated) and bool(next_listener.event_effect())
+            for constraint in next_listener.constraints:
+                if(not to_run):
+                    break
+                if(constraint.constrain_listener(next_listener)):
+                    to_run = False
+            if(not to_run):
+                #skip if constrained or invalidated
+                return Response(self, ResponseType.ACCEPT)
+            else:
+                if(isinstance(next_listener, event_listener.AssessorEventListener)):
+                    response = next_listener.assess(args)
+                elif(isinstance(next_listener, event_listener.PostCheckEventListener)):
+                    response = next_listener.assess(args)
+                elif(isinstance(next_listener, event_listener.ModifierEventListener)):
+                    response = next_listener.modify(args)
+                elif(isinstance(next_listener, event_listener.ReactorEventListener)):
+                    response = next_listener.react(args)
+                
+                if(response.response_type ==ResponseType.REQUIRES_QUERY):
+                    #if requires query, we need to wait for args next time and try to run the same listener again -- since we used pop, we now need to insert back
+                    self.event_listener_groups[self.group_on].insert(0, next_listener)
+                return response
         
         

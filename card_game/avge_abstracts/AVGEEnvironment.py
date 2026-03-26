@@ -17,35 +17,44 @@ class GamePhase(StrEnum):
 class EnvironmentCache():
     def __init__(self, card_ids : list[str]):
         self.cache = {k : {} for k in card_ids}
-        self.buffered_cache : list[Tuple[Card, str, Any]]= []
-        self.delete_buffer : list[Tuple[Card, str]] = []
+        #is this a delete, card key, str 2nd key, any val (if needed)
+        self.buffered_cache : list[Tuple[bool, Card, str, Any]]= []
+
         self._buffering = False
     def set(self, card : Card, key : str, value):
         if(self._buffering):
-            self.buffered_cache.append((card, key, value))
+            self.buffered_cache.append((False, card, key, value))
         else:
             self.cache[card.unique_id][key] = value
-    def get(self, card : Card, key : str):
+    def get(self, card : Card, key : str, default = None):
         """Gets value in committed data cache."""
-        return self.cache[card.unique_id].get(key, None)
+        return self.cache[card.unique_id].get(key, default)
     def delete(self, card : Card, key : str):
         """Deletes a value in committed data cache"""
         if(self._buffering):
-            self.delete_buffer.append((card, key))
+            self.buffered_cache.append((True, card, key, None))
         else:
             del self.cache[card.unique_id][key]
     def _release_buffer(self):
         self._buffering = False
-        for c, k, v in self.buffered_cache:
-            self.set(c, k, v)
-        for c, k in self.delete_buffer:
-            self.delete(c, k)
+        for d, c, k, v in self.buffered_cache:
+            if(d and k is None):
+                self.cache[c.unique_id] = {}
+            elif(d):
+                if(c.unique_id in self.cache and k in self.cache[c.unique_id]):
+                    del self.cache[c.unique_id][k]
+            else:
+                self.cache[c.unique_id][k] = v
         self._clr_buffer()
     def _close_buffer(self):
         self._buffering = True
     def _clr_buffer(self):
         self.buffered_cache = []
-        self.delete_buffer = []
+    def wipe(self, card : Card):
+        if(self._buffering):
+            self.buffered_cache.append((True, card, None, None))
+        else:
+            self.cache[card.unique_id] = {}
 class AVGEEnvironment(Environment):
     def __init__(self, p1_deck : list[Type[Card]], p2_deck : list[Type[Card]]):
         super().__init__()
@@ -163,14 +172,49 @@ class AVGEEnvironment(Environment):
 
     def forward(self, args : Data | None = None) -> Response:
         resp = super().forward(args)
-        if(resp.response_type == ResponseType.FINISHED):
+        if(self.winner is not None):
+            #cut immediately. if an event flags winner, it will always be sure.
+            #continuing past this point might break things
+            return Response(None,
+                            ResponseType.NO_MORE_EVENTS)
+        if(resp.response_type == ResponseType.FINISHED_PACKET):
+            #commits to the environment's data cache once a packet is complete
             self.card_data_cache._release_buffer()
-        elif(resp.response_type == ResponseType.NEXT_EVENT):
+            #safely releases all expired listeners & constraints from a card once a packet successfully finalizes
+            for card in self.cards.values():
+                modified_listeners = []
+                modified_constraints = []
+                for listener in card.owned_listeners:
+                    if(not listener._invalidated):
+                        modified_listeners.append(listener)
+                for constraint in card.owned_constraints:
+                    if(not constraint._invalidated):
+                        modified_constraints.append(constraint)
+                card.owned_listeners = modified_listeners
+                card.owned_constraints = modified_constraints
+        elif(resp.response_type == ResponseType.NEXT_PACKET):
+            #drops changes in case they weren't already dropped
             self.card_data_cache._clr_buffer()
             self.card_data_cache._close_buffer()
         elif(resp.response_type == ResponseType.SKIP):
+            #when response is failed, drop changes manually 
             self.card_data_cache._clr_buffer()
             self.card_data_cache._close_buffer()
+
+            #next, note that the engine has reverted all listeners & constraints
+            #thus, all cards' owned listeners & constraints need to revert to how they were before
+            for card in self.cards.values():
+                modified_listeners = []
+                modified_constraints = []
+                for listener in card.owned_listeners:
+                    if(not listener._invalidated):
+                        modified_listeners.append(listener)
+                for constraint in card.owned_constraints:
+                    if(not constraint._invalidated):
+                        modified_constraints.append(constraint)
+                card.owned_listeners = modified_listeners
+                card.owned_constraints = modified_constraints
+
         return resp
         
     

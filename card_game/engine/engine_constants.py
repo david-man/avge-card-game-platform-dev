@@ -1,8 +1,6 @@
 from __future__ import annotations
-from enum import Enum
+from enum import Enum, StrEnum
 
-class Flag(Enum):
-    pass
 class QueueStatus(Enum):
     CLOSED = 0
     BUFFERED = 1

@@ -3,10 +3,10 @@ from ..engine.event_listener import *
 from ..abstract.card import Card
 from ..constants import *
 class AVGEEvent(Event):
-    def __init__(self, flags : list[Flag],
+    def __init__(self,
                  catalyst_action : ActionTypes,
                  caller_card : Card):
-        super().__init__(flags)
+        super().__init__()
         self.catalyst_action = catalyst_action
         self.caller_card = caller_card
         self.temp_cache = {}

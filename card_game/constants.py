@@ -1,12 +1,11 @@
 from __future__ import annotations
 from enum import Enum, StrEnum
-from typing import Any, TYPE_CHECKING
-
+from typing import Any, TYPE_CHECKING, Tuple
 if TYPE_CHECKING:
     from card_game.engine.event import Event
     from card_game.engine.event_listener import AbstractEventListener
     from card_game.abstract.card import Card
-Data = dict[str, Any]
+type Data = dict[str, Any]
 
 cards_per_deck = 30
 initial_hand_size = 5
@@ -17,11 +16,13 @@ kos_to_win = 3
 per_turn_token_add = 1
 per_turn_supporter = 1
 per_turn_swaps = 1
+per_turn_atks = 1
 class ResponseType(StrEnum):
     SKIP = "SKIP"
     ACCEPT = 'ACCEPT'
     REQUIRES_QUERY = "REQUIRES_QUERY"
     FINISHED = "FINISHED"
+    FINISHED_PACKET = "FINISHED_PACKET"
     CORE = "CORE"
 
     NO_MORE_EVENTS = "NO_MORE_EVENTS"
@@ -50,6 +51,7 @@ class AVGEPlayerAttribute(StrEnum):
     SUPPORTER_USES_REMAINING_IN_TURN = "SUPPORTER_USES_REMAINING_IN_TURN"
     SWAP_REMAINING_IN_TURN = "SWAP_REMAINING_IN_TURN"
     ENERGY_ADD_REMAINING_IN_TURN = "ENERGY_ADD_REMAINING_IN_TURN"
+    ATTACKS_LEFT = "ATTACKS_LEFT"
 
     #game specific
     KO_COUNT = "KO_COUNT"
@@ -60,31 +62,16 @@ class AVGECardAttribute(StrEnum):
     #character card attributes
     TYPE = "TYPE"
     HP = "HP"
+    MAXHP = "MAXHP"
     SWITCH_COST = "SWITCH_COST"
     MV_1_COST = "MV_1_COST"
     MV_2_COST = "MV_2_COST"
     ENERGY_ATTACHED = "ENERGY_ATTACHED"
     STATUS_ATTACHED = "STATUS_ATTACHED"
-from .engine.engine_constants import Flag
-class AVGEFlag(Flag):
-    #a list of AVGE-specific event flags
 
-    #the 3 phases
-    PHASE_PICK_CARD = "PICK"#when you pick one card from the deck
-    PHASE_2 = "P2"#when the player enters phase 2
-    PHASE_ATK = "ATK"#when the player is given options to attack
-
-    #flags for actions that actively do something(i.e, call a card to act)
-    CARD_TRANSITION = "TRANSITION"#when a card transitions from A -> B
-    CARD_ATTR_CHANGE = "CARD_ATTR"
-    PLAYER_ATTR_CHANGE = "PLAYER_ATTR"
-    PLAY_NONCHAR_CARD = "PLAY_NONCHAR"
-    PLAY_CHAR_CARD = "PLAY_CHAR"
-
-    TURN_BEGIN = "BEGIN"#when a player's turn begins
-    TURN_END = "END"#when a player's turn ends 
-    GAME_INIT = "INIT"#the first part of the game where players just pick up cards
-
+class ChangeType(StrEnum):
+    ADD = "ADD"
+    REMOVE = "REMOVE"
 class PlayerID(StrEnum):
     P1 = 'player1'
     P2 = 'player2'
@@ -117,15 +104,13 @@ class Type(StrEnum):
     CHOIR = "CHOIR"
     BRASS = "BRASS"
 
-class StatusEffect(Enum):
-    #a status effect is just an effect that event listeners care about
-    #only with an event listener do they actually do anything meaningful
-    NONE = 0
+class StatusEffect(StrEnum):
+    ARRANGER = 'ARR'
+    MAID = 'MAID'
 
 class RNGType(StrEnum):
     D6 = "D6"#response should be 1-6
-    COIN = "COIN"#tails = 0, heads = 1
-    
+    COIN = "COIN"#tails = 0, heads = 1. response can come in a list
 type_weaknesses = {
     Type.STRING: Type.GUITAR,
     Type.GUITAR: Type.WOODWIND,

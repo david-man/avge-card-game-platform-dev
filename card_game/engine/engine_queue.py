@@ -44,10 +44,8 @@ class EngineQueue(Generic[T]):
 
     def clear_buffer(self):
         #Clears the buffer and opens the active queue
-        if(self.queue_status == QueueStatus.BUFFERED):
-            self.queue_status = QueueStatus.OPEN
-            self.buffered_queue = []
-
+        self.queue_status = QueueStatus.OPEN
+        self.buffered_queue = []
     def set_status(self, status : QueueStatus):
         #Sets the queue status
         self.queue_status = status

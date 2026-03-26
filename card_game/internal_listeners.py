@@ -1,17 +1,21 @@
 from __future__ import annotations
-from .engine.event_listener import *
 from .engine.engine_constants import *
 from .constants import *
+from .avge_abstracts.AVGEEventListeners import *
 from .avge_abstracts.AVGEPlayer import AVGEPlayer
 from .avge_abstracts.AVGECards import *
 from .avge_abstracts.AVGEEnvironment import *
 
-class AVGECardAttributeChangeModifier(ModifierEventListener):
+class AVGECardAttributeChangeModifier(AVGEModifier):
     def __init__(self):
-        super().__init__(group = EngineGroup.INTERNAL_2,
-                         flags = [AVGEFlag.CARD_ATTR_CHANGE],
-                         internal = True)
-    def is_valid(self) -> bool:
+        super().__init__((None, AVGEEventListenerType.ENV),
+                          group = EngineGroup.INTERNAL_2,internal = True)
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGECardAttributeChange
+        return isinstance(event, AVGECardAttributeChange)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return True
@@ -25,16 +29,21 @@ class AVGECardAttributeChangeModifier(ModifierEventListener):
             if(new_amt < 0):
                 event.change_amount = -event.target_card.attributes[event.attribute]
         else:
-            if(event.change_amount < 0):
+            if(event.change_amount <= 0):
                 event.change_amount = 0
         return self.generate_response()
     
-class AVGECardAttributeChangeAssessment(AssessorEventListener):
+class AVGECardAttributeChangeAssessment(AVGEAssessor):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         flags = [AVGEFlag.CARD_ATTR_CHANGE],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGECardAttributeChange
+        return isinstance(event, AVGECardAttributeChange)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
@@ -52,12 +61,17 @@ class AVGECardAttributeChangeAssessment(AssessorEventListener):
             return self.generate_response(ResponseType.SKIP, {'msg': 'No more tokens to add'})
         return self.generate_response()
 
-class AVGECardAttributeChangeReactor(ReactorEventListener):
+class AVGECardAttributeChangeReactor(AVGEReactor):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_3,
-                         flags = [AVGEFlag.CARD_ATTR_CHANGE],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGECardAttributeChange
+        return isinstance(event, AVGECardAttributeChange)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
@@ -97,30 +111,41 @@ class AVGECardAttributeChangeReactor(ReactorEventListener):
             self.propose(packet, 1)
         return self.generate_response()
 
-class AVGECardAttributeChangePostCheck(PostCheckEventListener):
+class AVGECardAttributeChangePostCheck(AVGEPostcheck):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_3,
-                         flags = [AVGEFlag.CARD_ATTR_CHANGE],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGECardAttributeChange
+        return isinstance(event, AVGECardAttributeChange)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
     def package(self):
         return ""
     def assess(self, args) -> Response:
+        #MAY NOT NEED!
         from .internal_events import AVGECardAttributeChange
         event : AVGECardAttributeChange = self.attached_event
         if(event.attribute == AVGECardAttribute.HP and event.target_card.attributes[AVGECardAttribute.HP] <= 0):
             return self.generate_response(ResponseType.SKIP, {"msg": "KO!"})
         return self.generate_response()
     
-class AVGEPlayerAttributeChangeModifier(ModifierEventListener):
+class AVGEPlayerAttributeChangeModifier(AVGEModifier):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_2,
-                         flags = [AVGEFlag.PLAYER_ATTR_CHANGE],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGEPlayerAttributeChange
+        return isinstance(event, AVGEPlayerAttributeChange)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return True
@@ -134,16 +159,21 @@ class AVGEPlayerAttributeChangeModifier(ModifierEventListener):
             if(new_amt < 0):
                 event.change_amount = -event.target_player.attributes[event.attribute]
         else:
-            if(event.change_amount < 0):
+            if(event.change_amount <= 0):
                 event.change_amount = 0
         return self.generate_response()
 
-class AVGEPlayerAttributeChangePostChecker(PostCheckEventListener):
+class AVGEPlayerAttributeChangePostChecker(AVGEPostcheck):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_3,
-                         flags = [AVGEFlag.PLAYER_ATTR_CHANGE],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGEPlayerAttributeChange
+        return isinstance(event, AVGEPlayerAttributeChange)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return True
@@ -158,13 +188,18 @@ class AVGEPlayerAttributeChangePostChecker(PostCheckEventListener):
             return self.generate_response(ResponseType.SKIP, {'msg': 'player has won!'})
         return self.generate_response()
 
-class AVGETransferValidityCheck(AssessorEventListener):
+class AVGETransferValidityCheck(AVGEAssessor):
     
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         flags = [AVGEFlag.CARD_TRANSITION],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import TransferCard
+        return isinstance(event, TransferCard)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
@@ -190,38 +225,82 @@ class AVGETransferValidityCheck(AssessorEventListener):
                 return self.generate_response(ResponseType.SKIP, {'msg': 'no more swaps this turn!'})
         return self.generate_response()
 
-class AVGEDiscardReactor(ReactorEventListener):
+class AVGEDiscardReactor(AVGEReactor):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_3,
-                         flags = [AVGEFlag.CARD_TRANSITION],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+        from .internal_events import TransferCard
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import TransferCard
+        return isinstance(event, TransferCard) and event.pile_to == Pile.DISCARD
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
     def package(self):
         return ""
     def react(self, args) -> Response:
-        from .internal_events import TransferCard
+        from .internal_events import TransferCard, AVGECardAttributeChange, ChangeStatus
         event : TransferCard = self.attached_event
         if(isinstance(event.card, AVGECharacterCard)):#character card getting discarded
-            event.card.deactivate_card()
+            card : AVGECharacterCard= event.card
+            card.deactivate_card()
+            card.env.card_data_cache.wipe(card)
+            packet = []
+            #drop the tools
             for tool in event.card.tools_attached:
-                self.propose(TransferCard(tool,
-                                          event.card.tools_attached,
-                                          event.card.player.cardholders[Pile.DISCARD],
+                packet.append(TransferCard(tool,
+                                          card.tools_attached,
+                                          card.player.cardholders[Pile.DISCARD],
                                           ActionTypes.ENV,
                                           None))
-        elif(isinstance(event.card, AVGEToolCard) or isinstance(event.card, AVGEStadiumCard)):
+            #drop the statuses
+            for status, count in event.card.statuses_attached.items():
+                for _ in range(count):
+                    packet.append(ChangeStatus(card,
+                                               status,
+                                               ChangeType.REMOVE,
+                                               ActionTypes.ENV,
+                                               None))
+            #drop the energy
+            packet.append(AVGECardAttributeChange(
+                card,
+                AVGECardAttribute.ENERGY_ATTACHED,
+                0,
+                AVGEAttributeModifier.SET_STATE,
+                ActionTypes.ENV,
+                None,
+                None
+            ))
+            #reset HP
+            packet.append(AVGECardAttributeChange(
+                card,
+                AVGECardAttribute.HP,
+                AVGECardAttribute.MAXHP,
+                AVGEAttributeModifier.SET_STATE,
+                ActionTypes.ENV,
+                None,
+                None
+            ))
+            self.propose(packet)
+        elif(isinstance(event.card, AVGEToolCard)):
             event.card.deactivate_card()
         return self.generate_response()
 
-class AVGEPlayCharacterCardValidityCheck(AssessorEventListener):
+class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         flags = [AVGEFlag.PLAY_CHAR_CARD],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import PlayCharacterCard
+        return isinstance(event, PlayCharacterCard)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
@@ -246,12 +325,17 @@ class AVGEPlayCharacterCardValidityCheck(AssessorEventListener):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'cannot play ability right!'})
         return self.generate_response()
     
-class AVGEPlayNonCharacterCardValidityCheck(AssessorEventListener):
+class AVGEPlayNonCharacterCardValidityCheck(AVGEAssessor):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         flags = [AVGEFlag.PLAY_NONCHAR_CARD],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import PlayNonCharacterCard
+        return isinstance(event, PlayNonCharacterCard)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
@@ -268,12 +352,17 @@ class AVGEPlayNonCharacterCardValidityCheck(AssessorEventListener):
                     return self.generate_response(ResponseType.SKIP, {'msg': 'cannot use any more supporter cards this turn!'})
         return self.generate_response()
     
-class AVGERNGHook(ModifierEventListener):
+class AVGERNGHook(AVGEModifier):
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         flags = [AVGEFlag.PLAY_NONCHAR_CARD, AVGEFlag.PLAY_CHAR_CARD],
+                         identifier = (None, AVGEEventListenerType.ENV),
                          internal = True)
-    def is_valid(self) -> bool:
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import PlayCharacterCard, PlayNonCharacterCard
+        return isinstance(event, PlayCharacterCard) or isinstance(event, PlayNonCharacterCard)
+    def event_effect(self):
         return True
     def make_announcement(self) -> bool:
         return False
@@ -282,47 +371,21 @@ class AVGERNGHook(ModifierEventListener):
     def modify(self, args) -> Response:
         from .internal_events import PlayNonCharacterCard, PlayCharacterCard
         if(isinstance(self.attached_event, PlayCharacterCard)):
-            if(self.attached_event.card.RNG_type[self.attached_event.card_action] is not None):
-                resp = args.get("rng_response")
-                rng_type = self.attached_event.card.RNG_type[self.attached_event.card_action]
-                if(resp is None):
-                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(rng_type)})
+            if(self.attached_event.card.RNG_tuple[self.attached_event.card_action] is not None):
+                resp = list(args.get("rng_response", []))
+                rng_type, count = self.attached_event.card.RNG_tuple[self.attached_event.card_action]
+                expected_count = count()
+                if(len(resp) != expected_count):
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(rng_type), 'count': expected_count})
                 else:
-                    self.attached_event.card.data_cache[rng_type] = int(resp)
+                    self.attached_event.temp_cache[rng_type] = resp
         elif(isinstance(self.attached_event, PlayNonCharacterCard)):
-            if(self.attached_event.card.RNG_type is not None):
-                resp = args.get("rng_response")
-                rng_type = self.attached_event.card.RNG_type
-                if(resp is None):
-                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(rng_type)})
+            if(self.attached_event.card.RNG_tuple is not None):
+                resp = list(args.get("rng_response", []))
+                rng_type, count = self.attached_event.card.RNG_tuple
+                expected_count = count()
+                if(len(resp)!=expected_count):
+                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'rng', 'rng_type': str(rng_type), 'count': expected_count})
                 else:
-                    self.attached_event.card.data_cache[rng_type] = int(resp)
-                    
-        return self.generate_response()
-
-class AVGERNGEphemerality(ReactorEventListener):
-    #a reactor listener that simply ensures that no RNG values are lingering
-    def __init__(self):
-        super().__init__(group = EngineGroup.INTERNAL_4,
-                         flags = [AVGEFlag.PLAY_NONCHAR_CARD, AVGEFlag.PLAY_CHAR_CARD],
-                         internal = True)
-    def is_valid(self) -> bool:
-        return True
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
-    def react(self, args) -> Response:
-        from .internal_events import PlayNonCharacterCard, PlayCharacterCard
-        if(isinstance(self.attached_event, PlayCharacterCard)):
-            if(self.attached_event.card.RNG_type[self.attached_event.card_action] is not None):
-                rng_type = self.attached_event.card.RNG_type[self.attached_event.card_action]
-                if(rng_type in self.attached_event.card.data_cache):
-                    del self.attached_event.card.data_cache[rng_type]
-        elif(isinstance(self.attached_event, PlayNonCharacterCard)):
-            if(self.attached_event.card.RNG_type is not None):
-                rng_type = self.attached_event.card.RNG_type
-                if(rng_type in self.attached_event.card.data_cache):
-                    del self.attached_event.card.data_cache[rng_type]
-                    
+                    self.attached_event.temp_cache[rng_type] = resp
         return self.generate_response()
