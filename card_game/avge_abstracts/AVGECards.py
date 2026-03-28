@@ -25,7 +25,7 @@ class AVGECharacterCard(AVGECard):
     def __init__(self, unique_id : str):
         from .AVGECardholder import AVGEToolCardholder
         super().__init__(unique_id)
-        self.tools_attached : AVGEToolCardholder = AVGEToolCardholder()
+        self.tools_attached : AVGEToolCardholder = AVGEToolCardholder(self)
         self.statuses_attached : dict[StatusEffect, int] = {}
         #up to you to redefine all of these!
         self.attributes : dict[AVGECardAttribute, CardType | float] = {
@@ -36,6 +36,7 @@ class AVGECharacterCard(AVGECard):
             AVGECardAttribute.SWITCH_COST: None,
             AVGECardAttribute.ENERGY_ATTACHED: 0
         }
+        self.default_type : CardType = None
         
         self.has_atk_1 : bool = False
         self.has_atk_2 : bool = False
@@ -75,7 +76,7 @@ class AVGECharacterCard(AVGECard):
 class AVGESupporterCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-    def play_card(self, parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data = {}) -> Response:
+    def play_card(parent_event : AVGEEvent, card_for : AVGECharacterCard = None, args : Data = {}) -> Response:
         raise NotImplementedError()
 
 class AVGEItemCard(AVGECard):

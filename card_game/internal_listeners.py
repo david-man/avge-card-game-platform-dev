@@ -5,11 +5,12 @@ from .avge_abstracts.AVGEEventListeners import *
 from .avge_abstracts.AVGEPlayer import AVGEPlayer
 from .avge_abstracts.AVGECards import *
 from .avge_abstracts.AVGEEnvironment import *
+from .avge_abstracts.AVGECardholder import *
 
 class AVGECardAttributeChangeModifier(AVGEModifier):
     def __init__(self):
         super().__init__((None, AVGEEventListenerType.ENV),
-                          group = EngineGroup.INTERNAL_2,
+                          group = EngineGroup.INTERNAL_3,
                           internal = True,
                           requires_runtime_info=False)
     def update_status(self):
@@ -31,6 +32,11 @@ class AVGECardAttributeChangeModifier(AVGEModifier):
         else:
             if(event.change_amount <= 0):
                 event.change_amount = 0
+        if(event.attribute == AVGECardAttribute.HP):
+            new_amt = event.target_card.attributes[event.attribute] + event.change_amount
+            if(new_amt > event.target_card.attributes[AVGECardAttribute.MAXHP]):
+                event.change_amount = event.target_card.attributes[AVGECardAttribute.MAXHP] - event.target_card.attributes[AVGECardAttribute.HP]
+
         return self.generate_response()
     
 class AVGECardAttributeChangeAssessment(AVGEAssessor):
@@ -61,6 +67,8 @@ class AVGECardAttributeChangeAssessment(AVGEAssessor):
         return self.generate_response()
 
 class AVGECardAttributeChangeReactor(AVGEReactor):
+    _KO_REPLACE_KEY = "internal_ko_replace_pick"
+
     def __init__(self):
         super().__init__(group = EngineGroup.INTERNAL_4,
                          identifier = (None, AVGEEventListenerType.ENV),
@@ -76,7 +84,7 @@ class AVGECardAttributeChangeReactor(AVGEReactor):
     def package(self):
         return ""
     def react(self, args) -> Response:
-        from .internal_events import AVGECardAttributeChange, TransferCard, AVGEPlayerAttributeChange
+        from .internal_events import AVGECardAttributeChange, TransferCard, AVGEPlayerAttributeChange, InputEvent
         event : AVGECardAttributeChange = self.attached_event
         if(event.attribute == AVGECardAttribute.HP and event.target_card.attributes[AVGECardAttribute.HP] <= 0):
             parent_player : AVGEPlayer = event.target_card.player
@@ -85,16 +93,49 @@ class AVGECardAttributeChangeReactor(AVGEReactor):
                 if(len(parent_player.cardholders[Pile.BENCH]) == 0):
                     e : AVGEEnvironment = event.target_card.env
                     e.winner = parent_player.opponent
-                    return self.generate_response()
-                swap_with = args.get('swap_with')
-                if(swap_with is None):
-                    return self.generate_response(ResponseType.REQUIRES_QUERY, {'query_type': 'ko_replace', 'target_player': parent_player})
-                if(isinstance(swap_with, AVGECharacterCard) and swap_with in parent_player.cardholders[Pile.BENCH]):
-                    packet.append(TransferCard(swap_with,
-                                                        parent_player.cardholders[Pile.BENCH],
-                                                        parent_player.cardholders[Pile.ACTIVE],
-                                                        ActionTypes.ENV,
-                                                        None))#propose the swap from the bench, and then propose the discard
+                    return self.generate_response(ResponseType.GAME_END, {"winner": e.winner, "reason": "KO and no cards left on bench"})
+
+                missing = object()
+                swap_with = event.target_card.env.cache.get(
+                        event.target_card,
+                        AVGECardAttributeChangeReactor._KO_REPLACE_KEY,
+                        missing,
+                        one_look=True,
+                    )
+                if(swap_with is missing):
+                    def _ko_replace_valid(result) -> bool:
+                        return (
+                            len(result) == 1
+                            and isinstance(result[0], AVGECharacterCard)
+                            and result[0] in parent_player.cardholders[Pile.BENCH]
+                        )
+
+                    return self.generate_response(
+                        ResponseType.INTERRUPT,
+                        {
+                            INTERRUPT_KEY: [
+                                InputEvent(
+                                    parent_player,
+                                    [AVGECardAttributeChangeReactor._KO_REPLACE_KEY],
+                                    InputType.DETERMINISTIC,
+                                    _ko_replace_valid,
+                                    ActionTypes.ENV,
+                                    event.target_card,
+                                    {
+                                        'query_type': 'ko_replace',
+                                        'target_player': parent_player,
+                                        'bench_ids': [card.unique_id for card in parent_player.cardholders[Pile.BENCH]],
+                                        'pick_count': 1,
+                                    },
+                                )
+                            ]
+                        },
+                    )
+                packet.append(TransferCard(swap_with,
+                                            parent_player.cardholders[Pile.BENCH],
+                                            parent_player.cardholders[Pile.ACTIVE],
+                                            ActionTypes.ENV,
+                                            None))#propose the swap from the bench, and then propose the discard
             packet.append(TransferCard(event.target_card,
                                             event.target_card.cardholder,
                                             parent_player.cardholders[Pile.DISCARD],
@@ -109,28 +150,6 @@ class AVGECardAttributeChangeReactor(AVGEReactor):
             self.propose(packet, 1)
         return self.generate_response()
 
-class AVGECardAttributeChangePostCheck(AVGEPostcheck):
-    def __init__(self):
-        super().__init__(group = EngineGroup.INTERNAL_4,
-                         identifier = (None, AVGEEventListenerType.ENV),
-                         internal = True,
-                         requires_runtime_info=False)
-    def update_status(self):
-        return
-    def event_match(self, event):
-        from .internal_events import AVGECardAttributeChange
-        return isinstance(event, AVGECardAttributeChange)
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
-    def assess(self, args) -> Response:
-        #MAY NOT NEED!
-        from .internal_events import AVGECardAttributeChange
-        event : AVGECardAttributeChange = self.attached_event
-        if(event.attribute == AVGECardAttribute.HP and event.target_card.attributes[AVGECardAttribute.HP] <= 0):
-            return self.generate_response(ResponseType.SKIP, {"msg": "KO!"})
-        return self.generate_response()
     
 class AVGEPlayerAttributeChangeModifier(AVGEModifier):
     def __init__(self):
@@ -181,7 +200,7 @@ class AVGEPlayerAttributeChangePostChecker(AVGEPostcheck):
         if(event.attribute == AVGEPlayerAttribute.KO_COUNT and event.target_player.attributes[AVGEPlayerAttribute.KO_COUNT] >= 3):
             env : AVGEEnvironment = event.target_player.env
             env.winner = event.target_player
-            return self.generate_response(ResponseType.SKIP, {'msg': 'player has won!'})
+            return self.generate_response(ResponseType.GAME_END, {"winner": env.winner, "reason": "player hit 3 KO's"})
         return self.generate_response()
 
 class AVGETransferValidityCheck(AVGEAssessor):
@@ -213,12 +232,14 @@ class AVGETransferValidityCheck(AVGEAssessor):
             if(not isinstance(event.card, AVGECharacterCard) or len(bench) == max_bench_size):
                 return self.generate_response(ResponseType.SKIP, {'msg': 'can\'t add this card to bench!'})
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE and 
-           event.pile_from.pile_type == Pile.BENCH and 
-           event.pile_to.pile_type == Pile.ACTIVE):#attempt to retreat
-            #only need this once b/c a swap is made of 2 coupled transfers
+           event.pile_from.pile_type == Pile.ACTIVE and 
+           event.pile_to.pile_type == Pile.BENCH):#attempt to retreat
+            #only need this once b/c a swap is made of a packet
             player :AVGEPlayer = event.card.player
             if(player.attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
                 return self.generate_response(ResponseType.SKIP, {'msg': 'no more swaps this turn!'})
+            if(event.card.attributes[AVGECardAttribute.SWITCH_COST] > event.card.attributes[AVGECardAttribute.ENERGY_ATTACHED]):
+                return self.generate_response(ResponseType.SKIP, {'msg': 'not enough energy'})
         return self.generate_response()
 
 class AVGEDiscardReactor(AVGEReactor):
@@ -241,10 +262,9 @@ class AVGEDiscardReactor(AVGEReactor):
     def react(self, args) -> Response:
         from .internal_events import TransferCard, AVGECardAttributeChange, ChangeStatus
         event : TransferCard = self.attached_event
-        if(isinstance(event.card, AVGECharacterCard)):#character card getting discarded
+        if(isinstance(event.card, AVGECharacterCard) and event.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH]):#character card getting discarded
             card : AVGECharacterCard= event.card
             card.deactivate_card()
-            card.env.cache.wipe(card)
             packet = []
             #drop the tools
             for tool in event.card.tools_attached:
@@ -282,8 +302,11 @@ class AVGEDiscardReactor(AVGEReactor):
                 None
             ))
             self.propose(packet)
-        elif(isinstance(event.card, AVGEToolCard)):
+        elif(isinstance(event.card, AVGEToolCard) and isinstance(event.pile_from, AVGEToolCardholder)):
             event.card.deactivate_card()
+        elif(isinstance(event.card, AVGEStadiumCard) and isinstance(event.pile_from, AVGEStadiumCardholder)):
+            event.card.deactivate_card()
+        event.card.env.cache.wipe(card)
         return self.generate_response()
 
 class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):

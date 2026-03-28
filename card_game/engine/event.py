@@ -25,7 +25,6 @@ class Event():
         self.group_on = engine_constants.EngineGroup.INTERNAL_1
         self.groups_ordered : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
         self.groups_constrained : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
-
         self.core_args : Data = None
         self.core_ran : bool = False
 
@@ -102,7 +101,7 @@ class Event():
             return True
         return False
     def attach_listener(self, listener : event_listener.AbstractEventListener):
-        #attempts to add a listener if its a match. returns True if success
+        #attempts to add a listener if its a match
         if(listener._should_attach(self)):
             self.event_listener_groups[listener.group].append(listener)
             listener.attach_to_event(self)

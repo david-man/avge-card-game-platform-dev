@@ -35,7 +35,7 @@ class Card():
             listener.invalidate()#invalidate all owned listeners, since this card is no longer in play
         for constrainer in self.owned_constraints:
             constrainer.invalidate()#invalidates all owned constrainers, since this card has left play
-    def generate_response(self, response_type : ResponseType = ResponseType.ACCEPT, data = None, announce = False):
+    def generate_response(self, response_type : ResponseType = ResponseType.CORE, data = None, announce = False):
         #helper function to generate a response 
         return Response(self, response_type, data, announce = (announce or response_type == ResponseType.REQUIRES_QUERY))
     def propose(self, e : Event, priority : int = 0):

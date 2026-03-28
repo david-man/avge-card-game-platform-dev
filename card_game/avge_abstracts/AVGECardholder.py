@@ -6,6 +6,7 @@ from ..constants import Pile
 if TYPE_CHECKING:
     from .AVGEPlayer import AVGEPlayer
     from .AVGEEnvironment import AVGEEnvironment
+    from .AVGECards import AVGECharacterCard
 class AVGECardholder(Cardholder):
     def __init__(self,
                  pile_type : Pile,
@@ -30,10 +31,10 @@ class AVGECardholder(Cardholder):
             super().add_card(card)
             
 class AVGEToolCardholder(AVGECardholder):
-    def __init__(self):
-        from .AVGECards import AVGEToolCard, AVGECharacterCard
+    def __init__(self, parent_card : AVGECharacterCard):
+        from .AVGECards import AVGEToolCard
         super().__init__(Pile.TOOL, [AVGEToolCard])
-        self.parent_card : AVGECharacterCard = None
+        self.parent_card : AVGECharacterCard = parent_card
 
 class AVGEStadiumCardholder(AVGECardholder):
     def __init__(self):

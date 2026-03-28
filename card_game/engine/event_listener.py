@@ -59,9 +59,9 @@ class AbstractEventListener(Generic[T]):
         raise NotImplementedError()
     def package(self):
         raise NotImplementedError()
-    def on_event_completion(self):
+    def on_packet_completion(self):
         """
-        a function that gets called at the end if the attached event is completed successfully
+        a function that gets called at the end if the attached event's overall pacekt is completed successfully
         particularly useful for 'one-use' event listeners
         """
         return
@@ -70,7 +70,7 @@ class AbstractEventListener(Generic[T]):
                           data : Data = {}) -> Response:
         #Helper function to generate a response packet easier
         return Response(self, response_type,data, 
-                        self.make_announcement() or response_type==ResponseType.REQUIRES_QUERY)
+                        self.make_announcement() or response_type!=ResponseType.ACCEPT)
 class ModifierEventListener(AbstractEventListener[T], Generic[T]):
     def modify(self, args : Data = {}) -> Response:
         raise NotImplementedError()

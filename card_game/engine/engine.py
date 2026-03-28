@@ -17,6 +17,7 @@ class Engine():
 
         self.event_running : event.Event = None
         self.packet_running : event.AssemblyPacket = []
+        self.listeners_run_during_packet : set[event_listener.AbstractEventListener] = set([])
         self.event_stack : list[event.Event] = []
         self._queue : EngineQueue[event.AssemblyPacket] = EngineQueue()
     def add_constraint(self, constraint : 'constrainer.Constraint'):
@@ -84,11 +85,7 @@ class Engine():
                 self.event_running.attach_to_engine(self)
                 #attach all external listeners to the incoming packet
                 for listener in self._external_listeners:
-                    #check if listener should attach at all
-                    if(not listener._should_attach(self.event_running)):
-                        continue
-                    else:
-                        self.event_running.attach_listener(listener)
+                    self.event_running.attach_listener(listener)
                         
             return Response(self, response_type=ResponseType.NEXT_EVENT)
         elif(self.event_running is None and len(self.packet_running) == 0 and self._queue.queue_len() > 0):
@@ -104,6 +101,8 @@ class Engine():
                 self._external_listeners_backup.append(l)
             #resets event stack
             self.event_stack = []
+            #reset listeners run
+            self.listeners_run_during_packet = set([])
             return Response(self, response_type=ResponseType.NEXT_PACKET)
         else:
             if(self.event_running.group_on == EngineGroup.CORE):
@@ -112,7 +111,9 @@ class Engine():
             if(not self.event_running._ready):
                 raise Exception("Tried to run event that wasn't ready!")
             response = self.event_running.forward(self._constraints, args)
-            if(response.response_type == ResponseType.INTERRUPT):
+            if(response.response_type == ResponseType.GAME_END):
+                return response
+            elif(response.response_type == ResponseType.INTERRUPT):
                 #probe constraints
                 self._probe_constraints()
                 #probe listeners
@@ -137,11 +138,10 @@ class Engine():
                 #if an event finished properly
                 #note: this does NOT necessarily mean the packet is complete. only on packet completion are changes truly committed
                 
-                #notify all event listeners on the event that their event is over if FINISHED
-                if(response.response_type == ResponseType.FINISHED):
-                    for listeners in self.event_running.event_listener_groups.values():
-                        for listener in listeners:
-                            listener.on_event_completion()
+                #add all listeners run during the event in the WIDEST FORM POSSIBLE
+                for listeners in self.event_running.event_listener_groups.values():
+                    for listener in listeners:
+                        self.listeners_run_during_packet.add(listener)
                 
                 if(len(self.packet_running) == 0):
                     #if the entire packet is done
@@ -160,6 +160,9 @@ class Engine():
                     response.response_type = ResponseType.FINISHED_PACKET
                     #set event running to None
                     self.event_running = None
+                    #notify all event listeners that their packet finished successfully
+                    for listener in self.listeners_run_during_packet:
+                        listener.on_packet_completion()
                 else:
                     #if just one event in many are done/ff'd
 

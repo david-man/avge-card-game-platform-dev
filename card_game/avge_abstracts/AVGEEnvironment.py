@@ -130,11 +130,9 @@ class AVGEEnvironment(Environment):
 
     def forward(self, args : Data = {}) -> Response:
         resp = super().forward(args)
-        if(self.winner is not None):
-            #cut immediately. if an event flags winner, it will always be sure.
-            #continuing past this point might break things
-            return Response(None,
-                            ResponseType.NO_MORE_EVENTS)
+        if(resp.response_type == ResponseType.GAME_END):
+            #cut immediately on GAME_END
+            return resp
         if(resp.response_type == ResponseType.FINISHED_PACKET):
             #commits to the environment's data cache once a packet is complete
             self.cache.release()

@@ -10,6 +10,7 @@ class AVGEEventListenerType(StrEnum):
     ACTIVE = 'ACTIVE'#an action type for abilities that are phrased like "once per turn, you may..."
     ATK_2 = "ATK_2"
     PASSIVE = "PASSIVE"#an action type exclusively used for stuff like follow-up atks
+    NONCHAR = 'NONCHAR'#any non-character card's event listener
 
 type AVGEListenerID = Tuple[Card, AVGEEventListenerType]
 

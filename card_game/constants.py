@@ -26,6 +26,7 @@ class ResponseType(StrEnum):
     FAST_FORWARD = "FF"#fast forward the event to its closing. if used right after an INTERRUPT, you can "override" an event completely.
     FINISHED = "FINISHED"#event has finished naturally
     FINISHED_PACKET = "FINISHED_PACKET"#packet has finished naturally
+    GAME_END = "GAME_END"#game has ended because of a reason that isn't "no more events"
     CORE = "CORE"#core was run successfully
 
     NO_MORE_EVENTS = "NO_MORE_EVENTS"
@@ -110,6 +111,7 @@ class CardType(StrEnum):
 class StatusEffect(StrEnum):
     ARRANGER = 'ARR'
     MAID = 'MAID'
+    GOON = 'GOON'
 
 class InputType(StrEnum):
     D6 = "D6"#response should be 1-6

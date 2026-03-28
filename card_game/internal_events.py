@@ -137,10 +137,10 @@ class TransferCard(AVGEEvent):
         return True
     
     def core(self, args :Data = {}) -> Response:
-        if(isinstance(self.card, AVGEToolCard) and isinstance(self.pile_from, AVGEToolCardholder)):
+        if(isinstance(self.card, AVGEToolCard)):
             if(self.card.card_attached is not None):
                 self._previous_card = self.card.card_attached
-            self.card.card_attached = self.pile_from.parent_card
+            self.card.card_attached = self.pile_to.parent_card if isinstance(self.pile_to, AVGEToolCardholder) else None
         self.card.env.transfer_card(self.card, self.pile_from, self.pile_to, self.new_idx)
         return self.generate_core_response()
     
@@ -238,7 +238,8 @@ class PlayNonCharacterCard(AVGEEvent):
             'caller_card': self.caller_card,
         }
     def core(self, args : Data = {}) -> Response:
-        return self.card.play_card(self, self.caller_card, args)
+        return self.card.play_card(self, self.caller_card if self.caller_card is not None else self.card, 
+                                       args)
     def invert_core(self, args : Data = {}):
         return
     def make_announcement(self):
@@ -271,7 +272,9 @@ class PhasePickCard(AVGEEvent):
                                       hand,
                                       ActionTypes.ENV,
                                       None))
-        return self.generate_core_response()
+            return self.generate_core_response()
+        else:
+            return self.generate_core_response(ResponseType.GAME_END, {"winner": self.player.opponent, "reason": "no cards left to draw"})
     def invert_core(self, args : Data = {}):
         raise Exception("A phase should never be canceled")
     def make_announcement(self):
@@ -313,15 +316,22 @@ class Phase2(AVGEEvent):
             if(isinstance(tool, AVGEToolCard)
                and tool in self.player.cardholders[Pile.HAND]
                and isinstance(attach_to, AVGECharacterCard)):
-                event_1 = TransferCard(tool,
+                packet = []
+                packet.append(TransferCard(tool,
                                        self.player.cardholders[Pile.HAND],
                                        attach_to.tools_attached,
                                        ActionTypes.PLAYER_CHOICE,
-                                       None)
-                event_2 = PlayNonCharacterCard(tool,
+                                       None))
+                if(len(attach_to.tools_attached) > 0):
+                    packet.append(TransferCard(attach_to.tools_attached.peek(),
+                                               attach_to.tools_attached,
+                                               self.player.cardholders[Pile.DISCARD],
                                                ActionTypes.PLAYER_CHOICE,
-                                               None)
-                self.propose([event_1, event_2])
+                                               None))
+                packet.append(PlayNonCharacterCard(tool,
+                                               ActionTypes.PLAYER_CHOICE,
+                                               None))
+                self.propose(packet)
                 return self.generate_core_response()
 
         elif(next_action == 'supporter'):
@@ -368,6 +378,11 @@ class Phase2(AVGEEvent):
             if(isinstance(stadium_card, AVGEStadiumCard)
                and stadium_card in self.player.cardholders[Pile.HAND]):
                 packet = []
+                packet.append(TransferCard(stadium_card,
+                                           self.player.cardholders[Pile.HAND],
+                                           env.stadium_cardholder,
+                                           ActionTypes.PLAYER_CHOICE,
+                                           None))
                 if(len(env.stadium_cardholder) > 0):
                     old_stadium : AVGEStadiumCard = env.stadium_cardholder.peek()
                     packet.append(TransferCard(old_stadium,
@@ -375,11 +390,6 @@ class Phase2(AVGEEvent):
                                                old_stadium.original_owner.cardholders[Pile.DISCARD],
                                                ActionTypes.PLAYER_CHOICE,
                                                None))
-                packet.append(TransferCard(stadium_card,
-                                           self.player.cardholders[Pile.HAND],
-                                           env.stadium_cardholder,
-                                           ActionTypes.PLAYER_CHOICE,
-                                           None))
                 packet.append(PlayNonCharacterCard(stadium_card,
                                                    ActionTypes.PLAYER_CHOICE,
                                                    None))
@@ -408,7 +418,15 @@ class Phase2(AVGEEvent):
                     ActionTypes.PLAYER_CHOICE,
                     None
                 )
-                self.propose([event_1, event_2, event_3])
+                event_4 = AVGECardAttributeChange(
+                    active_card,
+                    AVGECardAttribute.ENERGY_ATTACHED,
+                    -active_card.attributes[AVGECardAttribute.SWITCH_COST],
+                    AVGEAttributeModifier.ADDITIVE,
+                    ActionTypes.PLAYER_CHOICE,
+                    None
+                )
+                self.propose([event_1, event_2, event_3, event_4])
                 return self.generate_core_response()
 
         elif(next_action == 'energy'):
@@ -590,7 +608,7 @@ class ChangeStatus(AVGEEvent):
         if(self.change_type == ChangeType.ADD):
             self.card.statuses_attached[self.status] = self.card.statuses_attached.get(self.status,0)+1
         elif(self.change_type == ChangeType.REMOVE):
-            if(self.status in self.card.statuses_attached and self.card.statuses_attached[self.status] > 0):
+            if(self.card.statuses_attached.get(self.status, 0) > 0):
                 self.card.statuses_attached[self.status] = self.card.statuses_attached[self.status] - 1
                 if(self.card.statuses_attached[self.status] == 0):
                     del self.card.statuses_attached[self.status]
