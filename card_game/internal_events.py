@@ -733,15 +733,21 @@ class EmptyEvent(AVGEEvent):
     def __init__(self,
                  announcement : str,
                  catalyst_action: ActionTypes,
-                 caller_card : Card | None):
+                 caller_card : Card | None,
+                 response_type : ResponseType = ResponseType.CORE):#effectively will either be CORE or SKIP, depending on the behavior you want
         super().__init__(announcement=announcement,
         catalyst_action=catalyst_action,
-        caller_card=caller_card)
+        caller_card=caller_card,
+        response_type=response_type)
         self.announcement=announcement
+        self.response_type = response_type
     def core(self, args = {}):
-        return 
+        return Response(self.caller_card,
+                        self.response_type,
+                        {},
+                        True)
     def invert_core(self, args ={}):
-        raise Exception("An empty event should never be pushed back!")
+        return
     def make_announcement(self):
         return True
     def package(self):
