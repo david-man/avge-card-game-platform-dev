@@ -29,12 +29,15 @@ class AVGECardholder(Cardholder):
             raise Exception("Not the right type of card!")
         else:
             super().add_card(card)
+    def __iter__(self):
+        return super().__iter__()
             
 class AVGEToolCardholder(AVGECardholder):
     def __init__(self, parent_card : AVGECharacterCard):
         from .AVGECards import AVGEToolCard
         super().__init__(Pile.TOOL, [AVGEToolCard])
         self.parent_card : AVGECharacterCard = parent_card
+
 
 class AVGEStadiumCardholder(AVGECardholder):
     def __init__(self):

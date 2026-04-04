@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.constants import *
+from card_game.engine.engine_constants import EngineGroup
+
+
+class _YanwanStartReactor(AVGEReactor):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        self.owner_card = owner_card
+
+    def event_match(self, event):
+        from card_game.internal_events import PhasePickCard
+
+        if not isinstance(event, PhasePickCard):
+            return False
+        if self.owner_card.cardholder.pile_type != Pile.ACTIVE:
+            return False
+        if len(self.owner_card.player.cardholders[Pile.DECK]) <= 1:
+            return False
+        if len(self.owner_card.energy) != 2:
+            return False
+
+        return event.player == self.owner_card.player
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return True
+
+    def package(self):
+        return "YanwanZhu Start Reactor"
+
+    def react(self, args=None):
+        from card_game.internal_events import InputEvent, TransferCard
+
+        owner = self.owner_card
+        env = owner.env
+        deck = owner.player.cardholders[Pile.DECK]
+        hand = owner.player.cardholders[Pile.HAND]
+
+        yn = env.cache.get(owner, YanwanZhu._DRAW_CHOICE_KEY, None, True)
+        if yn is None:
+            return owner.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            owner.player,
+                            [YanwanZhu._DRAW_CHOICE_KEY],
+                            InputType.BINARY,
+                            lambda r: True,
+                            ActionTypes.PASSIVE,
+                            owner,
+                            {"query_label": "yanwan_optional_draw"},
+                        )
+                    ]
+                },
+            )
+
+        if yn:
+            self.propose(TransferCard(lambda: deck.peek(), deck, hand, ActionTypes.PASSIVE, owner))
+        return self.generate_response()
+
+
+class YanwanZhu(AVGECharacterCard):
+    _DRAW_CHOICE_KEY = "yanwan_draw_choice"
+
+    def __init__(self, unique_id):
+        super().__init__(unique_id, 100, CardType.CHOIR, 1, 1)
+        self.has_atk_1 = True
+        self.atk_1_cost = 1
+        self.has_atk_2 = False
+        self.has_passive = True
+        self.has_active = False
+
+    @staticmethod
+    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        card.add_listener(_YanwanStartReactor(card))
+        return card.generate_response()
+
+    @staticmethod
+    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        from card_game.internal_events import AVGECardHPChange
+
+        card.propose(
+            lambda: [
+                AVGECardHPChange(
+                    c,
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.CHOIR,
+                    ActionTypes.ATK_1,
+                    card,
+                ) for c in card.player.opponent.cardholders[Pile.BENCH]
+            ] + [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    50,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.CHOIR,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ]
+        )
+
+        return card.generate_response()

@@ -1,11 +1,11 @@
 from __future__ import annotations
 from . import event
-from . import engine
-from . import engine_constants
 from card_game.constants import *
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 
 if TYPE_CHECKING:
+    from . import engine
+    from . import engine_constants
     from .constrainer import Constraint
 
 T = TypeVar('T')
@@ -42,6 +42,8 @@ class AbstractEventListener(Generic[T]):
         raise NotImplementedError()
     def attach_to_event(self, e : event.Event):
         self.attached_event = e
+    def detach_from_event(self):
+        self.attached_event = None
     def update_status(self):
         """
         Makes the listener evaluate whether it should still be valid. If it shouldn't be, it should call invalidate by itself
@@ -71,18 +73,30 @@ class AbstractEventListener(Generic[T]):
         #Helper function to generate a response packet easier
         return Response(self, response_type,data, 
                         self.make_announcement() or response_type!=ResponseType.ACCEPT)
+    
+    def generate_interrupt(self, events : list[Event]) -> Response:
+        #Helper function to generate an INTERRUPT response easier
+        return Response(self, ResponseType.INTERRUPT, {INTERRUPT_KEY: events}, True)
 class ModifierEventListener(AbstractEventListener[T], Generic[T]):
-    def modify(self, args : Data = {}) -> Response:
+    def modify(self, args : Data = None) -> Response:
+        if(args is None):
+            args = {}
         raise NotImplementedError()
 class ReactorEventListener(AbstractEventListener[T], Generic[T]):
-    def react(self, args : Data = {}) -> Response:
+    def react(self, args : Data = None) -> Response:
+        if(args is None):
+            args = {}
         raise NotImplementedError()
-    def propose(self, e : event.Event | event.AssemblyPacket | list[event.Event | event.AssemblyPacket], priority : int = 0):
+    def propose(self, e : event.Event | list[event.Event] | Callable[[], event.Event | list[event.Event]], priority : int = 0):
         self.engine._propose(e, priority)
 class AssessorEventListener(AbstractEventListener[T], Generic[T]):
-    def assess(self, args : Data = {}) -> Response:
+    def assess(self, args : Data = None) -> Response:
+        if(args is None):
+            args = {}
         raise NotImplementedError()
 
 class PostCheckEventListener(AbstractEventListener[T], Generic[T]):
-    def assess(self, args : Data = {}) -> Response:
+    def assess(self, args : Data = None) -> Response:
+        if(args is None):
+            args = {}
         raise NotImplementedError()

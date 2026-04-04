@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.constants import *
+from card_game.engine.engine_constants import EngineGroup
+from card_game.catalog.items import ConcertProgram, ConcertTicket
+
+class RachelChen(AVGECharacterCard):
+    _ACTIVE_USE_KEY = "rachel_chen_active_used"
+    _CARD_PICK_KEY = "rachel_chen_card_pick"
+    _TARGET_BASE_KEY = "rachel_chen_satb_key"
+
+    def __init__(self, unique_id):
+        super().__init__(unique_id, 110, CardType.CHOIR, 1, 1, 3)
+        self.has_atk_1 = True
+        self.atk_1_cost = 1
+        self.has_atk_2 = False
+        self.has_passive = False
+        self.has_active = True
+
+    @staticmethod
+    def can_play_active(card : AVGECharacterCard) -> bool:
+        env = card.env
+        # once per turn check
+        last = env.cache.get(card, RachelChen._ACTIVE_USE_KEY, None)
+        if last is not None and last == env.round_id:
+            return False
+
+        # check discard for ConcertProgram or ConcertTicket
+        discard = card.player.cardholders[Pile.DISCARD]
+        for c in discard:
+            if isinstance(c, (ConcertTicket, ConcertProgram)):
+                return True
+        return False
+
+    @staticmethod
+    def active(card : AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        from card_game.internal_events import InputEvent, TransferCard
+        discard = card.player.cardholders[Pile.DISCARD]
+        hand = card.player.cardholders[Pile.HAND]
+
+        # collect candidate items in discard
+        candidates = [c for c in list(discard) if isinstance(c, (ConcertProgram, ConcertTicket))]
+        missing = object()
+        chosen = card.env.cache.get(card, RachelChen._CARD_PICK_KEY, missing, True)
+        if chosen is missing:
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            card.player,
+                            [RachelChen._CARD_PICK_KEY],
+                            InputType.SELECTION,
+                            lambda r : True,
+                            ActionTypes.ACTIVATE_ABILITY,
+                            card,
+                            {"query_label": "rachel_retrieve_item", 
+                             "targets": candidates},
+                        )
+                    ]
+                },
+            )
+
+        card.propose([TransferCard(chosen, discard, hand, ActionTypes.ACTIVATE_ABILITY, card)])
+        # mark used this round
+        card.env.cache.set(card, RachelChen._ACTIVE_USE_KEY, card.env.round_id)
+
+        return card.generate_response()
+
+    @staticmethod
+    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        from card_game.internal_events import InputEvent, AVGECardHPChange
+
+        player = card.player
+        opponent = player.opponent
+
+        # collect player's choir characters in play
+        choir_count = 0
+        for c in player.get_cards_in_play():
+            if c.card_type == CardType.CHOIR:
+                choir_count += 1
+
+        if choir_count <= 0:
+            return card.generate_response()
+
+        # build list of opponent character targets (can be chosen multiple times)
+
+        # if only one opponent target, apply damage choir_count times to that target
+        packet = []
+        
+        # multiple opponent choices: ask player to pick `choir_count` targets (allow repeats)
+        keys = [RachelChen._TARGET_BASE_KEY + str(i) for i in range(choir_count)]
+        chars = [card.env.cache.get(card, key, None, True) for key in keys]
+        if(chars[0] is None):
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            card.player,
+                            keys,
+                            InputType.SELECTION,
+                            lambda r : True,
+                            ActionTypes.ATK_1,
+                            card,
+                            {"query_label": "rachel_atk1_targets",
+                            "targets": opponent.get_cards_in_play(),
+                            "allow_repeats": True},
+                        )
+                    ]
+                },
+            )
+        else:
+            for char in chars:
+                packet.append(
+                    AVGECardHPChange(
+                        char,
+                        20,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.CHOIR,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                )
+        card.propose(packet)
+        return card.generate_response()

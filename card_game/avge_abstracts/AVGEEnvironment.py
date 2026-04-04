@@ -1,10 +1,18 @@
+from __future__ import annotations
+
 from ..abstract.environment import Environment
-from .AVGECardholder import AVGEStadiumCardholder, AVGECardholder
-from .AVGEPlayer import AVGEPlayer
-from ..abstract.card import Card
+from .AVGECardholder import AVGEStadiumCardholder
+from typing import TYPE_CHECKING, Type
 from ..constants import *
 from enum import StrEnum
 from .envcache import EnvironmentCache
+from .AVGEPlayer import AVGEPlayer
+from .AVGECards import *
+if TYPE_CHECKING:
+    from ..abstract.card import Card
+    from .AVGECardholder import AVGECardholder
+    
+
 class GamePhase(StrEnum):
     INIT = 'init'
     TURN_BEGIN = 'begin'
@@ -12,16 +20,19 @@ class GamePhase(StrEnum):
     PHASE_2 = 'phase_2'
     ATK_PHASE = 'phase_atk'
     TURN_END = 'end'
-
 class AVGEEnvironment(Environment):
-    def __init__(self, p1_deck : list[CardType[Card]], p2_deck : list[CardType[Card]]):
+    def __init__(self, p1_deck : list[Type[Card]], p2_deck : list[Type[Card]]):
+        from card_game.catalog.status_effects.Goon import GoonStandAttackModifierConstraint, GoonStatusChangeReactor, GoonStatusTransferModifier
+        from card_game.catalog.status_effects.Arranger import ArrangerStatusReactor
         super().__init__()
         self.stadium_cardholder : AVGEStadiumCardholder = AVGEStadiumCardholder()
         self.stadium_cardholder.env = self
         self.cards : dict[str, Card] = {}
+        self.players : dict[str, AVGEPlayer] = {}
         #adds players
         p1 = AVGEPlayer(PlayerID.P1)
         p2 = AVGEPlayer(PlayerID.P2)
+        print("HERE")
         p1.opponent = p2
         p2.opponent = p1
         self.add_player(p1)
@@ -41,10 +52,17 @@ class AVGEEnvironment(Environment):
         self.winner : AVGEPlayer = None
 
         self.game_phase : GamePhase = GamePhase.INIT 
-        self.round = (1, False)#tuple that holds the round number and whether the round should be incremented at the next turn_end
-        #will increment every 2 turn-end's
+        self.round_id = 0
 
         self.cache = EnvironmentCache(list(self.cards.keys()))
+        self.energy : list[EnergyToken] = []#where energy goes to die
+
+        #status-based listeners
+        print("HERE")
+        self.add_constrainer(GoonStandAttackModifierConstraint())
+        self.add_listener(GoonStatusTransferModifier())
+        self.add_listener(GoonStatusChangeReactor())
+        self.add_listener(ArrangerStatusReactor())
 
     def _format_card(self, c : Card | None) -> str:
         if(c is None):
@@ -65,6 +83,21 @@ class AVGEEnvironment(Environment):
     def _format_card_attributes(self, c : Card) -> list[str]:
         if(c is None):
             return ["None"]
+        if(isinstance(c, AVGECharacterCard)):
+            details = [
+                f"hp: {c.hp}",
+                f"max_hp: {c.max_hp}",
+                f"card_type: {c.card_type}",
+                f"energy: {len(c.energy)}",
+                f"tools: {len(c.tools_attached)}",
+            ]
+            statuses = []
+            for status_effect, attached_cards in c.statuses_attached.items():
+                if(len(attached_cards) > 0):
+                    statuses.append(f"{status_effect}({len(attached_cards)})")
+            details.append(f"statuses: {', '.join(statuses) if len(statuses) > 0 else 'none'}")
+            return details
+
         if(not hasattr(c, "attributes") or getattr(c, "attributes") is None):
             return ["(no attributes)"]
 
@@ -92,31 +125,31 @@ class AVGEEnvironment(Environment):
 
         for player_id, player in self.players.items():
             lines.append(f"PLAYER {player_id}")
-            a = ""
+            player_attr_line = ""
             for attr, value in player.attributes.items():
-                a += (f"| {attr}: {value} |")
-            lines.append(a)
-            lines.append("")
+                player_attr_line += f"| {attr}: {value} |"
+            lines.append(player_attr_line if player_attr_line != "" else "(no player attributes)")
+            lines.append(f"TOKENS: {len(player.energy)}")
+
             active_card = player.get_active_card() if len(player.cardholders[Pile.ACTIVE]) > 0 else None
             lines.append(f"ACTIVE CARD: {self._format_card(active_card)}")
-            a = "attributes: "
+            a = "details: "
             for attr_line in self._format_card_attributes(active_card):
                 a += f"| {attr_line} |"
             lines.append(a)
 
             bench_cards = list(player.cardholders[Pile.BENCH].cards_by_id.values())
-            lines.append("\nBENCH CARDS:")
+            lines.append("BENCH CARDS:")
             if(len(bench_cards) == 0):
                 lines.append("(empty)")
             else:
                 for idx, bench_card in enumerate(bench_cards, start=1):
-                    a = f"- [{idx}] {self._format_card(bench_card)}: "
-                    for attr_line in self._format_card_attributes(active_card):
+                    a = f"- [{idx}] {self._format_card(bench_card)} details: "
+                    for attr_line in self._format_card_attributes(bench_card):
                         a += f"| {attr_line} |"
                     lines.append(a)
 
-            
-            lines.append("\nPILES:")
+            lines.append("PILES:")
             lines.append(f"- {self._format_pile(player, Pile.DECK)}")
             lines.append(f"- {self._format_pile(player, Pile.HAND)}")
             lines.append(f"- {self._format_pile(player, Pile.DISCARD)}")

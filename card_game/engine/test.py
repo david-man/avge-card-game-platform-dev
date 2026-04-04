@@ -6,8 +6,8 @@ from card_game.constants import ResponseType, INTERRUPT_KEY
 from card_game.engine.constrainer import Constraint
 from card_game.engine.engine import Engine
 from card_game.engine.engine_constants import EngineGroup, QueueStatus
-from card_game.engine.event import Event, EventAssembler
-from card_game.engine.event_listener import AssessorEventListener, ModifierEventListener
+from card_game.engine.event import Event
+from card_game.engine.event_listener import AssessorEventListener, ModifierEventListener, ReactorEventListener
 
 
 class MutableState:
@@ -37,7 +37,7 @@ class BaseEvent(Event):
 
 class CountingExternalListener(AssessorEventListener[str]):
     def __init__(self, identifier: str, should_effect: bool = True, ttl_events: int | None = None):
-        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_1, internal=False)
+        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.call_count = 0
         self.should_effect = should_effect
         self.ttl_events = ttl_events
@@ -145,7 +145,7 @@ class QueryListener(AssessorEventListener[str]):
 
 class CountingModifierListener(ModifierEventListener[str]):
     def __init__(self, identifier: str, should_effect: bool = True):
-        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_1, internal=False)
+        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.call_count = 0
         self.should_effect = should_effect
 
@@ -312,14 +312,13 @@ class ProposeDeferredAssemblerEvent(BaseEvent):
 
     def core(self, args={}):
         self.propose(
-            EventAssembler(
-                DeltaEvent,
-                {
-                    "state": self.state,
-                    "delta": lambda: self.deferred_delta_source["delta"],
-                    "propose_extra": False,
-                },
-            )
+            lambda: [
+                DeltaEvent(
+                    state=self.state,
+                    delta=self.deferred_delta_source["delta"],
+                    propose_extra=False,
+                )
+            ]
         )
         return self.generate_core_response()
 
@@ -357,6 +356,67 @@ class DeferredKwargsDeltaEvent(BaseEvent):
 
     def invert_core(self, args={}) -> None:
         self.state.value -= self.delta
+
+
+class AssemblyTimingDeltaEvent(BaseEvent):
+    def __init__(
+        self,
+        state: MutableState,
+        metrics: dict[str, int] | None = None,
+        delta_source: dict[str, int] | None = None,
+        delta: int | None = None,
+    ):
+        self.state = state
+        self.metrics = metrics
+        self.delta_source = delta_source
+        self.delta = delta
+
+        if delta is not None:
+            super().__init__(state=state, delta=delta)
+        elif metrics is not None and delta_source is not None:
+            super().__init__(state=state, delta=lambda: self.resolve_delta())
+        else:
+            raise ValueError("AssemblyTimingDeltaEvent requires either delta or (metrics and delta_source)")
+
+    def resolve_delta(self) -> int:
+        if self.metrics is None or self.delta_source is None:
+            raise ValueError("Cannot resolve delta without metrics and delta_source")
+        self.metrics["event_kwarg_resolves"] += 1
+        return self.delta_source["delta"]
+
+    def get_kwargs(self):
+        return {
+            "state": self.state,
+            "metrics": self.metrics,
+            "delta_source": self.delta_source,
+        }
+
+    def core(self, args={}):
+        self.state.value += self.delta
+        return self.generate_core_response()
+
+    def invert_core(self, args={}) -> None:
+        self.state.value -= self.delta
+
+
+class MutateDeltaSourceEvent(BaseEvent):
+    def __init__(self, delta_source: dict[str, int], new_delta: int, metrics: dict[str, int]):
+        self.delta_source = delta_source
+        self.new_delta = new_delta
+        self.metrics = metrics
+        super().__init__(delta_source=delta_source, new_delta=new_delta, metrics=metrics)
+
+    def get_kwargs(self):
+        return {
+            "delta_source": self.delta_source,
+            "new_delta": self.new_delta,
+            "metrics": self.metrics,
+        }
+
+    def core(self, args={}):
+        self.metrics["mutations"] += 1
+        self.delta_source["delta"] = self.new_delta
+        return self.generate_core_response()
 
 
 class RollbackCache:
@@ -431,7 +491,7 @@ class UpdatePacketReplayEvent(BaseEvent):
 
 class CacheTouchModifier(ModifierEventListener[str]):
     def __init__(self, cache: RollbackCache, touch_key: str, metrics: dict[str, int]):
-        super().__init__(identifier="touch-mod", group=EngineGroup.EXTERNAL_MODIFIERS_1, internal=False)
+        super().__init__(identifier="touch-mod", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.cache = cache
         self.touch_key = touch_key
         self.metrics = metrics
@@ -494,7 +554,7 @@ class RequestInputModifier(ModifierEventListener[str]):
 
 class DownstreamBlockAssessor(AssessorEventListener[str]):
     def __init__(self, cache: RollbackCache, input_key: str, metrics: dict[str, int]):
-        super().__init__(identifier="downstream-block", group=EngineGroup.EXTERNAL_PRECHECK_4, internal=False)
+        super().__init__(identifier="downstream-block", group=EngineGroup.EXTERNAL_PRECHECK_2, internal=False)
         self.cache = cache
         self.input_key = input_key
         self.metrics = metrics
@@ -540,7 +600,7 @@ class InterruptChainReplayEvent(BaseEvent):
 
 class SequencedInterruptModifier(ModifierEventListener[str]):
     def __init__(self, identifier: str, cache: RollbackCache, input_key: str):
-        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_1, internal=False)
+        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.cache = cache
         self.input_key = input_key
         self.interrupt_count = 0
@@ -635,7 +695,7 @@ class InterruptThenFastForwardAssessor(AssessorEventListener[str]):
 
 class DownstreamOverrideModifier(ModifierEventListener[str]):
     def __init__(self, metrics: dict[str, int]):
-        super().__init__(identifier="downstream-override-mod", group=EngineGroup.EXTERNAL_MODIFIERS_1, internal=False)
+        super().__init__(identifier="downstream-override-mod", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -689,6 +749,381 @@ class InterruptThenAcceptAssessor(AssessorEventListener[str]):
 
     def package(self):
         return "interrupt-then-accept-assessor"
+
+
+class OrderedInterruptPayloadEvent(BaseEvent):
+    def __init__(self, order: list[str]):
+        self.order = order
+        super().__init__(order=order)
+
+    def get_kwargs(self):
+        return {"order": self.order}
+
+    def core(self, args={}):
+        self.order.append("payload_core")
+        return self.generate_core_response()
+
+
+class OrderedInterruptCandidateEvent(BaseEvent):
+    def __init__(self, order: list[str]):
+        self.order = order
+        super().__init__(order=order)
+
+    def get_kwargs(self):
+        return {"order": self.order}
+
+    def core(self, args={}):
+        self.order.append("candidate_core")
+        return self.generate_core_response()
+
+
+class OrderedInterruptAssessor(AssessorEventListener[str]):
+    def __init__(self, order: list[str]):
+        super().__init__(identifier="ordered-interrupt", group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        self.order = order
+        self.did_interrupt = False
+
+    def event_match(self, event: Event) -> bool:
+        return isinstance(event, OrderedInterruptCandidateEvent)
+
+    def event_effect(self) -> bool:
+        return True
+
+    def assess(self, args={}):
+        if not self.did_interrupt:
+            self.did_interrupt = True
+            self.order.append("interrupt")
+            return self.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)],
+                },
+            )
+        self.order.append("resume")
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "ordered-interrupt-assessor"
+
+
+class OrderedCoreInterruptEvent(BaseEvent):
+    def __init__(self, order: list[str]):
+        self.order = order
+        self.did_interrupt = False
+        super().__init__(order=order)
+
+    def get_kwargs(self):
+        return {"order": self.order}
+
+    def core(self, args={}):
+        if not self.did_interrupt:
+            self.did_interrupt = True
+            self.order.append("core_interrupt")
+            return self.generate_core_response(
+                ResponseType.INTERRUPT,
+                {INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)]},
+            )
+        self.order.append("core_resume")
+        return self.generate_core_response()
+
+
+class OrderedModifierInterruptCandidateEvent(BaseEvent):
+    def __init__(self, order: list[str]):
+        self.order = order
+        super().__init__(order=order)
+
+    def get_kwargs(self):
+        return {"order": self.order}
+
+    def core(self, args={}):
+        self.order.append("candidate_core")
+        return self.generate_core_response()
+
+
+class OrderedInterruptModifier(ModifierEventListener[str]):
+    def __init__(self, order: list[str]):
+        super().__init__(identifier="ordered-interrupt-modifier", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.order = order
+        self.did_interrupt = False
+
+    def event_match(self, event: Event) -> bool:
+        return isinstance(event, OrderedModifierInterruptCandidateEvent)
+
+    def event_effect(self) -> bool:
+        return True
+
+    def modify(self, args={}):
+        if not self.did_interrupt:
+            self.did_interrupt = True
+            self.order.append("modifier_interrupt")
+            return self.generate_response(
+                ResponseType.INTERRUPT,
+                {INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)]},
+            )
+        self.order.append("modifier_resume")
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "ordered-interrupt-modifier"
+
+
+class OrderedReactorInterruptCandidateEvent(BaseEvent):
+    def __init__(self, order: list[str]):
+        self.order = order
+        super().__init__(order=order)
+
+    def get_kwargs(self):
+        return {"order": self.order}
+
+    def core(self, args={}):
+        self.order.append("candidate_core")
+        return self.generate_core_response()
+
+
+class OrderedInterruptReactor(ReactorEventListener[str]):
+    def __init__(self, order: list[str]):
+        super().__init__(identifier="ordered-interrupt-reactor", group=EngineGroup.EXTERNAL_REACTORS, internal=False)
+        self.order = order
+        self.did_interrupt = False
+
+    def event_match(self, event: Event) -> bool:
+        return isinstance(event, OrderedReactorInterruptCandidateEvent)
+
+    def event_effect(self) -> bool:
+        return True
+
+    def react(self, args={}):
+        if not self.did_interrupt:
+            self.did_interrupt = True
+            self.order.append("reactor_interrupt")
+            return self.generate_response(
+                ResponseType.INTERRUPT,
+                {INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)]},
+            )
+        self.order.append("reactor_resume")
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "ordered-interrupt-reactor"
+
+
+class AttachTracingModifier(ModifierEventListener[str]):
+    def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
+        super().__init__(identifier=identifier, group=group, internal=False)
+        self.trace = trace
+        self.attach_count = 0
+        self.detach_count = 0
+        self.modify_count = 0
+
+    def event_match(self, event: Event) -> bool:
+        return True
+
+    def event_effect(self) -> bool:
+        return True
+
+    def attach_to_event(self, e: Event):
+        super().attach_to_event(e)
+        self.attach_count += 1
+        self.trace.append(("attach", self.identifier, type(e).__name__))
+
+    def detach_from_event(self):
+        self.trace.append(("detach", self.identifier, self.attached_event is not None))
+        self.detach_count += 1
+        super().detach_from_event()
+
+    def modify(self, args={}):
+        self.modify_count += 1
+        self.trace.append(("modify", self.identifier))
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "attach-tracing-modifier"
+
+
+class AttachStateConstraint(TagConstraint):
+    def __init__(self, identifier: str, trace: list[tuple]):
+        super().__init__(identifier)
+        self.trace = trace
+
+    def match(self, obj) -> bool:
+        if isinstance(obj, Constraint):
+            return False
+        attached = getattr(obj, "attached_event", None) is not None
+        self.trace.append(("constrain_match", getattr(obj, "identifier", None), attached))
+        return getattr(obj, "identifier", None) == self.identifier
+
+
+class AttachTracingAssessor(AssessorEventListener[str]):
+    def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
+        super().__init__(identifier=identifier, group=group, internal=False)
+        self.trace = trace
+        self.attach_count = 0
+        self.detach_count = 0
+        self.assess_count = 0
+
+    def event_match(self, event: Event) -> bool:
+        return True
+
+    def event_effect(self) -> bool:
+        return True
+
+    def attach_to_event(self, e: Event):
+        super().attach_to_event(e)
+        self.attach_count += 1
+        self.trace.append(("attach", self.identifier, type(e).__name__))
+
+    def detach_from_event(self):
+        self.trace.append(("detach", self.identifier, self.attached_event is not None))
+        self.detach_count += 1
+        super().detach_from_event()
+
+    def assess(self, args={}):
+        self.assess_count += 1
+        self.trace.append(("assess", self.identifier))
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "attach-tracing-assessor"
+
+
+class AttachTracingReactor(ReactorEventListener[str]):
+    def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
+        super().__init__(identifier=identifier, group=group, internal=False)
+        self.trace = trace
+        self.attach_count = 0
+        self.detach_count = 0
+        self.react_count = 0
+
+    def event_match(self, event: Event) -> bool:
+        return True
+
+    def event_effect(self) -> bool:
+        return True
+
+    def attach_to_event(self, e: Event):
+        super().attach_to_event(e)
+        self.attach_count += 1
+        self.trace.append(("attach", self.identifier, type(e).__name__))
+
+    def detach_from_event(self):
+        self.trace.append(("detach", self.identifier, self.attached_event is not None))
+        self.detach_count += 1
+        super().detach_from_event()
+
+    def react(self, args={}):
+        self.react_count += 1
+        self.trace.append(("react", self.identifier))
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "attach-tracing-reactor"
+
+
+class ToggleCacheSetEvent(BaseEvent):
+    def __init__(self, cache: RollbackCache, key: str, metrics: dict[str, int]):
+        self.cache = cache
+        self.key = key
+        self.metrics = metrics
+        super().__init__(cache=cache, key=key, metrics=metrics)
+
+    def get_kwargs(self):
+        return {
+            "cache": self.cache,
+            "key": self.key,
+            "metrics": self.metrics,
+        }
+
+    def core(self, args={}):
+        self.metrics["set_runs"] += 1
+        self.cache.set(self.key, True)
+        return self.generate_core_response()
+
+
+class ToggleCacheEraseEvent(BaseEvent):
+    def __init__(self, cache: RollbackCache, key: str, metrics: dict[str, int]):
+        self.cache = cache
+        self.key = key
+        self.metrics = metrics
+        super().__init__(cache=cache, key=key, metrics=metrics)
+
+    def get_kwargs(self):
+        return {
+            "cache": self.cache,
+            "key": self.key,
+            "metrics": self.metrics,
+        }
+
+    def core(self, args={}):
+        self.metrics["erase_runs"] += 1
+        self.cache.delete(self.key)
+        return self.generate_core_response()
+
+
+class IndefiniteCacheToggleInterruptEvent(BaseEvent):
+    def __init__(self, cache: RollbackCache, key: str, metrics: dict[str, int]):
+        self.cache = cache
+        self.key = key
+        self.metrics = metrics
+        super().__init__(cache=cache, key=key, metrics=metrics)
+
+    def get_kwargs(self):
+        return {
+            "cache": self.cache,
+            "key": self.key,
+            "metrics": self.metrics,
+        }
+
+    def core(self, args={}):
+        self.metrics["playcard_calls"] += 1
+        if self.cache.get(self.key) is None:
+            return self.generate_core_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [ToggleCacheSetEvent(self.cache, self.key, self.metrics)],
+                },
+            )
+        return self.generate_core_response(
+            ResponseType.INTERRUPT,
+            {
+                INTERRUPT_KEY: [ToggleCacheEraseEvent(self.cache, self.key, self.metrics)],
+            },
+        )
 
 
 class EngineEdgeCaseTests(unittest.TestCase):
@@ -876,6 +1311,72 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(state.value, 6)
 
+    def test_packet_assembly_occurs_only_when_packet_is_popped(self):
+        eng = self.make_engine()
+        state = MutableState()
+        metrics = {"packet_assembles": 0}
+
+        def packet_factory():
+            metrics["packet_assembles"] += 1
+            return [DeltaEvent(state, 4)]
+
+        eng._propose(packet_factory)
+
+        self.assertEqual(metrics["packet_assembles"], 0)
+
+        next_packet = eng.forward({})
+        self.assertEqual(next_packet.response_type, ResponseType.NEXT_PACKET)
+        self.assertEqual(metrics["packet_assembles"], 1)
+
+        last = self.drain_engine(eng)
+        self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(state.value, 4)
+        self.assertEqual(metrics["packet_assembles"], 1)
+
+    def test_empty_packet_is_a_safe_noop(self):
+        eng = self.make_engine()
+        listener = CountingExternalListener(identifier="baseline-listener")
+        constraint = TagConstraint("never-matches")
+        eng.add_listener(listener)
+        eng.add_constraint(constraint)
+
+        eng._propose([])
+
+        first = eng.forward({})
+        second = eng.forward({})
+
+        self.assertEqual(first.response_type, ResponseType.NEXT_PACKET)
+        self.assertEqual(second.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertIsNone(eng.event_running)
+        self.assertEqual(len(eng.packet_running), 0)
+        self.assertEqual(eng._queue.queue_len(), 0)
+        self.assertEqual(eng._queue.queue_status, QueueStatus.OPEN)
+        self.assertEqual(listener.call_count, 0)
+        self.assertIn(constraint, eng._constraints)
+
+    def test_event_assembly_occurs_immediately_before_event_running(self):
+        eng = self.make_engine()
+        state = MutableState()
+        metrics = {"event_kwarg_resolves": 0}
+        delta_source = {"delta": 7}
+
+        eng._propose([AssemblyTimingDeltaEvent(state, metrics, delta_source)])
+
+        self.assertEqual(metrics["event_kwarg_resolves"], 0)
+
+        next_packet = eng.forward({})
+        self.assertEqual(next_packet.response_type, ResponseType.NEXT_PACKET)
+        self.assertEqual(metrics["event_kwarg_resolves"], 0)
+
+        next_event = eng.forward({})
+        self.assertEqual(next_event.response_type, ResponseType.NEXT_EVENT)
+        self.assertEqual(metrics["event_kwarg_resolves"], 1)
+
+        last = self.drain_engine(eng)
+        self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(state.value, 7)
+        self.assertEqual(metrics["event_kwarg_resolves"], 1)
+
     def test_proposed_event_instance_uses_deferred_get_kwargs_callables(self):
         eng = self.make_engine()
         state = MutableState()
@@ -887,6 +1388,30 @@ class EngineEdgeCaseTests(unittest.TestCase):
         last = self.drain_engine(eng)
         self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(state.value, 9)
+
+    def test_later_event_lambda_uses_object_modified_by_prior_event(self):
+        eng = self.make_engine()
+        state = MutableState()
+        delta_source = {"delta": 1}
+        metrics = {
+            "mutations": 0,
+            "event_kwarg_resolves": 0,
+        }
+
+        eng._propose(
+            [
+                MutateDeltaSourceEvent(delta_source, new_delta=11, metrics=metrics),
+                AssemblyTimingDeltaEvent(state, metrics, delta_source),
+            ]
+        )
+
+        last = self.drain_engine(eng)
+
+        self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(metrics["mutations"], 1)
+        self.assertEqual(metrics["event_kwarg_resolves"], 1)
+        self.assertEqual(delta_source["delta"], 11)
+        self.assertEqual(state.value, 11)
 
     def test_update_packet_input_then_downstream_skip_rewinds_cache(self):
         eng = self.make_engine()
@@ -918,8 +1443,15 @@ class EngineEdgeCaseTests(unittest.TestCase):
             if response.response_type == ResponseType.INTERRUPT:
                 saw_interrupt = True
             if response.response_type == ResponseType.REQUIRES_QUERY:
-                saw_requires_query = True
-                response = self.forward_with_cache(eng, cache, {"input_result": [99]})
+                if response.data.get("query_type") == "ordering":
+                    response = self.forward_with_cache(
+                        eng,
+                        cache,
+                        {"group_ordering": response.data.get("unordered_groups", [])},
+                    )
+                elif response.data.get("query_type") == "card_query":
+                    saw_requires_query = True
+                    response = self.forward_with_cache(eng, cache, {"input_result": [99]})
 
             if response.response_type == ResponseType.SKIP:
                 final_response = response
@@ -1130,6 +1662,186 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertGreaterEqual(mod_a.pass_count, 1)
         self.assertGreaterEqual(mod_b.pass_count, 1)
         self.assertEqual(metrics["core_runs"], 1)
+
+    def test_interrupt_runs_payload_before_resuming_interrupted_event(self):
+        eng = self.make_engine()
+        order: list[str] = []
+
+        eng.add_listener(OrderedInterruptAssessor(order))
+        eng._propose([OrderedInterruptCandidateEvent(order)])
+
+        final = self.drain_engine(eng)
+        self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(order, ["interrupt", "payload_core", "resume", "candidate_core"])
+
+    def test_core_interrupt_runs_payload_before_resuming_core(self):
+        eng = self.make_engine()
+        order: list[str] = []
+
+        eng._propose([OrderedCoreInterruptEvent(order)])
+
+        final = self.drain_engine(eng)
+        self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(order, ["core_interrupt", "payload_core", "core_resume"])
+
+    def test_modifier_interrupt_runs_payload_before_resuming_modifier_then_core(self):
+        eng = self.make_engine()
+        order: list[str] = []
+
+        eng.add_listener(OrderedInterruptModifier(order))
+        eng._propose([OrderedModifierInterruptCandidateEvent(order)])
+
+        final = self.drain_engine(eng)
+        self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(order, ["modifier_interrupt", "payload_core", "modifier_resume", "candidate_core"])
+
+    def test_reactor_interrupt_runs_payload_before_resuming_reactor(self):
+        eng = self.make_engine()
+        order: list[str] = []
+
+        eng.add_listener(OrderedInterruptReactor(order))
+        eng._propose([OrderedReactorInterruptCandidateEvent(order)])
+
+        final = self.drain_engine(eng)
+        self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(order, ["candidate_core", "reactor_interrupt", "payload_core", "reactor_resume"])
+
+    def test_external_listener_attaches_before_constraint_match(self):
+        eng = self.make_engine()
+        trace: list[tuple] = []
+
+        listener = AttachTracingModifier("trace-target", EngineGroup.EXTERNAL_MODIFIERS_2, trace)
+        eng.add_listener(listener)
+        eng.add_constraint(AttachStateConstraint("trace-target", trace))
+        eng._propose([BaseEvent()])
+
+        self.drain_engine(eng)
+
+        attach_idx = next(i for i, t in enumerate(trace) if t[0] == "attach" and t[1] == "trace-target")
+        match_idx = next(i for i, t in enumerate(trace) if t[0] == "constrain_match" and t[1] == "trace-target")
+
+        self.assertLess(attach_idx, match_idx)
+        self.assertTrue(trace[match_idx][2])
+        self.assertEqual(listener.modify_count, 0)
+
+    def test_constrained_listener_detaches_after_attach(self):
+        eng = self.make_engine()
+        trace: list[tuple] = []
+
+        listener = AttachTracingModifier("detach-target", EngineGroup.EXTERNAL_MODIFIERS_2, trace)
+        eng.add_listener(listener)
+        eng.add_constraint(AttachStateConstraint("detach-target", trace))
+        eng._propose([BaseEvent()])
+
+        self.drain_engine(eng)
+
+        self.assertEqual(listener.attach_count, 1)
+        self.assertEqual(listener.detach_count, 1)
+        self.assertIsNone(listener.attached_event)
+        self.assertEqual(listener.modify_count, 0)
+
+    def test_only_matching_listener_is_constrained_after_attachment(self):
+        eng = self.make_engine()
+        trace: list[tuple] = []
+
+        constrained = AttachTracingModifier("constrained-target", EngineGroup.EXTERNAL_MODIFIERS_2, trace)
+        survivor = AttachTracingModifier("survivor-target", EngineGroup.EXTERNAL_MODIFIERS_2, trace)
+
+        eng.add_listener(constrained)
+        eng.add_listener(survivor)
+        eng.add_constraint(AttachStateConstraint("constrained-target", trace))
+        eng._propose([BaseEvent()])
+
+        self.drain_engine(eng)
+
+        constrained_match_idx = next(
+            i for i, t in enumerate(trace) if t[0] == "constrain_match" and t[1] == "constrained-target"
+        )
+        self.assertTrue(trace[constrained_match_idx][2])
+        self.assertEqual(constrained.modify_count, 0)
+        self.assertEqual(survivor.modify_count, 1)
+
+    def test_assessor_listener_attaches_before_constraint_match(self):
+        eng = self.make_engine()
+        trace: list[tuple] = []
+
+        listener = AttachTracingAssessor("assessor-target", EngineGroup.EXTERNAL_PRECHECK_1, trace)
+        eng.add_listener(listener)
+        eng.add_constraint(AttachStateConstraint("assessor-target", trace))
+        eng._propose([BaseEvent()])
+
+        self.drain_engine(eng)
+
+        attach_idx = next(i for i, t in enumerate(trace) if t[0] == "attach" and t[1] == "assessor-target")
+        match_idx = next(i for i, t in enumerate(trace) if t[0] == "constrain_match" and t[1] == "assessor-target")
+
+        self.assertLess(attach_idx, match_idx)
+        self.assertTrue(trace[match_idx][2])
+        self.assertEqual(listener.assess_count, 0)
+        self.assertEqual(listener.detach_count, 1)
+
+    def test_reactor_listener_attaches_before_constraint_match(self):
+        eng = self.make_engine()
+        trace: list[tuple] = []
+
+        listener = AttachTracingReactor("reactor-target", EngineGroup.EXTERNAL_REACTORS, trace)
+        eng.add_listener(listener)
+        eng.add_constraint(AttachStateConstraint("reactor-target", trace))
+        eng._propose([BaseEvent()])
+
+        self.drain_engine(eng)
+
+        attach_idx = next(i for i, t in enumerate(trace) if t[0] == "attach" and t[1] == "reactor-target")
+        match_idx = next(i for i, t in enumerate(trace) if t[0] == "constrain_match" and t[1] == "reactor-target")
+
+        self.assertLess(attach_idx, match_idx)
+        self.assertTrue(trace[match_idx][2])
+        self.assertEqual(listener.react_count, 0)
+        self.assertEqual(listener.detach_count, 1)
+
+    def test_core_interrupt_toggle_cache_event_does_not_terminate(self):
+        eng = self.make_engine()
+        cache = RollbackCache()
+        key = "X"
+        metrics = {
+            "playcard_calls": 0,
+            "set_runs": 0,
+            "erase_runs": 0,
+        }
+
+        eng._propose([IndefiniteCacheToggleInterruptEvent(cache, key, metrics)])
+
+        terminal_responses = {
+            ResponseType.NO_MORE_EVENTS,
+            ResponseType.FINISHED_PACKET,
+            ResponseType.GAME_END,
+            ResponseType.SKIP,
+        }
+
+        saw_interrupt = 0
+        steps = 240
+        for _ in range(steps):
+            response = eng.forward({})
+            if response.response_type == ResponseType.INTERRUPT:
+                saw_interrupt += 1
+            self.assertNotIn(
+                response.response_type,
+                terminal_responses,
+                "Toggle cache interrupt loop unexpectedly terminated",
+            )
+
+        self.assertGreaterEqual(saw_interrupt, 8)
+        self.assertEqual(metrics["playcard_calls"], saw_interrupt)
+        self.assertGreater(metrics["set_runs"], 0)
+        self.assertGreater(metrics["erase_runs"], 0)
+        self.assertLessEqual(abs(metrics["set_runs"] - metrics["erase_runs"]), 1)
+
+        queue_drained = (
+            eng.event_running is None
+            and len(eng.packet_running) == 0
+            and eng._queue.queue_len() == 0
+        )
+        self.assertFalse(queue_drained)
 
 
 if __name__ == "__main__":

@@ -66,6 +66,13 @@ class Cardholder():
         self.cards_by_id : OrderedDict[Card] = OrderedDict()
         self.player : 'player.Player' = None
         self.env : 'environment.Environment' = None
+    def __add__(self, other : Cardholder) -> list:
+        to_ret = []
+        for card in self:
+            to_ret.append(card)
+        for card in other:
+            to_ret.append(card)
+        return to_ret
     def __len__ (self):
         return len(self.cards_by_id)
     def __eq__(self, other : Cardholder):
@@ -115,6 +122,6 @@ class Cardholder():
     def get_card(self, card_id : str) -> 'card.Card':
         return self.cards_by_id[card_id]
     def __contains__(self, item : 'card.Card'):
-        return item.unique_id in self.cards_by_id
+        return isinstance(item, card.Card) and item.unique_id in self.cards_by_id
     def __iter__(self):
         return (x for x in self.cards_by_id.values())

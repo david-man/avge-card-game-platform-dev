@@ -1,9 +1,11 @@
 from __future__ import annotations
-from .event_listener import AbstractEventListener
 from typing import Tuple, TYPE_CHECKING, TypeVar, Generic
+
 if TYPE_CHECKING:
+    from .event_listener import AbstractEventListener
     from .engine import Engine
     from .event import Event
+
 T = TypeVar('T')
 class Constraint(Generic[T]):
     def __init__(self, identifier : T):
@@ -13,7 +15,9 @@ class Constraint(Generic[T]):
     def match(self, obj : AbstractEventListener | Constraint) -> bool:
         """
         Function that checks whether its constraining functionality matches the object.
-        It matches to other constraints the moment it is added, but it matches to listeners at runtime
+        It matches to other constraints the moment it is added, but it matches to listeners at runtime. 
+        
+        Because it matches to listeners right before the listener group is run, it can be used to replace that listener with a different one by using attach_listener
         """
         raise NotImplementedError()
     def update_status(self):

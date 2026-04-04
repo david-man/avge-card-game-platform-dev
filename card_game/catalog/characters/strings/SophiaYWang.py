@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+from random import randint
+
+from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.catalog.items.AVGEBirb import AVGEBirb
+from card_game.constants import *
+
+
+class SophiaYWang(AVGECharacterCard):
+    _GACHA_GAMING_DRAW_KEY = "sophiaywang_gacha_gaming_draw"
+    _GACHA_GAMING_DRAWN_CARDS = "sophiaywang_gacha_gaming_cards_drawn"
+    _ENERGY_REMOVAL_KEY = "sophiaywang_energy_removal"
+
+    def __init__(self, unique_id):
+        super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
+        self.has_atk_1 = True
+        self.atk_1_cost = 1
+        self.has_atk_2 = True
+        self.atk_2_cost = 3
+        self.has_passive = False
+        self.has_active = False
+
+    @staticmethod
+    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
+
+        env = card.env
+
+        deck = card.player.cardholders[Pile.DECK]
+        current_cards: list[AVGECard] = env.cache.get(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, [], True)
+        if len(deck) == 0 or card.hp < 20:
+            for transferred_card in current_cards:
+                card.propose(
+                    TransferCard(
+                        transferred_card,
+                        transferred_card.cardholder,
+                        card.player.cardholders[Pile.DECK],
+                        ActionTypes.ATK_1,
+                        card,
+                        lambda: randint(0, len(deck)),
+                    )
+                )
+            return card.generate_response()
+
+        draw = env.cache.get(card, SophiaYWang._GACHA_GAMING_DRAW_KEY, None, True)
+        if draw is None:
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            card.player,
+                            [SophiaYWang._GACHA_GAMING_DRAW_KEY],
+                            InputType.BINARY,
+                            lambda l: True,
+                            ActionTypes.ATK_1,
+                            card,
+                            {"query_label": "sophia_y_wang_gacha_gaming_draw_next"},
+                        )
+                    ]
+                },
+            )
+
+        if draw:
+            next_card = deck.peek()
+            if isinstance(next_card, AVGEBirb):
+                card.propose(
+                    AVGECardHPChange(
+                        card,
+                        card.maxhp,
+                        AVGEAttributeModifier.SET_STATE,
+                        card.card_type,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                )
+                card.propose(TransferCard(next_card, deck, card.player.cardholders[Pile.HAND], ActionTypes.ATK_1, card))
+                return card.generate_response()
+
+            env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, current_cards + [next_card])
+            card.propose(TransferCard(next_card, deck, card.player.cardholders[Pile.HAND], ActionTypes.ATK_1, card))
+            card.propose(
+                AVGECardHPChange(
+                    card,
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    card.card_type,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            )
+            return card.generate_response()
+
+        for transferred_card in current_cards:
+            card.propose(
+                TransferCard(
+                    transferred_card,
+                    transferred_card.cardholder,
+                    card.player.cardholders[Pile.DECK],
+                    ActionTypes.ATK_1,
+                    card,
+                    lambda: randint(0, len(deck)),
+                )
+            )
+        env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, [])
+        return card.generate_response()
+
+    @staticmethod
+    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent, InputEvent
+
+        opponent = card.player.opponent
+        packet = [
+            AVGECardHPChange(
+                lambda: opponent.get_active_card(),
+                20,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.STRING,
+                ActionTypes.ATK_2,
+                card,
+            )
+        ]
+
+        chosen_target = card.env.cache.get(card, SophiaYWang._ENERGY_REMOVAL_KEY, None, True)
+        if chosen_target is None:
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            card.player,
+                            [SophiaYWang._ENERGY_REMOVAL_KEY],
+                            InputType.SELECTION,
+                            lambda r: True,
+                            ActionTypes.ATK_2,
+                            card,
+                            {
+                                "query_label": "sophia_y_wang_atk_2",
+                                "targets": opponent.get_cards_in_play(),
+                            },
+                        )
+                    ]
+                },
+            )
+
+        def generate_packet():
+            p = list(packet)
+            if len(chosen_target.energy) < 2:
+                p.append(EmptyEvent("SophiaYWang ATK2 target lacked enough energy.", ActionTypes.ATK_2, card))
+                return p
+            for token in list(chosen_target.energy)[:2]:
+                p.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
+            return p
+
+        card.propose(generate_packet)
+        return card.generate_response()

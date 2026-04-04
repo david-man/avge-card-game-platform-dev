@@ -1,6 +1,12 @@
-from typing import Type, Tuple, Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from ..abstract.card import Card
+if TYPE_CHECKING:
+    from typing import Any
+    
+
 @dataclass
 class Change():
     card : Card
@@ -23,7 +29,10 @@ class EnvironmentCache():
         self.cache = {k : {} for k in card_ids}
         self._changelog : list[Change] = []
         self._capturing_changes = False
+        self.empty_card = Card("ENVIRONMENT_CARD_VARIABLE")
     def set(self, card : Card, key : str, value):
+        if(card is None):
+            card = self.empty_card
         if(self._capturing_changes):
             if(key not in self.cache[card.unique_id]):
                 self._changelog.append(InsertKey(card, key, value))
@@ -33,12 +42,16 @@ class EnvironmentCache():
         self.cache[card.unique_id][key] = value
     def get(self, card : Card, key : str, default = None, one_look = False):
         """Gets value from data cache. If one look is on, this ALSO deletes the value"""
+        if(card is None):
+            card = self.empty_card
         val = self.cache[card.unique_id].get(key, default)
         if(one_look):
             self.delete(card, key)
         return val
     def delete(self, card : Card, key : str):
         """Attempts to delete a key in data cache. If key does not exist, does nothing"""
+        if(card is None):
+            card = self.empty_card
         if(key not in self.cache[card.unique_id]):
             return
         if(self._capturing_changes):
@@ -63,5 +76,7 @@ class EnvironmentCache():
         self._capturing_changes = False
         self._changelog = []
     def wipe(self, card : Card):
+        if(card is None):
+            card = self.empty_card
         for key in list(self.cache[card.unique_id]):
             self.delete(card, key)

@@ -35,8 +35,13 @@ class Card():
             listener.invalidate()#invalidate all owned listeners, since this card is no longer in play
         for constrainer in self.owned_constraints:
             constrainer.invalidate()#invalidates all owned constrainers, since this card has left play
+    def reactivate_card(self):
+        return#engine will revalidate all constrainers and listeners, so can do nothing. However, need to override if you override deactivate_card
     def generate_response(self, response_type : ResponseType = ResponseType.CORE, data = None, announce = False):
         #helper function to generate a response 
         return Response(self, response_type, data, announce = (announce or response_type == ResponseType.REQUIRES_QUERY))
-    def propose(self, e : Event, priority : int = 0):
+    def generate_interrupt(self, events : list[Event]) -> Response:
+        #Helper function to generate an INTERRUPT response easier
+        return Response(self, ResponseType.INTERRUPT, {INTERRUPT_KEY: events}, True)
+    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
         self.env.propose(e, priority)

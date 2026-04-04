@@ -7,21 +7,18 @@ class QueueStatus(Enum):
     OPEN = 2
 
 class EngineGroup(Enum):
-    INTERNAL_1 = 1
+    EXTERNAL_MODIFIERS_1 = 0#used if you want something to come before internal prechecks
+    INTERNAL_1 = 1#all internal prechecks & the weaknesses are calculated in here
     EXTERNAL_PRECHECK_1 = 2
-    EXTERNAL_MODIFIERS_1 = 3
-    EXTERNAL_PRECHECK_2 = 4
-    INTERNAL_2 = 5
-    EXTERNAL_PRECHECK_3 = 6
-    EXTERNAL_MODIFIERS_2 = 7
-    EXTERNAL_PRECHECK_4 = 8
+    EXTERNAL_MODIFIERS_2 = 3#debuffs all go here
+    EXTERNAL_MODIFIERS_3 = 4#any
+    EXTERNAL_PRECHECK_2 = 5
+    INTERNAL_2 = 6#i honestly don't think anything goes in here tbh
+    CORE = 7
+    EXTERNAL_POSTCHECK_1 = 8
     INTERNAL_3 = 9
-    CORE = 10
+    EXTERNAL_REACTORS = 10
     INTERNAL_4 = 11
-    EXTERNAL_POSTCHECK_1 = 12
-    EXTERNAL_REACTORS = 13
-    EXTERNAL_POSTCHECK_2 = 14
-    INTERNAL_5 = 15
     def succ(self):
         v = self.value + 1
         return EngineGroup(v)

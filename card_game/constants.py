@@ -1,10 +1,14 @@
 from __future__ import annotations
 from enum import Enum, StrEnum
-from typing import Any, TYPE_CHECKING, Tuple
+from typing import Any, TYPE_CHECKING
+from dataclasses import dataclass
 if TYPE_CHECKING:
     from card_game.engine.event import Event
     from card_game.engine.event_listener import AbstractEventListener
     from card_game.abstract.card import Card
+    from card_game.avge_abstracts.AVGEPlayer import AVGEPlayer
+    from card_game.avge_abstracts.AVGECards import AVGECharacterCard
+    from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
 type Data = dict[str, Any]
 
 cards_per_deck = 30
@@ -22,7 +26,7 @@ class ResponseType(StrEnum):
     SKIP = "SKIP"#something in the sequence went awry/was rejected, undo the whole packet
     ACCEPT = 'ACCEPT'#accept and move to the next step
     REQUIRES_QUERY = "REQUIRES_QUERY"#requires query, try again
-    INTERRUPT = "INTERRUPT"#packet interrupted: event needs to be finished first
+    INTERRUPT = "INTERRUPT"#packet interrupted: events at INTERRUPT_KEY need to be finished first before this packet can continue
     FAST_FORWARD = "FF"#fast forward the event to its closing. if used right after an INTERRUPT, you can "override" an event completely.
     FINISHED = "FINISHED"#event has finished naturally
     FINISHED_PACKET = "FINISHED_PACKET"#packet has finished naturally
@@ -46,6 +50,7 @@ class Response():
 class AVGEAttributeModifier(StrEnum):
     ADDITIVE = 'additive'
     SET_STATE = 'setstate'
+    SUBSTRACTIVE = 'substractive'
 class AVGEPlayerAttribute(StrEnum):
 
     #turn specific
@@ -57,21 +62,24 @@ class AVGEPlayerAttribute(StrEnum):
 
     #game specific
     KO_COUNT = "KO_COUNT"
-    HAS_LOST = "HAS_LOST"
     TOTAL_ENERGY_TOKENS = "TOTAL_ENERGY_TOKENS"
 
-class AVGECardAttribute(StrEnum):
-    #character card attributes
-    TYPE = "TYPE"
-    HP = "HP"
-    MAXHP = "MAXHP"
-    SWITCH_COST = "SWITCH_COST"
-    MV_1_COST = "MV_1_COST"
-    MV_2_COST = "MV_2_COST"
-    ENERGY_ATTACHED = "ENERGY_ATTACHED"
-    STATUS_ATTACHED = "STATUS_ATTACHED"
+@dataclass
+class EnergyToken():
+    unique_id : str#energy tokens are instantiated in the beginning w/ unique_id's. they cannot be generated, but they can end up voided (by sending it to the Environment)
+    holder : AVGEPlayer | AVGECharacterCard | AVGEEnvironment= None
+    def attach(self, new_holder : AVGEPlayer | AVGECharacterCard | AVGEEnvironment):
+        self.holder = new_holder
+        self.holder.energy.append(self)
+    def detach(self):
+        old_holder = self.holder
+        self.holder = None
+        if(old_holder is not None):
+            old_holder.energy.remove(self)
+    def __eq__(self, other : EnergyToken):
+        return self.unique_id == other.unique_id
 
-class ChangeType(StrEnum):
+class StatusChangeType(StrEnum):
     ADD = "ADD"
     REMOVE = "REMOVE"
 class PlayerID(StrEnum):
@@ -116,8 +124,10 @@ class StatusEffect(StrEnum):
 class InputType(StrEnum):
     D6 = "D6"#response should be 1-6
     COIN = "COIN"#tails = 0, heads = 1. response can come in a list
-
-    DETERMINISTIC = "DETERMINISTIC"#deterministic/non-rng
+    BINARY = "BINARY"#yes/no question
+    SELECTION = "SELECTION"#selection btwn "targets" array.
+    #should be structured like {'query_label':___, 'allow_repeats': True(default False), 'allow_none': True(default False), 'targets': either a list of targets for all keys or each individual key gets a list}
+    DETERMINISTIC = "DETERMINISTIC"#one-off character-specific deterministic/non-rng player choices 
 type_weaknesses = {
     CardType.STRING: CardType.GUITAR,
     CardType.GUITAR: CardType.WOODWIND,

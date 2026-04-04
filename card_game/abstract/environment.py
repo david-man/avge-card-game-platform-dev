@@ -1,9 +1,13 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING, Callable
 from . import player, cardholder, card
 from ..engine.engine import Engine, Data
-from ..engine.event import Event
-from ..engine.event_listener import AbstractEventListener
-from ..engine.constrainer import Constraint
+
+if TYPE_CHECKING:
+    from ..engine.event import Event
+    from ..engine.event_listener import AbstractEventListener
+    from ..engine.constrainer import Constraint
+
 class Environment():
     def __init__(self):
         #you should override these values!
@@ -19,10 +23,13 @@ class Environment():
             cardholder_to.add_card(card)
         else:
             cardholder_to.insert_card(new_idx, card)
-    def propose(self, e : Event, priority : int = 0):
+    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
         #opens engine in limited manner to cards and players
         self._engine._propose(e, priority=priority)
     def add_listener(self, el : AbstractEventListener):
+        """
+        If you're thinking of using this, you should have a VERY clear update_status invalidation constraint that you can guarantee will fire eventually. 
+        """
         el.internal = False
         #opens engine in limited manner to cards and players
         self._engine.add_listener(el)

@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.constants import *
+from card_game.engine.engine_constants import EngineGroup
+import math
+
+
+class SophiaNextAttackHalvedModifier(AVGEModifier):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(identifier=(owner_card, AVGEEventListenerType.NONCHAR), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        self.owner_card = owner_card
+
+    def event_match(self, event):
+        from card_game.internal_events import AVGECardHPChange
+
+        if not isinstance(event, AVGECardHPChange):
+            return False
+        if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
+            return False
+        if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
+            return False
+        if(not isinstance(event.caller_card, AVGECharacterCard)):
+            return False
+        return event.caller_card.player == self.owner_card.player.opponent
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return True
+
+    def package(self):
+        return "SophiaSWang Next Attack Halved Modifier"
+
+    def on_packet_completion(self):
+        self.invalidate()
+
+    def modify(self, args=None):
+        if args is None:
+            args = {}
+        event = self.attached_event
+        event.modify_magnitude(-math.floor(event.magnitude / 2))
+        return self.generate_response()
+
+
+class _SophiaEnergyReactor(AVGEReactor):
+    _LAST_ENERGY_TURN_KEY = "sophiaswang_last_energy_turn"
+
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        self.owner_card = owner_card
+
+    def event_match(self, event):
+        from card_game.internal_events import AVGEEnergyTransfer
+
+        if not isinstance(event, AVGEEnergyTransfer):
+            return False
+        if event.target != self.owner_card:
+            return False
+
+        last = self.owner_card.env.cache.get(self.owner_card, _SophiaEnergyReactor._LAST_ENERGY_TURN_KEY, None)
+        if last is not None and self.owner_card.env.round_id == last:
+            return False
+        return True
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return True
+
+    def package(self):
+        return "SophiaSWang energy attach reactor"
+
+    def react(self, args=None):
+        if args is None:
+            args = {}
+        from card_game.internal_events import TransferCard
+
+        owner = self.owner_card
+        env = owner.env
+
+        env.cache.set(owner, _SophiaEnergyReactor._LAST_ENERGY_TURN_KEY, env.round_id)
+
+        opp = owner.player.opponent
+        deck = opp.cardholders[Pile.DECK]
+        discard = opp.cardholders[Pile.DISCARD]
+        if len(deck) == 0:
+            return self.generate_response()
+
+        owner.propose(TransferCard(lambda: deck.peek(), deck, discard, ActionTypes.PASSIVE, owner))
+        return self.generate_response()
+
+
+class SophiaSWang(AVGECharacterCard):
+    def __init__(self, unique_id):
+        super().__init__(unique_id, 110, CardType.PIANO, 2, 2)
+        self.has_atk_1 = True
+        self.atk_1_cost = 2
+        self.has_atk_2 = False
+        self.has_passive = True
+        self.has_active = False
+
+    @staticmethod
+    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        card.add_listener(_SophiaEnergyReactor(card))
+        return card.generate_response()
+
+    @staticmethod
+    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+        from card_game.internal_events import AVGECardHPChange
+
+        card.propose(
+            AVGECardHPChange(
+                lambda: card.player.opponent.get_active_card(),
+                20,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.PIANO,
+                ActionTypes.ATK_1,
+                card,
+            )
+        )
+
+        card.add_listener(SophiaNextAttackHalvedModifier(card))
+
+        return card.generate_response()
