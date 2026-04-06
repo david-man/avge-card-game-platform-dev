@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier, AVGEAssessor, AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class _MeyaGuitarBoost(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard, round_active: int):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.NONCHAR), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, MeyaGao), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
         self.round_active = round_active
 
@@ -45,14 +45,17 @@ class _MeyaGuitarBoost(AVGEModifier):
     def modify(self, args=None):
         if args is None:
             args = {}
+        from card_game.internal_events import AVGECardHPChange
+
         event = self.attached_event
+        assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(40)
         return self.generate_response()
 
 
 class _MeyaAttackBlockAssessor(AVGEAssessor):
     def __init__(self, owner_card: AVGECharacterCard, round_active: int):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MeyaGao), group=EngineGroup.EXTERNAL_PRECHECK_1)
         self.card_blocked = owner_card
         self.round_active = round_active
 
@@ -89,7 +92,7 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
 
 class _MeyaDamageReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MeyaGao), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -116,7 +119,11 @@ class _MeyaDamageReactor(AVGEReactor):
     def react(self, args=None) -> Response:
         if args is None:
             args = {}
+        from card_game.internal_events import AVGECardHPChange
+
         event = self.attached_event
+        assert isinstance(event, AVGECardHPChange)
+        assert isinstance(event.caller_card, AVGECharacterCard)
         attacker: AVGECharacterCard = event.caller_card
 
         self.owner_card.add_listener(_MeyaAttackBlockAssessor(self.owner_card, self.owner_card.player.get_next_turn()))
@@ -135,23 +142,25 @@ class MeyaGao(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(_MeyaDamageReactor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                40,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.GUITAR,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    40,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.GUITAR,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, MeyaGao))
         )
         card.add_listener(_MeyaGuitarBoost(card, card.player.get_next_turn()))
 

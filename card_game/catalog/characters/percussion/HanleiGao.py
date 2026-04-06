@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard
+from card_game.internal_events import InputEvent, AVGECardHPChange, AVGECardHPChangeCreator, TransferCard
 
 
 class HanleiGao(AVGECharacterCard):
@@ -19,9 +18,10 @@ class HanleiGao(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        packet = [
-            AVGECardHPChange(
+    def atk_1(card: AVGECharacterCard) -> Response:
+        packet = []
+        packet.append([
+            AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -29,18 +29,17 @@ class HanleiGao(AVGECharacterCard):
                 ActionTypes.ATK_1,
                 card,
             )
-        ]
+        ])
 
         bench_holder = card.player.cardholders[Pile.BENCH]
         active_holder = card.player.cardholders[Pile.ACTIVE]
-        perc_candidates = [c for c in bench_holder if c.card_type == CardType.PERCUSSION]
+        perc_candidates = [c for c in bench_holder if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION]
         if len(perc_candidates) == 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HanleiGao)))
             return card.generate_response()
 
-        missing = object()
-        pick = card.env.cache.get(card, HanleiGao._BENCH_SWAP_KEY, missing, True)
-        if pick is missing:
+        pick = card.env.cache.get(card, HanleiGao._BENCH_SWAP_KEY, None, True)
+        if pick is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -65,12 +64,12 @@ class HanleiGao(AVGECharacterCard):
         if pick is not None:
             packet.append(TransferCard(pick, bench_holder, active_holder, ActionTypes.ATK_1, card))
             packet.append(TransferCard(card, active_holder, bench_holder, ActionTypes.ATK_1, card))
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HanleiGao)))
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         def generate_dmg():
             packet = []
             for player in card.env.players.values():
@@ -88,5 +87,5 @@ class HanleiGao(AVGECharacterCard):
                         )
             return packet
 
-        card.propose(generate_dmg)
+        card.propose(AVGEPacket(generate_dmg, AVGEEngineID(card, ActionTypes.ATK_2, HanleiGao)))
         return card.generate_response()

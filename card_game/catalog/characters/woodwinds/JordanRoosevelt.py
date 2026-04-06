@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -17,13 +17,13 @@ class JordanRoosevelt(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         next_opp_round = card.player.opponent.get_next_turn()
         next_player_round = card.player.get_next_turn()
 
         class _OpponentAttackBuff(AVGEModifier):
             def __init__(self):
-                super().__init__(identifier=(card, AVGEEventListenerType.ATK_1), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+                super().__init__(identifier=AVGEEngineID(card, ActionTypes.ATK_1, JordanRoosevelt), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 
             def event_match(self, event):
                 from card_game.internal_events import AVGECardHPChange
@@ -54,12 +54,16 @@ class JordanRoosevelt(AVGECharacterCard):
             def modify(self, args=None):
                 if args is None:
                     args = {}
-                self.attached_event.modify_magnitude(20)
+                from card_game.internal_events import AVGECardHPChange
+
+                event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
+                event.modify_magnitude(20)
                 return self.generate_response()
 
         class _JordanAttackBuff(AVGEModifier):
             def __init__(self):
-                super().__init__(identifier=(card, AVGEEventListenerType.ATK_1), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+                super().__init__(identifier=AVGEEngineID(card, ActionTypes.ATK_1, JordanRoosevelt), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 
             def event_match(self, event):
                 from card_game.internal_events import AVGECardHPChange
@@ -88,7 +92,11 @@ class JordanRoosevelt(AVGECharacterCard):
             def modify(self, args=None):
                 if args is None:
                     args = {}
-                self.attached_event.modify_magnitude(60)
+                from card_game.internal_events import AVGECardHPChange
+
+                event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
+                event.modify_magnitude(60)
                 return self.generate_response()
 
         card.add_listener(_OpponentAttackBuff())
@@ -96,13 +104,13 @@ class JordanRoosevelt(AVGECharacterCard):
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     30,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -117,6 +125,6 @@ class JordanRoosevelt(AVGECharacterCard):
                     ActionTypes.ATK_2,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_2, JordanRoosevelt))
         )
         return card.generate_response()

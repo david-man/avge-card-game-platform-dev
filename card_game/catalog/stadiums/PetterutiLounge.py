@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEConstrainer import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
-from card_game.internal_events import AVGECardAttributeChange, TransferCard
+from card_game.internal_events import AVGECardHPChange, TransferCard
 class PetterutiMaidDamageModifier(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, PetterutiLounge), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -17,9 +17,7 @@ class PetterutiMaidDamageModifier(AVGEModifier):
 
 		if(not self.owner_card._is_active_stadium()):
 			return False
-		if(not isinstance(event, AVGECardAttributeChange)):
-			return False
-		if(event.attribute != AVGECardAttribute.HP):
+		if(not isinstance(event, AVGECardHPChange)):
 			return False
 		if(event.attribute_modifier_type != AVGEAttributeModifier.SUBSTRACTIVE):
 			return False
@@ -42,15 +40,16 @@ class PetterutiMaidDamageModifier(AVGEModifier):
 	def package(self):
 		return "PetterutiLounge MAID Damage"
 
-	def modify(self, args={}):
+	def modify(self, args=None):
 		event = self.attached_event
+		assert isinstance(event, AVGECardAttributeChange)
 		event.modify_magnitude(10)
 		return self.generate_response()
 
 
 class PetterutiLatteHealModifier(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, PetterutiLounge), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -81,14 +80,14 @@ class PetterutiLatteHealModifier(AVGEModifier):
 	def package(self):
 		return "PetterutiLounge Latte Heal"
 
-	def modify(self, args={}):
+	def modify(self, args=None):
 		event : AVGECardAttributeChange = self.attached_event
 		event.modify_magnitude(10)
 		return self.generate_response()
 
 class PetterutiMaidTransfer(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, PetterutiLounge), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -115,7 +114,7 @@ class PetterutiMaidTransfer(AVGEModifier):
 	def package(self):
 		return "PetterutiLounge MAID Damage"
 
-	def modify(self, args={}):
+	def modify(self, args=None):
 		event : TransferCard = self.attached_event
 		event.energy_requirement = 0
 		return self.generate_response()
@@ -124,7 +123,7 @@ class PetterutiLounge(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		self.add_listener(PetterutiMaidDamageModifier(self))
 		self.add_listener(PetterutiLatteHealModifier(self))
 		self.add_listener(PetterutiMaidTransfer(self))

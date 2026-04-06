@@ -34,17 +34,22 @@ class HappyRuthJara(AVGECharacterCard):
         return True
 
     @staticmethod
-    def active(card : AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def active(card : AVGECharacterCard) -> Response:
         # activating: remove all statuses, reset HP, move to owner's hand(reactor does all of this)
         # move to hand
         hand = card.player.cardholders[Pile.HAND]
-        card.propose(TransferCard(card, card.cardholder, hand, ActionTypes.ACTIVATE_ABILITY, card))
+        card.propose(
+            AVGEPacket(
+                [TransferCard(card, card.cardholder, hand, ActionTypes.ACTIVATE_ABILITY, card)],
+                AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, HappyRuthJara),
+            )
+        )
         # mark used this round
         card.env.cache.set(card, HappyRuthJara._ACTIVE_USE_KEY, card.env.round_id)
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         player = card.player
@@ -88,6 +93,7 @@ class HappyRuthJara(AVGECharacterCard):
             )
         else:
             for char in chars:
+                assert(isinstance(char, AVGECharacterCard))
                 packet.append(
                     AVGECardHPChange(
                         char,
@@ -98,5 +104,5 @@ class HappyRuthJara(AVGECharacterCard):
                         card,
                     )
                 )
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HappyRuthJara)))
         return card.generate_response()

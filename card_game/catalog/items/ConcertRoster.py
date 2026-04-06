@@ -15,22 +15,22 @@ class ConcertRoster(AVGEItemCard):
 	
 	
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
+	def play_card(card) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder
 
 
-		deck = card_for.player.cardholders[Pile.DECK]
-		hand = card_for.player.cardholders[Pile.HAND]
+		deck = card.player.cardholders[Pile.DECK]
+		hand = card.player.cardholders[Pile.HAND]
 
 		if(len(deck) == 0):
-			return card_for.generate_response(ResponseType.SKIP, {"msg": "No cards in deck for ConcertRoster."})
+			return card.generate_response(ResponseType.SKIP, {"msg": "No cards in deck for ConcertRoster."})
 
 		consider_count = min(3, len(deck))
 		considered_cards = list(deck.peek_n(consider_count))
 		pick_choices = [c for c in considered_cards if isinstance(c, AVGECharacterCard) or isinstance(c, AVGEStadiumCard)]
 
 		if(len(pick_choices) == 0):
-			return card_for.generate_response(ResponseType.FAST_FORWARD, {"msg": "No character or stadium in top of deck for ConcertRoster."})
+			return card.generate_response(ResponseType.FAST_FORWARD, {"msg": "No character or stadium in top of deck for ConcertRoster."})
 
 		def _input_valid(result) -> bool:
 			if(len(result) != 1):
@@ -46,19 +46,19 @@ class ConcertRoster(AVGEItemCard):
 
 		picked_card = None
 		missing = object()
-		picked_card = card_for.env.cache.get(card_for, ConcertRoster._TOP_PICK_KEY, missing)
+		picked_card = card.env.cache.get(card, ConcertRoster._TOP_PICK_KEY, missing)
 		if(picked_card is missing):
-			return card_for.generate_response(
+			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
 						InputEvent(
-							card_for.player,
+							card.player,
 							[ConcertRoster._TOP_PICK_KEY],
 							InputType.DETERMINISTIC,
 							_input_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "concert_roster_top_pick",
 								"targets": pick_choices
@@ -68,14 +68,15 @@ class ConcertRoster(AVGEItemCard):
 				},
 			)
 		packet = []
+		assert picked_card is not None
 		packet.append(
 			TransferCard(
 				picked_card,
 				deck,
 				hand,
 				ActionTypes.NONCHAR,
-				card_for,
+				card,
 			)
 		)
-		card_for.propose(packet)
-		return card_for.generate_response()
+		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, ConcertRoster)))
+		return card.generate_response()

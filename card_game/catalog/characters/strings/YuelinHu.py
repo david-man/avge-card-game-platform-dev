@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
@@ -22,12 +22,12 @@ class YuelinHu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _BirbDrawReactor(AVGEReactor):
             def __init__(self):
-                super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, YuelinHu), group=EngineGroup.EXTERNAL_REACTORS)
                 self.owner_card = owner_card
 
             def event_match(self, event):
@@ -115,7 +115,7 @@ class YuelinHu(AVGECharacterCard):
                 packet = [
                     TransferCard(discard_target, hand, discard, ActionTypes.PASSIVE, self.owner_card),
                     AVGECardHPChange(
-                        lambda: player.opponent.get_active_card(),
+                        player.opponent.get_active_card(),
                         40,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.STRING,
@@ -123,15 +123,15 @@ class YuelinHu(AVGECharacterCard):
                         self.owner_card,
                     ),
                 ]
-                self.propose(packet)
+                self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, YuelinHu)))
                 return self.generate_response()
 
         owner_card.add_listener(_BirbDrawReactor())
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
 
         r0 = card.env.cache.get(card, YuelinHu._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, YuelinHu._COIN_KEY_1, None, True)
@@ -156,16 +156,19 @@ class YuelinHu(AVGECharacterCard):
 
         heads = r0 + r1 + r2
 
-        for _ in range(heads):
-            card.propose(
-                AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
-                    40,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_1,
-                    card,
+        if heads > 0:
+            packet = []
+            for _ in range(heads):
+                packet.append(
+                    AVGECardHPChangeCreator(
+                        lambda: card.player.opponent.get_active_card(),
+                        40,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.STRING,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
                 )
-            )
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, YuelinHu)))
 
         return card.generate_response()

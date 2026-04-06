@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -19,7 +18,7 @@ class RyanLee(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGEEnergyTransfer, EmptyEvent
 
         bench = card.player.cardholders[Pile.BENCH]
@@ -61,7 +60,8 @@ class RyanLee(AVGECharacterCard):
                 },
             )
 
-        amt = int(energy_amt)
+        amt = int(energy_amt if energy_amt is not None else 0)
+        assert isinstance(chosen, AVGECharacterCard)
 
         def generate_packet():
             if amt <= 0 or len(card.player.energy) < amt:
@@ -77,15 +77,16 @@ class RyanLee(AVGECharacterCard):
                 for token in list(card.player.energy)[:amt]
             ]
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, RyanLee)))
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import TransferCard, AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import TransferCardCreator, AVGECardHPChangeCreator
 
-        packet = [
-            AVGECardHPChange(
+        packet = []
+        packet += [
+            AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 10,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -96,7 +97,7 @@ class RyanLee(AVGECharacterCard):
         ]
         if len(card.player.cardholders[Pile.DECK]) > 0:
             packet.append(
-                TransferCard(
+                TransferCardCreator(
                     lambda: card.player.cardholders[Pile.DECK].peek(),
                     card.player.cardholders[Pile.DECK],
                     card.player.cardholders[Pile.HAND],
@@ -104,6 +105,6 @@ class RyanLee(AVGECharacterCard):
                     card,
                 )
             )
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, RyanLee)))
 
         return card.generate_response()

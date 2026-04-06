@@ -7,20 +7,21 @@ from card_game.constants import *
 
 class LindemannReducedAttackCostConstraint(AVGEConstraint):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__((owner_card, AVGEConstrainerType.PASSIVE))
+		super().__init__(AVGEEngineID(owner_card, ActionTypes.PASSIVE, LindemannPracticeRoom))
 		self.owner_card = owner_card
 
 	def _bench_shares_active_type(self, player: AVGEPlayer) -> bool:
 		active_card = player.get_active_card()
-		active_type = active_card.attributes.get(AVGECardAttribute.TYPE)
+		assert isinstance(active_card, AVGECharacterCard)
+		active_type = active_card.card_type
 		for benched_card in player.cardholders[Pile.BENCH]:
 			if(not isinstance(benched_card, AVGECharacterCard)):
 				return False
-			if(benched_card.attributes.get(AVGECardAttribute.TYPE) != active_type):
+			if(benched_card.card_type != active_type):
 				return False
 		return True
 
-	def match(self, obj: AVGEAbstractEventListener | AVGEConstraint):
+	def match(self, obj):
 		from card_game.internal_events import PlayCharacterCard
 		from card_game.internal_listeners import AVGEPlayCharacterCardValidityCheck
 
@@ -42,8 +43,10 @@ class LindemannReducedAttackCostConstraint(AVGEConstraint):
 		if(not self._bench_shares_active_type(event.caller_card.env.player_turn)):
 			return False
 
-		energy_attached = int(event.card.attributes.get(AVGECardAttribute.ENERGY_ATTACHED, 0))
-		required_energy = int(event.card.attributes.get(AVGECardAttribute.MV_1_COST if event.card_action == ActionTypes.ATK_1 else AVGECardAttribute.MV_2_COST, 0))
+		if(not isinstance(obj, (AVGEAbstractEventListener, AVGEConstraint))):
+			return False
+		energy_attached = len(event.card.energy)
+		required_energy = int(event.card.atk_1_cost if event.card_action == ActionTypes.ATK_1 else event.card.atk_2_cost)
 		reduced_requirement = max(0, required_energy - 1)
 		return energy_attached >= reduced_requirement
 
@@ -62,7 +65,7 @@ class LindemannPracticeRoom(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		owner_card = self
 
 		if(owner_card.original_owner is None):

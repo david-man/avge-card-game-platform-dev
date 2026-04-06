@@ -15,10 +15,10 @@ class Camera(AVGEItemCard):
 	
 	
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
-		from card_game.internal_events import InputEvent, TransferCard
+	def play_card(card) -> Response:
+		from card_game.internal_events import InputEvent, TransferCardCreator
 
-		player = card_for.player
+		player = card.player
 		target_discard = player.cardholders[Pile.DISCARD]
 		deck = player.cardholders[Pile.DECK]
 
@@ -29,7 +29,7 @@ class Camera(AVGEItemCard):
 		]
 
 		if(len(eligible_cards) == 0):
-			return card_for.generate_response()
+			return card.generate_response()
 
 		def _input_valid(result) -> bool:
 			if(len(result) != 1):
@@ -37,9 +37,9 @@ class Camera(AVGEItemCard):
 			chosen = result[0]
 			return chosen in eligible_cards
 
-		chosen = card_for.env.cache.get(card_for, Camera._DISCARD_PICK_KEY, None, one_look=True)
+		chosen = card.env.cache.get(card, Camera._DISCARD_PICK_KEY, None, one_look=True)
 		if(chosen is None):
-			return card_for.generate_response(
+			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
@@ -49,7 +49,7 @@ class Camera(AVGEItemCard):
 							InputType.DETERMINISTIC,
 							_input_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "camera_discard_pick",
 								"targets":eligible_cards,
@@ -59,15 +59,17 @@ class Camera(AVGEItemCard):
 				},
 			)
 
-		card_for.propose(
-			TransferCard(
-				chosen,
-				target_discard,
-				deck,
-				ActionTypes.NONCHAR,
-				card_for,
-				lambda: random.randint(0, len(deck)),
-			)
+		card.propose(
+			AVGEPacket([
+				TransferCardCreator(
+					chosen,
+					target_discard,
+					deck,
+					ActionTypes.NONCHAR,
+					card,
+					lambda: random.randint(0, len(deck)),
+				)
+			], AVGEEngineID(card, ActionTypes.NONCHAR, Camera))
 		)
 
-		return card_for.generate_response()
+		return card.generate_response()

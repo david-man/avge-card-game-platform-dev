@@ -14,17 +14,17 @@ class CorruptedMusescoreFile(AVGEItemCard):
     
     
     @staticmethod
-    def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
+    def play_card(card) -> Response:
         from card_game.internal_events import InputEvent, TransferCard
 
-        player = card_for.player
+        player = card.player
         deck = player.cardholders[Pile.DECK]
         hand = player.cardholders[Pile.HAND]
         discard = player.cardholders[Pile.DISCARD]
 
         tool_targets = [c for c in player.get_cards_in_play() if len(c.tools_attached) > 0]
         if(len(tool_targets) == 0):
-            return card_for.generate_response(ResponseType.FAST_FORWARD, {"msg": "No tools to discard for CorruptedMusescoreFile."})
+            return card.generate_response(ResponseType.FAST_FORWARD, {"msg": "No tools to discard for CorruptedMusescoreFile."})
 
         def _tool_target_valid(result) -> bool:
             if(len(result) != 1):
@@ -32,9 +32,9 @@ class CorruptedMusescoreFile(AVGEItemCard):
             chosen = result[0]
             return isinstance(chosen, AVGECharacterCard) and chosen in tool_targets
 
-        chosen_tool_target = card_for.env.cache.get(card_for, CorruptedMusescoreFile._TOOL_DISCARD_TARGET_KEY, None)
+        chosen_tool_target = card.env.cache.get(card, CorruptedMusescoreFile._TOOL_DISCARD_TARGET_KEY, None)
         if(chosen_tool_target is None):
-            return card_for.generate_response(
+            return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
                     INTERRUPT_KEY: [
@@ -44,7 +44,7 @@ class CorruptedMusescoreFile(AVGEItemCard):
                             InputType.DETERMINISTIC,
                             _tool_target_valid,
                             ActionTypes.NONCHAR,
-                            card_for,
+                            card,
                             {
                                 "query_label": "corrupted_musescore_file_tool_discard_target",
                                 "targets": tool_targets,
@@ -56,7 +56,7 @@ class CorruptedMusescoreFile(AVGEItemCard):
 
         packet = []
         if(chosen_tool_target not in tool_targets or len(chosen_tool_target.tools_attached) == 0):
-            return card_for.generate_response(ResponseType.SKIP, {"msg": "Selected tool target is no longer valid."})
+            return card.generate_response(ResponseType.SKIP, {"msg": "Selected tool target is no longer valid."})
         tool_to_discard = list(chosen_tool_target.tools_attached)[0]
         packet.append(
             TransferCard(
@@ -64,7 +64,7 @@ class CorruptedMusescoreFile(AVGEItemCard):
                 chosen_tool_target.tools_attached,
                 discard,
                 ActionTypes.NONCHAR,
-                card_for,
+                card,
             )
         )
 
@@ -76,9 +76,9 @@ class CorruptedMusescoreFile(AVGEItemCard):
                 chosen = result[0]
                 return chosen in item_choices
 
-            deck_pick = card_for.env.cache.get(card_for, CorruptedMusescoreFile._DECK_ITEM_PICK_KEY, None, one_look=True)
+            deck_pick = card.env.cache.get(card, CorruptedMusescoreFile._DECK_ITEM_PICK_KEY, None, one_look=True)
             if(deck_pick is None):
-                return card_for.generate_response(
+                return card.generate_response(
                     ResponseType.INTERRUPT,
                     {
                         INTERRUPT_KEY: [
@@ -88,7 +88,7 @@ class CorruptedMusescoreFile(AVGEItemCard):
                                 InputType.DETERMINISTIC,
                                 _deck_pick_valid,
                                 ActionTypes.NONCHAR,
-                                card_for,
+                                card,
                                 {
                                     "query_label": "corrupted_musescore_file_item_pick",
                                     "targets": item_choices,
@@ -103,10 +103,10 @@ class CorruptedMusescoreFile(AVGEItemCard):
                     deck,
                     hand,
                     ActionTypes.NONCHAR,
-                    card_for,
+                    card,
                 )
             )
 
-        card_for.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, CorruptedMusescoreFile)))
 
-        return card_for.generate_response()
+        return card.generate_response()

@@ -11,12 +11,12 @@ class Richard(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+	def play_card(card: AVGECard) -> Response:
 		from card_game.internal_events import TransferCard
 
 
-		discard = card_for.player.cardholders[Pile.DISCARD]
-		deck = card_for.player.cardholders[Pile.DECK]
+		discard = card.player.cardholders[Pile.DISCARD]
+		deck = card.player.cardholders[Pile.DECK]
 
 		randomized_discard = list(discard)
 		random.shuffle(randomized_discard)
@@ -33,7 +33,7 @@ class Richard(AVGESupporterCard):
 					discard,
 					deck,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				)
 			)
 
@@ -44,11 +44,11 @@ class Richard(AVGESupporterCard):
 					deck,
 					discard,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				)
 			)
 
 		if(len(packet) > 0):
-			card_for.propose(packet)
+			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Richard)))
 
-		return card_for.generate_response(ResponseType.CORE)
+		return card.generate_response(ResponseType.CORE)

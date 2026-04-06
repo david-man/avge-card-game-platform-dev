@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from ..abstract.environment import Environment
 from .AVGECardholder import AVGEStadiumCardholder
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Type, cast
 from ..constants import *
 from enum import StrEnum
 from .envcache import EnvironmentCache
 from .AVGEPlayer import AVGEPlayer
 from .AVGECards import *
+from .AVGEEvent import AVGEPacket
+from ..engine.engine import Engine
 if TYPE_CHECKING:
-    from ..abstract.card import Card
     from .AVGECardholder import AVGECardholder
     
 
@@ -20,19 +20,19 @@ class GamePhase(StrEnum):
     PHASE_2 = 'phase_2'
     ATK_PHASE = 'phase_atk'
     TURN_END = 'end'
-class AVGEEnvironment(Environment):
-    def __init__(self, p1_deck : list[Type[Card]], p2_deck : list[Type[Card]]):
+class AVGEEnvironment():
+    def __init__(self, p1_deck : list[Type[AVGECard]], p2_deck : list[Type[AVGECard]], start_turn : PlayerID):
+        self._engine : Engine[AVGEEvent] = Engine()
         from card_game.catalog.status_effects.Goon import GoonStandAttackModifierConstraint, GoonStatusChangeReactor, GoonStatusTransferModifier
         from card_game.catalog.status_effects.Arranger import ArrangerStatusReactor
         super().__init__()
         self.stadium_cardholder : AVGEStadiumCardholder = AVGEStadiumCardholder()
         self.stadium_cardholder.env = self
-        self.cards : dict[str, Card] = {}
+        self.cards : dict[str, AVGECard] = {}
         self.players : dict[str, AVGEPlayer] = {}
         #adds players
         p1 = AVGEPlayer(PlayerID.P1)
         p2 = AVGEPlayer(PlayerID.P2)
-        print("HERE")
         p1.opponent = p2
         p2.opponent = p1
         self.add_player(p1)
@@ -48,8 +48,8 @@ class AVGEEnvironment(Environment):
             p2.cardholders[Pile.DECK].add_card(self.cards[f"card_{id_on}"])
             id_on+=1
         #pointer to whose turn it is
-        self.player_turn : AVGEPlayer = None
-        self.winner : AVGEPlayer = None
+        self.player_turn : AVGEPlayer = p1 if start_turn == PlayerID.P1 else p2
+        self.winner : AVGEPlayer | None = None
 
         self.game_phase : GamePhase = GamePhase.INIT 
         self.round_id = 0
@@ -58,13 +58,42 @@ class AVGEEnvironment(Environment):
         self.energy : list[EnergyToken] = []#where energy goes to die
 
         #status-based listeners
-        print("HERE")
         self.add_constrainer(GoonStandAttackModifierConstraint())
         self.add_listener(GoonStatusTransferModifier())
         self.add_listener(GoonStatusChangeReactor())
         self.add_listener(ArrangerStatusReactor())
 
-    def _format_card(self, c : Card | None) -> str:
+        
+
+    def transfer_card(self, card : AVGECard, 
+                      cardholder_from : AVGECardholder, 
+                      cardholder_to : AVGECardholder,
+                      new_idx = None):
+        #transfers a card from one cardholder to another. 
+        cardholder_from.remove_card_by_id(card.unique_id)
+        if(new_idx is None):
+            cardholder_to.add_card(card)
+        else:
+            cardholder_to.insert_card(new_idx, card)
+    def propose(self, p : AVGEPacket, priority : int = 0):
+        #opens engine in limited manner to cards and players
+        self._engine._propose(p, priority=priority)
+    def add_listener(self, el : AbstractEventListener):
+        """
+        If you're thinking of using this, you should have a VERY clear update_status invalidation constraint that you can guarantee will fire eventually. 
+        """
+        el.internal = False
+        #opens engine in limited manner to cards and players
+        self._engine.add_listener(el)
+    def add_constrainer(self, constrainer : AVGEConstraint):
+        #opens engine in limited manner to cards and players
+        self._engine.add_constraint(constrainer)
+    def add_player(self, player : AVGEPlayer):
+        player.attach_to_env(self)
+        self.players[player.unique_id] = player
+
+
+    def _format_card(self, c : AVGECard | None) -> str:
         if(c is None):
             return "None"
         return f"{c.unique_id}<{c.__class__.__name__}>"
@@ -80,7 +109,7 @@ class AVGEEnvironment(Environment):
             preview = "(empty)"
         return f"{pile}: {count} | {preview}"
 
-    def _format_card_attributes(self, c : Card) -> list[str]:
+    def _format_card_attributes(self, c : AVGECard) -> list[str]:
         if(c is None):
             return ["None"]
         if(isinstance(c, AVGECharacterCard)):
@@ -97,16 +126,7 @@ class AVGEEnvironment(Environment):
                     statuses.append(f"{status_effect}({len(attached_cards)})")
             details.append(f"statuses: {', '.join(statuses) if len(statuses) > 0 else 'none'}")
             return details
-
-        if(not hasattr(c, "attributes") or getattr(c, "attributes") is None):
-            return ["(no attributes)"]
-
-        attr_lines : list[str] = []
-        for key, value in c.attributes.items():
-            attr_lines.append(f"{key}: {value}")
-        if(len(attr_lines) == 0):
-            return ["(empty attributes)"]
-        return attr_lines
+        return []
 
     def __str__(self) -> str:
         lines : list[str] = []
@@ -132,11 +152,12 @@ class AVGEEnvironment(Environment):
             lines.append(f"TOKENS: {len(player.energy)}")
 
             active_card = player.get_active_card() if len(player.cardholders[Pile.ACTIVE]) > 0 else None
-            lines.append(f"ACTIVE CARD: {self._format_card(active_card)}")
-            a = "details: "
-            for attr_line in self._format_card_attributes(active_card):
-                a += f"| {attr_line} |"
-            lines.append(a)
+            if(active_card is not None):
+                lines.append(f"ACTIVE CARD: {self._format_card(active_card)}")
+                a = "details: "
+                for attr_line in self._format_card_attributes(active_card):
+                    a += f"| {attr_line} |"
+                lines.append(a)
 
             bench_cards = list(player.cardholders[Pile.BENCH].cards_by_id.values())
             lines.append("BENCH CARDS:")
@@ -162,7 +183,7 @@ class AVGEEnvironment(Environment):
         return self.players[player_id].cardholders[Pile.ACTIVE].peek()
 
     def forward(self, args : Data = {}) -> Response:
-        resp = super().forward(args)
+        resp = self._engine.forward(args)
         if(resp.response_type == ResponseType.GAME_END):
             #cut immediately on GAME_END
             return resp

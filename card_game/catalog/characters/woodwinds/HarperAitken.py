@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -19,13 +18,13 @@ class HarperAitken(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -40,31 +39,30 @@ class HarperAitken(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_1, HarperAitken))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, InputEvent
 
         opponent = card.player.opponent
         chars_in_play = opponent.get_cards_in_play()
 
         if len(chars_in_play) <= 2:
-            card.propose(
-                [
-                    AVGECardHPChange(
-                        target,
-                        80,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.WOODWIND,
-                        ActionTypes.ATK_2,
-                        card,
-                    )
-                    for target in chars_in_play + [card]
-                ]
-            )
+            packet = [
+                AVGECardHPChange(
+                    target,
+                    80,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+                for target in chars_in_play + [card]
+            ]
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, HarperAitken)))
             return card.generate_response()
 
         target_1 = card.env.cache.get(card, HarperAitken._TARGET_1_SELECTION_KEY, None, True)
@@ -90,17 +88,16 @@ class HarperAitken(AVGECharacterCard):
                 },
             )
 
-        card.propose(
-            [
-                AVGECardHPChange(
-                    target,
-                    80,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-                for target in [target_1, target_2, card]
-            ]
-        )
+        packet = [
+            AVGECardHPChange(
+                target,
+                80,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.WOODWIND,
+                ActionTypes.ATK_2,
+                card,
+            )
+            for target in [target_1, target_2, card]
+        ]
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, HarperAitken)))
         return card.generate_response()

@@ -11,21 +11,19 @@ class MatchaLatte(AVGEItemCard):
 	
 	
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
+	def play_card(card) -> Response:
 		from card_game.internal_events import AVGECardHPChange
-		def generate_packet():
-			packet = []
-			for card in card_for.player.get_cards_in_play():
-				packet.append(
-					AVGECardHPChange(
-						card,
-						10,
-						AVGEAttributeModifier.ADDITIVE,
-						card.card_type,
-						ActionTypes.NONCHAR,
-						card_for,
-					)
+		packet = []
+		for card in card.player.get_cards_in_play():
+			packet.append(
+				AVGECardHPChange(
+					card,
+					10,
+					AVGEAttributeModifier.ADDITIVE,
+					card.card_type,
+					ActionTypes.NONCHAR,
+					card,
 				)
-			return packet
-		card_for.propose(generate_packet)
-		return card_for.generate_response()
+			)
+		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, MatchaLatte)))
+		return card.generate_response()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 from card_game.catalog.items.ConcertProgram import ConcertProgram
 from card_game.catalog.items.ConcertTicket import ConcertTicket
@@ -21,13 +20,13 @@ class SarahChen(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -35,19 +34,19 @@ class SarahChen(AVGECharacterCard):
                     card,
                 ),
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_1, SarahChen))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
 
         player = card.player
@@ -86,9 +85,9 @@ class SarahChen(AVGECharacterCard):
                     ]
                 },
             )
-
+        assert isinstance(target_selection, AVGECharacterCard)
         card.propose(
-            [
+            AVGEPacket([
                 TransferCard(
                     discard_selection,
                     hand,
@@ -104,6 +103,6 @@ class SarahChen(AVGECharacterCard):
                     ActionTypes.ATK_2,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_2, SarahChen))
         )
         return card.generate_response()

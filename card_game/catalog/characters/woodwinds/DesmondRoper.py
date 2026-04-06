@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
-from card_game.avge_abstracts.AVGEEnvironment import Round
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -20,12 +19,12 @@ class DesmondRoper(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _DesmondPlayTracker(AVGEReactor):
             def __init__(self):
-                super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, DesmondRoper), group=EngineGroup.EXTERNAL_REACTORS)
 
             def event_match(self, event):
                 from card_game.internal_events import TransferCard
@@ -58,13 +57,13 @@ class DesmondRoper(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -79,27 +78,29 @@ class DesmondRoper(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_1, DesmondRoper))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         damage = 40
-        played_round: Round = card.env.cache.get(card, DesmondRoper._PLAYED_ROUND_KEY, None, True)
-        if played_round == card.env.round:
+        played_round = card.env.cache.get(card, DesmondRoper._PLAYED_ROUND_KEY, None, True)
+        if played_round == card.env.round_id:
             damage = 100
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                damage,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    damage,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, DesmondRoper))
         )
         return card.generate_response()

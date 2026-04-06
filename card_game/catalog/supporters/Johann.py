@@ -13,10 +13,10 @@ class Johann(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+	def play_card(card: AVGECard) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard, TurnEnd
 
-		player = card_for.player
+		player = card.player
 		discard = player.cardholders[Pile.DISCARD]
 		hand = player.cardholders[Pile.HAND]
 
@@ -49,12 +49,12 @@ class Johann(AVGESupporterCard):
 				return True
 
 			missing = object()
-			supporter_pick = card_for.env.cache.get(card_for, Johann._SUPPORTER_PICK_KEY, missing, one_look=True)
-			item_or_tool_pick = card_for.env.cache.get(card_for, Johann._ITEM_OR_TOOL_PICK_KEY, missing, one_look=True)
-			stadium_pick = card_for.env.cache.get(card_for, Johann._STADIUM_PICK_KEY, missing, one_look=True)
+			supporter_pick = card.env.cache.get(card, Johann._SUPPORTER_PICK_KEY, missing, one_look=True)
+			item_or_tool_pick = card.env.cache.get(card, Johann._ITEM_OR_TOOL_PICK_KEY, missing, one_look=True)
+			stadium_pick = card.env.cache.get(card, Johann._STADIUM_PICK_KEY, missing, one_look=True)
 
 			if(supporter_pick is missing):
-				return card_for.generate_interrupt([
+				return card.generate_interrupt([
 							InputEvent(
 								player,
 								[
@@ -65,7 +65,7 @@ class Johann(AVGESupporterCard):
 								InputType.DETERMINISTIC,
 								_input_valid,
 								ActionTypes.NONCHAR,
-								card_for,
+								card,
 								{
 									"query_label": "johann_3card_query",
 									"supporters": supporters_in_discard,
@@ -82,7 +82,7 @@ class Johann(AVGESupporterCard):
 						discard,
 						hand,
 						ActionTypes.NONCHAR,
-						card_for,
+						card,
 					)
 				)
 			if(item_or_tool_pick is not None):
@@ -92,7 +92,7 @@ class Johann(AVGESupporterCard):
 						discard,
 						hand,
 						ActionTypes.NONCHAR,
-						card_for,
+						card,
 					)
 				)
 			if(stadium_pick is not None):
@@ -102,10 +102,10 @@ class Johann(AVGESupporterCard):
 						discard,
 						hand,
 						ActionTypes.NONCHAR,
-						card_for,
+						card,
 					)
 				)
 
-		packet.append(TurnEnd(card_for.env, ActionTypes.NONCHAR, card_for))
-		card_for.propose(packet)
-		return card_for.generate_response(ResponseType.CORE)
+		packet.append(TurnEnd(card.env, ActionTypes.NONCHAR, card))
+		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Johann)))
+		return card.generate_response(ResponseType.CORE)

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class KatieTurnEndReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, KatieXiang), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -52,7 +52,7 @@ class KatieTurnEndReactor(AVGEReactor):
                         )
             return packet
 
-        self.propose(generate_packet)
+        self.propose(AVGEPacket(generate_packet(), AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)))
         return self.generate_response()
 
 
@@ -66,13 +66,13 @@ class KatieXiang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(KatieTurnEndReactor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
         from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
         from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
         from card_game.catalog.stadiums.RileyHall import RileyHall
@@ -85,14 +85,16 @@ class KatieXiang(AVGECharacterCard):
                 dmg = 80
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                dmg,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    dmg,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, KatieXiang))
         )
 
         return card.generate_response()

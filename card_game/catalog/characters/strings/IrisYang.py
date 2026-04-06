@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -16,12 +15,12 @@ class IrisYang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import TransferCard, PlayNonCharacterCard, AVGECardHPChange
 
-        packet = [
+        packet = [] + [
             AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
+                card.player.opponent.get_active_card(),
                 10,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.STRING,
@@ -35,7 +34,7 @@ class IrisYang(AVGECharacterCard):
         discard = card.player.cardholders[Pile.DISCARD]
 
         if len(deck) == 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, IrisYang)))
             return card.generate_response()
 
         top = deck.peek()
@@ -46,28 +45,27 @@ class IrisYang(AVGECharacterCard):
         else:
             packet.append(TransferCard(top, deck, hand, ActionTypes.ATK_1, card))
 
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, IrisYang)))
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer
 
-        def gen_packet():
-            packet = [
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            ]
-            for c in card.player.opponent.cardholders[Pile.BENCH]:
-                if len(c.energy) >= 1:
-                    packet.append(AVGEEnergyTransfer(c.energy[0], c, c.player, ActionTypes.ATK_2, card))
-            return packet
+        packet = [] + [
+            AVGECardHPChange(
+                card.player.opponent.get_active_card(),
+                10,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.STRING,
+                ActionTypes.ATK_2,
+                card,
+            )
+        ]
+        for c in card.player.opponent.cardholders[Pile.BENCH]:
+            assert isinstance(c, AVGECharacterCard)
+            if len(c.energy) >= 1:
+                packet.append(AVGEEnergyTransfer(c.energy[0], c, c.player, ActionTypes.ATK_2, card))
 
-        card.propose(gen_packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, IrisYang)))
         return card.generate_response()

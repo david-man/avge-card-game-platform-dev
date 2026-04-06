@@ -4,13 +4,13 @@ from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import *
+from card_game.internal_events import AVGECardHPChange, AVGECardHPChangeCreator
 
 
 
 class _JuanBenchAttackBoost(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, JuanBurgos), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -43,6 +43,7 @@ class _JuanBenchAttackBoost(AVGEModifier):
         return "JuanBurgos Bench Attack Boost"
 
     def modify(self, args=None):
+        assert isinstance(self.attached_event, AVGECardHPChange)
         event : AVGECardHPChange = self.attached_event
         # add +20 damage to the attack
         event.modify_magnitude(20)
@@ -57,35 +58,35 @@ class JuanBurgos(AVGECharacterCard):
         self.has_passive = True
         self.has_active = False
     @staticmethod
-    def passive(card : AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card : AVGECharacterCard) -> Response:
         # attach bench boost modifier globally while in play
         card.add_listener(_JuanBenchAttackBoost(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         opponent = card.player.opponent
         def generate_packet():
         # count brass characters on your bench
             bench = card.player.cardholders[ Pile.BENCH ]
             brass_count = 0
-            c : AVGECharacterCard
             for c in bench:
+                assert isinstance(c, AVGECharacterCard)
                 if c.card_type == CardType.BRASS:
                     brass_count += 1
 
             extra = 20 * brass_count
             damage = 40 + extra
 
-            return [AVGECardHPChange(
+            return [AVGECardHPChangeCreator(
                     lambda : opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
-                    ActionTypes.ATK_1,
                     CardType.BRASS,
+                    ActionTypes.ATK_1,
                     card,
                 )]
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, JuanBurgos)))
 
         return card.generate_response()

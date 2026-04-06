@@ -8,7 +8,7 @@ from card_game.internal_events import AVGEEnergyTransfer
 
 class _BarronEnergyCapPostcheck(AVGEPostcheck):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_POSTCHECK_1)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, None), group=EngineGroup.EXTERNAL_POSTCHECK_1)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -34,7 +34,7 @@ class _BarronEnergyCapPostcheck(AVGEPostcheck):
     def assess(self, args=None) -> Response:
         from card_game.internal_events import AVGEEnergyTransfer
         # if target target energy attached > 3
-        self.attached_event : AVGEEnergyTransfer
+        assert(isinstance(self.attached_event, AVGEEnergyTransfer))
         target = self.attached_event.target
         new_amt = len(target.energy)
 
@@ -53,15 +53,18 @@ class BarronLee(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(caller_card, parent_event: AVGEEvent) -> Response:
+    def passive(card) -> Response:
         # attach postcheck modifier
-        caller_card.add_listener(_BarronEnergyCapPostcheck(caller_card))
+        card.add_listener(_BarronEnergyCapPostcheck(card))
 
         def generate_packet():
             packet = []
-            opponent = caller_card.player.opponent
+            assert(card.player is not None)
+            opponent = card.player.opponent
+            assert opponent is not None
             for c in opponent.get_cards_in_play():
                 cur = len(c.energy)
+                assert(c.player is not FileNotFoundError)
                 if(cur > 3):
                     for token in c.energy[3:]:
                         packet.append(
@@ -70,22 +73,22 @@ class BarronLee(AVGECharacterCard):
                                 c,
                                 c.player,
                                 ActionTypes.PASSIVE,
-                                caller_card
+                                card
                             )
                         )
 
             return packet
-        caller_card.propose(generate_packet)
-        return caller_card.generate_response()
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.PASSIVE, BarronLee)))
+        return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
         opponent = card.player.opponent
         # deal 20 damage to opponent active
         packet = []
         packet.append(
-            AVGECardHPChange(
+            AVGECardHPChangeCreator(
                 lambda : opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -101,7 +104,7 @@ class BarronLee(AVGECharacterCard):
         energy_tokens = [token for c in chars for token in c.energy]
 
         if total_energy <= 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
             return card.generate_response()
 
         # prompt player for allocation per character; keys per character
@@ -142,6 +145,7 @@ class BarronLee(AVGECharacterCard):
         for idx, c in enumerate(chars):
             tokens = energy_tokens[:vals[idx]]
             for token in tokens:
+                assert token.holder is not None and not isinstance(token.holder, AVGEEnvironment)
                 packet.append(AVGEEnergyTransfer(
                     token,
                     token.holder,
@@ -152,6 +156,6 @@ class BarronLee(AVGECharacterCard):
             energy_tokens = energy_tokens[vals[idx]:]
 
         if len(packet) > 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
 
         return card.generate_response()

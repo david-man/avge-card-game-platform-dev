@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -19,13 +19,13 @@ class SasMajumder(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _SasDiscardReactor(AVGEReactor):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder),
                     group=EngineGroup.EXTERNAL_REACTORS,
                 )
 
@@ -64,7 +64,7 @@ class SasMajumder(AVGECharacterCard):
                 if args is None:
                     args = {}
                 from card_game.internal_events import TransferCard, InputEvent
-
+                assert(isinstance(self.attached_event, TransferCard))
                 event: TransferCard = self.attached_event
                 choice = owner_card.env.cache.get(owner_card, SasMajumder._INPUT_DISCARD, None, True)
                 if choice is None:
@@ -86,14 +86,16 @@ class SasMajumder(AVGECharacterCard):
                     )
                 if choice:
                     owner_card.propose(
-                        TransferCard(
-                            event.card,
-                            owner_card.player.opponent.cardholders[Pile.BENCH],
-                            owner_card.player.opponent.cardholders[Pile.DECK],
-                            ActionTypes.PASSIVE,
-                            owner_card,
-                            0,
-                        )
+                        AVGEPacket([
+                            TransferCard(
+                                event.card,
+                                owner_card.player.opponent.cardholders[Pile.BENCH],
+                                owner_card.player.opponent.cardholders[Pile.DECK],
+                                ActionTypes.PASSIVE,
+                                owner_card,
+                                0,
+                            )
+                        ], AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder))
                     )
                     owner_card.env.cache.set(owner_card, SasMajumder._LAST_ROUND_USED_KEY, owner_card.env.round_id)
 
@@ -103,11 +105,11 @@ class SasMajumder(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import TransferCard, AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import TransferCardCreator, AVGECardHPChangeCreator
 
-        packet = [
-            AVGECardHPChange(
+        packet = [] + [
+            AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 10,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -118,7 +120,7 @@ class SasMajumder(AVGECharacterCard):
         ]
         if len(card.player.cardholders[Pile.DECK]) > 0:
             packet.append(
-                TransferCard(
+                TransferCardCreator(
                     lambda: card.player.cardholders[Pile.DECK].peek(),
                     card.player.cardholders[Pile.DECK],
                     card.player.cardholders[Pile.HAND],
@@ -126,6 +128,6 @@ class SasMajumder(AVGECharacterCard):
                     card,
                 )
             )
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SasMajumder)))
 
         return card.generate_response()

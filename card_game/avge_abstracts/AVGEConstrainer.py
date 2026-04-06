@@ -1,8 +1,8 @@
 from ..engine.constrainer import *
 from typing import Tuple
 from enum import StrEnum
-from ..abstract.card import Card
-
+from .AVGEEvent import AVGEEvent
+from ..constants import AVGEEngineID
 class AVGEConstrainerType(StrEnum):
     ENV = "ENV"
     ATK_1 = 'ATK_1'
@@ -10,7 +10,7 @@ class AVGEConstrainerType(StrEnum):
     ATK_2 = "ATK_2"
     PASSIVE = "PASSIVE"#an action type exclusively used for stuff like follow-up atks
 
-
-type AVGEConstrainerID = Tuple[Card, AVGEConstrainerType]
-class AVGEConstraint(Constraint[AVGEConstrainerID]):
-    pass
+class AVGEConstraint(Constraint[AVGEEvent]):
+    def __init__(self, identifier : AVGEEngineID):
+        super().__init__()
+        self.identifier= identifier

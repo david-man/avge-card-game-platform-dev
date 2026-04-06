@@ -4,15 +4,13 @@ from typing import Tuple, TYPE_CHECKING, TypeVar, Generic
 if TYPE_CHECKING:
     from .event_listener import AbstractEventListener
     from .engine import Engine
-    from .event import Event
-
-T = TypeVar('T')
-class Constraint(Generic[T]):
-    def __init__(self, identifier : T):
-        self.identifier = identifier
+    from .event import Event, DeferredEvent
+EV = TypeVar('EV', bound='Event')
+class Constraint(Generic[EV]):
+    def __init__(self):
         self._invalidated : bool = False
     
-    def match(self, obj : AbstractEventListener | Constraint) -> bool:
+    def match(self, obj : AbstractEventListener[EV] | Constraint[EV]) -> bool:
         """
         Function that checks whether its constraining functionality matches the object.
         It matches to other constraints the moment it is added, but it matches to listeners at runtime. 
@@ -30,7 +28,7 @@ class Constraint(Generic[T]):
         Invalidates this constraint. Constraints are dropped out the moment they are invalidated
         """
         self._invalidated = True
-    def _should_attach(self, obj : AbstractEventListener | Constraint):
+    def _should_attach(self, obj : AbstractEventListener[EV] | Constraint[EV]):
         return (not self._invalidated) and (self.match(obj))
     def make_announcement(self) -> bool:
         raise NotImplementedError()

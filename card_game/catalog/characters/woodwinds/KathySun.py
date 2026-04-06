@@ -3,7 +3,6 @@ from __future__ import annotations
 import random
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -22,27 +21,26 @@ class KathySun(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, TransferCardCreator
 
         opponent = card.player.opponent
         opponent_hand = opponent.cardholders[Pile.HAND]
         opponent_deck = opponent.cardholders[Pile.DECK]
 
         if len(opponent_hand) <= 2:
-            card.propose(
-                [
-                    TransferCard(
-                        hand_card,
-                        opponent_hand,
-                        opponent_deck,
-                        ActionTypes.ATK_1,
-                        card,
-                        lambda: random.randint(0, len(opponent_deck)),
-                    )
-                    for hand_card in list(opponent_hand)
-                ]
-            )
+            packet = [] + [
+                TransferCardCreator(
+                    hand_card,
+                    opponent_hand,
+                    opponent_deck,
+                    ActionTypes.ATK_1,
+                    card,
+                    lambda: random.randint(0, len(opponent_deck)),
+                )
+                for hand_card in list(opponent_hand)
+            ]
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, KathySun)))
             return card.generate_response()
 
         chosen_for_shuffle_1 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_1, None, True)
@@ -67,10 +65,10 @@ class KathySun(AVGECharacterCard):
                     ]
                 },
             )
-
+        assert chosen_for_shuffle_2 is not None
         card.propose(
-            [
-                TransferCard(
+            AVGEPacket([
+                TransferCardCreator(
                     chosen_for_shuffle_1,
                     opponent_hand,
                     opponent_deck,
@@ -78,7 +76,7 @@ class KathySun(AVGECharacterCard):
                     card,
                     lambda: random.randint(0, len(opponent_deck)),
                 ),
-                TransferCard(
+                TransferCardCreator(
                     chosen_for_shuffle_2,
                     opponent_hand,
                     opponent_deck,
@@ -86,13 +84,13 @@ class KathySun(AVGECharacterCard):
                     card,
                     lambda: random.randint(0, len(opponent_deck)),
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_1, KathySun))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
 
         roll = card.env.cache.get(card, KathySun._D6_ROLL_KEY, None, True)
         if roll is None:
@@ -115,13 +113,15 @@ class KathySun(AVGECharacterCard):
 
         damage = 30 + 10 * int(roll)
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                damage,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    damage,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, KathySun))
         )
         return card.generate_response()

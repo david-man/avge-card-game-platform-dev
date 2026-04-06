@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
-from ..abstract.card import Card
+from .AVGECards import AVGECard
 if TYPE_CHECKING:
     from typing import Any
     
 
 @dataclass
 class Change():
-    card : Card
+    card : AVGECard
 @dataclass
 class InsertKey(Change):
     key : str
@@ -29,8 +29,8 @@ class EnvironmentCache():
         self.cache = {k : {} for k in card_ids}
         self._changelog : list[Change] = []
         self._capturing_changes = False
-        self.empty_card = Card("ENVIRONMENT_CARD_VARIABLE")
-    def set(self, card : Card, key : str, value):
+        self.empty_card = AVGECard("ENVIRONMENT_CARD_VARIABLE")
+    def set(self, card : AVGECard, key : str, value):
         if(card is None):
             card = self.empty_card
         if(self._capturing_changes):
@@ -40,7 +40,7 @@ class EnvironmentCache():
                 old_val = self.cache[card.unique_id][key]
                 self._changelog.append(AlterKey(card, key, old_val, value))
         self.cache[card.unique_id][key] = value
-    def get(self, card : Card, key : str, default = None, one_look = False):
+    def get(self, card : AVGECard | None, key : str, default = None, one_look = False):
         """Gets value from data cache. If one look is on, this ALSO deletes the value"""
         if(card is None):
             card = self.empty_card
@@ -48,7 +48,7 @@ class EnvironmentCache():
         if(one_look):
             self.delete(card, key)
         return val
-    def delete(self, card : Card, key : str):
+    def delete(self, card : AVGECard, key : str):
         """Attempts to delete a key in data cache. If key does not exist, does nothing"""
         if(card is None):
             card = self.empty_card
@@ -75,7 +75,7 @@ class EnvironmentCache():
     def release(self):
         self._capturing_changes = False
         self._changelog = []
-    def wipe(self, card : Card):
+    def wipe(self, card : AVGECard):
         if(card is None):
             card = self.empty_card
         for key in list(self.cache[card.unique_id]):

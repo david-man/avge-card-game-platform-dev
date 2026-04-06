@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
-	def __init__(self, owner_card: AVGESupporterCard, locked_character: AVGECharacterCard, opponent: AVGEPlayer, round_active : int):
+	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, locked_character: AVGECharacterCard, opponent: AVGEPlayer, round_active : int):
 		super().__init__(
-			identifier=(owner_card, AVGEEventListenerType.NONCHAR),
+			identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, Emma),
 			group=EngineGroup.EXTERNAL_PRECHECK_1,
 		)
 		self.owner_card = owner_card
@@ -32,7 +32,7 @@ class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
 			return False
 		if(event.card.player != self.opponent):
 			return False
-		if(self.env.round_id != self.round_active):
+		if(event.card.env.round_id != self.round_active):
 			return False
 		return True
 
@@ -40,7 +40,11 @@ class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
 		return True
 
 	def update_status(self):
-		if(self.env.round_id > self.round_active):
+		from card_game.internal_events import TransferCard
+		event = self.attached_event
+		if(not isinstance(event, TransferCard)):
+			return
+		if(event.card.env.round_id > self.round_active):
 			self.invalidate()
 
 	def make_announcement(self) -> bool:
@@ -49,7 +53,7 @@ class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
 	def package(self):
 		return "Emma Next-Turn Swap Lock"
 
-	def assess(self, args={}):
+	def assess(self, args=None):
 		return self.generate_response(
 			ResponseType.SKIP,
 			{"msg": "Emma: this character cannot be swapped out this turn."},
@@ -63,15 +67,15 @@ class Emma(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+	def play_card(card) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
-		opponent = card_for.player.opponent
+		opponent = card.player.opponent
 
 		opponent_active = opponent.get_active_card()
 		opponent_bench = opponent.cardholders[Pile.BENCH]
 
 		if(len(opponent_bench) == 0):
-			return card_for.generate_response(ResponseType.SKIP, {"msg": "Opponent has no benched character to switch with."})
+			return card.generate_response(ResponseType.SKIP, {"msg": "Opponent has no benched character to switch with."})
 
 		def _input_valid(result) -> bool:
 			return (
@@ -80,41 +84,40 @@ class Emma(AVGESupporterCard):
 				and result[0] in opponent_bench
 			)
 
-		missing = object()
-		selected_bench = card_for.env.cache.get(card_for, Emma._SELECTED_BENCH_KEY, missing, one_look=True)
-		if(selected_bench is missing):
-			return card_for.generate_interrupt([InputEvent(
-							card_for.player,
+		selected_bench = card.env.cache.get(card, Emma._SELECTED_BENCH_KEY, None, one_look=True)
+		if(selected_bench is None):
+			return card.generate_interrupt([InputEvent(
+							card.player,
 							[Emma._SELECTED_BENCH_KEY],
 							InputType.DETERMINISTIC,
 							_input_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "emma_opponent_bench_switch",
 								"targets": list(opponent_bench)
 							},
 						)])
 		locked_character = selected_bench
-
-		card_for.add_listener(EmmaNextTurnSwapLockAssessor(card_for, locked_character, opponent, opponent.get_next_turn()))
-		card_for.propose(
-			[
+		assert card is not None
+		card.add_listener(EmmaNextTurnSwapLockAssessor(card, locked_character, opponent, opponent.get_next_turn()))
+		card.propose(
+			AVGEPacket([
 				TransferCard(
 					selected_bench,
 					opponent_bench,
 					opponent.cardholders[Pile.ACTIVE],
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				),
 				TransferCard(
 					opponent_active,
 					opponent.cardholders[Pile.ACTIVE],
 					opponent_bench,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				),
-			]
+			], AVGEEngineID(card, ActionTypes.NONCHAR, Emma))
 		)
 
-		return card_for.generate_response(ResponseType.CORE)
+		return card.generate_response(ResponseType.CORE)

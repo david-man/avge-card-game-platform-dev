@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -18,30 +17,32 @@ class HenryWang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         last_round = card.env.cache.get(card, HenryWang._LAST_ATK1_ROUND_KEY, None)
         if last_round is not None and card.env.round_id - last_round <= 1:
             return card.generate_response()
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                30,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    30,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, HenryWang))
         )
 
         card.env.cache.set(card, HenryWang._LAST_ATK1_ROUND_KEY, card.env.round_id)
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, TransferCard
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, TransferCard
 
         opponent = card.player.opponent
 
@@ -59,7 +60,7 @@ class HenryWang(AVGECharacterCard):
 
             packet.insert(
                 0,
-                AVGECardHPChange(
+                AVGECardHPChangeCreator(
                     lambda: opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
@@ -68,7 +69,7 @@ class HenryWang(AVGECharacterCard):
                     card,
                 ),
             )
-            return packet
+            return AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, HenryWang))
 
-        card.propose(generate_packet)
+        card.propose(generate_packet())
         return card.generate_response()

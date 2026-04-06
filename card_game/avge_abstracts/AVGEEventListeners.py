@@ -1,14 +1,16 @@
-from ..engine.event_listener import *
+from __future__ import annotations
+
+from ..engine.event_listener import *#type: ignore
 from ..engine.engine_constants import *
-from ..engine.event import Event
-from typing import Tuple
+from typing import TYPE_CHECKING
 from enum import StrEnum
-from ..abstract.card import Card
 from .AVGEEvent import AVGEEvent
-from .AVGEEnvironment import AVGEEnvironment
+
+if TYPE_CHECKING:
+    from .AVGEEvent import AVGEPacket
 
 
-class AVGEEventListenerType(StrEnum):
+class ActionTypes(StrEnum):
     ENV = "ENV"
     ATK_1 = 'ATK_1'
     ACTIVE = 'ACTIVE'#an action type for abilities that are phrased like "once per turn, you may..."
@@ -16,89 +18,25 @@ class AVGEEventListenerType(StrEnum):
     PASSIVE = "PASSIVE"#an action type exclusively used for stuff like follow-up atks
     NONCHAR = 'NONCHAR'#any non-character card's event listener
 
-type AVGEListenerID = Tuple[Card, AVGEEventListenerType]
-
-class AVGEAbstractEventListener(AbstractEventListener[AVGEListenerID]):
+class AVGEAbstractEventListener(AbstractEventListener[AVGEEvent]):
     def __init__(self, 
-                 identifier : AVGEListenerID,
+                 identifier : AVGEEngineID,
                  group : EngineGroup, 
                  internal : bool = False,
                  requires_runtime_info : bool = True):
-        super().__init__(identifier,group,internal,requires_runtime_info)
-        self.env : AVGEEnvironment = None
-    def attach_to_event(self, e : AVGEEvent):
-        super().attach_to_event(e)
-        self.env : AVGEEnvironment = e.env
-    def detach_from_event(self):
-        super().detach_from_event()
-        self.env = None
-    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
-        self.env.propose(e, priority)
+        super().__init__(group,internal,requires_runtime_info)
+        self.identifier= identifier
 
-class AVGEModifier(ModifierEventListener[AVGEListenerID]):
-    def __init__(self, 
-                 identifier : AVGEListenerID,
-                 group : EngineGroup, 
-                 internal : bool = False,
-                 requires_runtime_info : bool = True):
-        super().__init__(identifier,group,internal,requires_runtime_info)
-        self.env : AVGEEnvironment = None
-    def attach_to_event(self, e : AVGEEvent):
-        super().attach_to_event(e)
-        self.env : AVGEEnvironment = e.env
-    def detach_from_event(self):
-        super().detach_from_event()
-        self.env = None
-    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
-        self.env.propose(e, priority)
+class AVGEModifier(AVGEAbstractEventListener, ModifierEventListener[AVGEEvent]):
+    pass
 
-class AVGEPostcheck(PostCheckEventListener[AVGEListenerID]):
-    def __init__(self, 
-                 identifier : AVGEListenerID,
-                 group : EngineGroup, 
-                 internal : bool = False,
-                 requires_runtime_info : bool = True):
-        super().__init__(identifier,group,internal,requires_runtime_info)
-        self.env : AVGEEnvironment = None
-    def attach_to_event(self, e : AVGEEvent):
-        super().attach_to_event(e)
-        self.env : AVGEEnvironment = e.env
-    def detach_from_event(self):
-        super().detach_from_event()
-        self.env = None
-    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
-        self.env.propose(e, priority)
+class AVGEPostcheck(AVGEAbstractEventListener, PostCheckEventListener[AVGEEvent]):
+    pass
 
-class AVGEAssessor(AssessorEventListener[AVGEListenerID]):
-    def __init__(self, 
-                 identifier : AVGEListenerID,
-                 group : EngineGroup, 
-                 internal : bool = False,
-                 requires_runtime_info : bool = True):
-        super().__init__(identifier,group,internal,requires_runtime_info)
-        self.env : AVGEEnvironment = None
-    def attach_to_event(self, e : AVGEEvent):
-        super().attach_to_event(e)
-        self.env : AVGEEnvironment = e.env
-    def detach_from_event(self):
-        super().detach_from_event()
-        self.env = None
-    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
-        self.env.propose(e, priority)
+class AVGEAssessor(AVGEAbstractEventListener, AssessorEventListener[AVGEEvent]):
+    pass
 
-class AVGEReactor(ReactorEventListener[AVGEListenerID]):
-    def __init__(self, 
-                 identifier : AVGEListenerID,
-                 group : EngineGroup, 
-                 internal : bool = False,
-                 requires_runtime_info : bool = True):
-        super().__init__(identifier,group,internal,requires_runtime_info)
-        self.env : AVGEEnvironment = None
-    def attach_to_event(self, e : AVGEEvent):
-        super().attach_to_event(e)
-        self.env : AVGEEnvironment = e.env
-    def detach_from_event(self):
-        super().detach_from_event()
-        self.env = None
-    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
-        self.env.propose(e, priority)
+class AVGEReactor(AVGEAbstractEventListener, ReactorEventListener[AVGEEvent]):
+    def propose(self, e : AVGEPacket, priority : int = 0):#type: ignore
+        assert self.engine is not None
+        self.engine._propose(e, priority)

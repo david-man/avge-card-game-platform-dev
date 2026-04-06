@@ -13,9 +13,9 @@ class IceSkates(AVGEItemCard):
 	
 	
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
+	def play_card(card) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
-		player = card_for.player
+		player = card.player
 		active = player.get_active_card()
 
 		bench = player.cardholders[Pile.BENCH]
@@ -23,14 +23,14 @@ class IceSkates(AVGEItemCard):
 		bench_targets = [c for c in bench if isinstance(c, AVGECharacterCard)]
 
 		if(len(bench_targets) == 0):
-			return card_for.generate_response(ResponseType.SKIP, {"msg": "No benched characters to switch with."})
+			return card.generate_response(ResponseType.SKIP, {"msg": "No benched characters to switch with."})
 
 		def _input_valid(result) -> bool:
 			return len(result) == 1 and isinstance(result[0], AVGECharacterCard) and result[0] in bench_targets
 
-		bench_target = card_for.env.cache.get(card_for, IceSkates._BENCH_TARGET_KEY, None, one_look=True)
+		bench_target = card.env.cache.get(card, IceSkates._BENCH_TARGET_KEY, None, one_look=True)
 		if(bench_target is None):
-			return card_for.generate_response(
+			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
@@ -40,7 +40,7 @@ class IceSkates(AVGEItemCard):
 							InputType.DETERMINISTIC,
 							_input_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "iceskates_switch_bench",
 								"targets": bench_targets
@@ -50,23 +50,23 @@ class IceSkates(AVGEItemCard):
 				},
 			)
 
-		card_for.propose(
-			[
+		card.propose(
+			AVGEPacket([
 				TransferCard(
 					bench_target,
 					bench,
 					active_holder,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				),
 				TransferCard(
 					active,
 					active_holder,
 					bench,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				),
-			]
+			], AVGEEngineID(card, ActionTypes.NONCHAR, IceSkates))
 		)
 
-		return card_for.generate_response()
+		return card.generate_response()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -16,13 +15,13 @@ class AnaliseJia(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -30,23 +29,23 @@ class AnaliseJia(AVGECharacterCard):
                     card,
                 ),
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_1, AnaliseJia))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
 
         def packet():
-            p = [
+            p = [] +[
                 AVGECardHPChange(
                     character,
                     30,
@@ -63,5 +62,5 @@ class AnaliseJia(AVGECharacterCard):
                 p.append(AVGEEnergyTransfer(card.energy[0], card, card.player, ActionTypes.ATK_2, card))
             return p
 
-        card.propose(packet)
+        card.propose(AVGEPacket(packet(), AVGEEngineID(card, ActionTypes.ATK_2, AnaliseJia)))
         return card.generate_response()

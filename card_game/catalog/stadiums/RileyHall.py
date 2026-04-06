@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
     def __init__(self, owner_card: AVGEStadiumCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, RileyHall), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -28,10 +28,11 @@ class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
     def package(self):
         return "RileyHall Reactor"
 
-    def react(self, args={}):
-        from card_game.internal_events import AVGECardAttributeChange,  PhasePickCard
+    def react(self, args=None):
+        from card_game.internal_events import AVGECardHPChange,  PhasePickCard
 
-        event : PhasePickCard= self.attached_event
+        event = self.attached_event
+        assert isinstance(event, PhasePickCard)
         target_player = event.player
 
         empty_bench_slots = max(0, max_bench_size - len(target_player.cardholders[Pile.BENCH]))
@@ -42,23 +43,22 @@ class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
         packet = []
 
         for character in target_player.get_cards_in_play():
-            current_hp = int(character.attributes.get(AVGECardAttribute.HP, 0))
+            current_hp = character.hp
             if current_hp < damage_per_character:
                 continue
             packet.append(
-                AVGECardAttributeChange(
+                AVGECardHPChange(
                     character,
-                    AVGECardAttribute.HP,
                     damage_per_character,
                     AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.ALL,
                     ActionTypes.NONCHAR,
                     self.owner_card,
-                    None,
                 )
             )
 
         if(len(packet) > 0):
-            self.propose(packet)
+            self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RileyHall)))
         return self.generate_response()
 
 
@@ -66,6 +66,6 @@ class RileyHall(AVGEStadiumCard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
 
-    def play_card(self, parent_event: AVGEEvent) -> Response:
+    def play_card(self) -> Response:
         self.add_listener(RileyHallStartTurnBenchGapDamageReactor(self))
         return self.generate_response()

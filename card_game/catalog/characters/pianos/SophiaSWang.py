@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier, AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 import math
@@ -9,7 +9,7 @@ import math
 
 class SophiaNextAttackHalvedModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.NONCHAR), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, SophiaSWang), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -43,7 +43,10 @@ class SophiaNextAttackHalvedModifier(AVGEModifier):
     def modify(self, args=None):
         if args is None:
             args = {}
+        from card_game.internal_events import AVGECardHPChange
+
         event = self.attached_event
+        assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(-math.floor(event.magnitude / 2))
         return self.generate_response()
 
@@ -52,7 +55,7 @@ class _SophiaEnergyReactor(AVGEReactor):
     _LAST_ENERGY_TURN_KEY = "sophiaswang_last_energy_turn"
 
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SophiaSWang), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -83,7 +86,7 @@ class _SophiaEnergyReactor(AVGEReactor):
     def react(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import TransferCard
+        from card_game.internal_events import TransferCardCreator
 
         owner = self.owner_card
         env = owner.env
@@ -96,7 +99,17 @@ class _SophiaEnergyReactor(AVGEReactor):
         if len(deck) == 0:
             return self.generate_response()
 
-        owner.propose(TransferCard(lambda: deck.peek(), deck, discard, ActionTypes.PASSIVE, owner))
+        owner.propose(
+            AVGEPacket([
+                TransferCardCreator(
+                    lambda: deck.peek(),
+                    deck,
+                    discard,
+                    ActionTypes.PASSIVE,
+                    owner,
+                )
+            ], AVGEEngineID(owner, ActionTypes.PASSIVE, SophiaSWang))
+        )
         return self.generate_response()
 
 
@@ -110,23 +123,25 @@ class SophiaSWang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(_SophiaEnergyReactor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaSWang))
         )
 
         card.add_listener(SophiaNextAttackHalvedModifier(card))

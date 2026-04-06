@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -18,13 +18,13 @@ class KanaTakizawa(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _DamageReducer(AVGEModifier):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, KanaTakizawa),
                     group=EngineGroup.EXTERNAL_MODIFIERS_2,
                 )
 
@@ -54,15 +54,19 @@ class KanaTakizawa(AVGECharacterCard):
             def modify(self, args=None):
                 if args is None:
                     args = {}
-                self.attached_event.modify_magnitude(-10)
+                from card_game.internal_events import AVGECardHPChange
+
+                event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
+                event.modify_magnitude(-10)
                 return self.generate_response()
 
         owner_card.add_listener(_DamageReducer())
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
 
         roll = card.env.cache.get(card, KanaTakizawa._D6_ROLL_KEY, None, True)
         if roll is None:
@@ -85,13 +89,15 @@ class KanaTakizawa(AVGECharacterCard):
 
         damage = 30 + 10 * int(roll)
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                damage,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    damage,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, KanaTakizawa))
         )
         return card.generate_response()

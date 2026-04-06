@@ -3,7 +3,6 @@ from __future__ import annotations
 from random import randint
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -26,8 +25,8 @@ class JessicaJung(AVGECharacterCard):
         return used != card.env.round_id
 
     @staticmethod
-    def active(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+    def active(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, TransferCardCreator
 
         card.env.cache.set(card, JessicaJung._ACTIVE_USED_KEY, card.env.round_id)
         discard = card.player.cardholders[Pile.DISCARD]
@@ -80,22 +79,28 @@ class JessicaJung(AVGECharacterCard):
             )
 
         deck = card.player.cardholders[Pile.DECK]
-        card.propose(TransferCard(chosen, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, lambda: randint(0, len(deck))))
+        card.propose(
+            AVGEPacket([
+                TransferCardCreator(chosen, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, lambda: randint(0, len(deck)))
+            ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JessicaJung))
+        )
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                40,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    40,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, JessicaJung))
         )
 
         return card.generate_response()

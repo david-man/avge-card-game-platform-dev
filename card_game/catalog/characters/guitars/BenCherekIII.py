@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, TransferCard
-
+from card_game.internal_events import InputEvent, TransferCard, TransferCardCreator
+from card_game.engine.event import DeferredEvent
 
 class BenCherekIII(AVGECharacterCard):
     _YES_NO_KEY = "bencherek_yn_key"
@@ -18,7 +17,7 @@ class BenCherekIII(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         yn = card.env.cache.get(card, BenCherekIII._YES_NO_KEY, None, True)
         if yn is None:
             return card.generate_response(
@@ -39,8 +38,8 @@ class BenCherekIII(AVGECharacterCard):
             )
 
         if yn:
-            card.propose([
-                TransferCard(
+            card.propose(AVGEPacket([
+                TransferCardCreator(
                     lambda: card.player.get_active_card(),
                     card.player.cardholders[Pile.ACTIVE],
                     card.player.cardholders[Pile.BENCH],
@@ -54,15 +53,16 @@ class BenCherekIII(AVGECharacterCard):
                     ActionTypes.PASSIVE,
                     card,
                 ),
-            ])
+            ], AVGEEngineID(card, ActionTypes.PASSIVE, BenCherekIII)))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, AVGECardHPChange
 
-        packet = [
-            AVGECardHPChange(
+        packet = []
+        packet.append([
+            AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 50,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -70,9 +70,10 @@ class BenCherekIII(AVGECharacterCard):
                 ActionTypes.ATK_1,
                 card,
             )
-        ]
+        ])
 
         for c in card.player.cardholders[Pile.BENCH]:
+            assert isinstance(c, AVGECharacterCard)
             if c.card_type == CardType.GUITAR:
                 packet.append(
                     AVGECardHPChange(
@@ -85,5 +86,5 @@ class BenCherekIII(AVGECharacterCard):
                     )
                 )
 
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BenCherekIII)))
         return card.generate_response()

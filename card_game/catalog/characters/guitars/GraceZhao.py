@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.catalog.tools import AVGEShowcaseSticker, AVGETShirt
@@ -9,7 +9,7 @@ from card_game.catalog.tools import AVGEShowcaseSticker, AVGETShirt
 
 class _GraceTurnEndReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, GraceZhao), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -79,14 +79,16 @@ class _GraceTurnEndReactor(AVGEReactor):
             )
 
         self.propose(
-            AVGECardHPChange(
-                selected_card,
-                10,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.GUITAR,
-                ActionTypes.PASSIVE,
-                self.owner_card,
-            )
+            AVGEPacket([
+                AVGECardHPChange(
+                    selected_card,
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.GUITAR,
+                    ActionTypes.PASSIVE,
+                    self.owner_card,
+                )
+            ], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, GraceZhao))
         )
         return self.generate_response()
 
@@ -103,16 +105,17 @@ class GraceZhao(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(_GraceTurnEndReactor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, AVGECardHPChange
 
-        packet = [
-            AVGECardHPChange(
+        packet = []
+        packet.append([
+            AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 50,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -120,7 +123,7 @@ class GraceZhao(AVGECharacterCard):
                 ActionTypes.ATK_1,
                 card,
             )
-        ]
+        ])
 
         for c in card.player.cardholders[Pile.BENCH]:
             if isinstance(c, AVGECharacterCard) and c.card_type == CardType.GUITAR:
@@ -135,5 +138,5 @@ class GraceZhao(AVGECharacterCard):
                     )
                 )
 
-        card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, GraceZhao)))
         return card.generate_response()

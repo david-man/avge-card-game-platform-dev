@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class FoldingStandNextAttackModifier(AVGEModifier):
-    def __init__(self, owner_card: AVGEItemCard, round_played):
+    def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, round_played):
         super().__init__(
-            identifier=(owner_card, AVGEEventListenerType.NONCHAR),
+            identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, FoldingStand),
             group=EngineGroup.EXTERNAL_MODIFIERS_2,
         )
         self.owner_card = owner_card
@@ -48,8 +48,10 @@ class FoldingStandNextAttackModifier(AVGEModifier):
     def on_packet_completion(self):
         self.invalidate()
 
-    def modify(self, args={}):
+    def modify(self, args=None):
         event = self.attached_event
+        from card_game.internal_events import AVGECardHPChange
+        assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(10)
         return self.generate_response()
 
@@ -61,8 +63,8 @@ class FoldingStand(AVGEItemCard):
     
     
     @staticmethod
-    def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
-        round_played = card_for.env.round_id
-        next_attack_modifier = FoldingStandNextAttackModifier(card_for, round_played)
-        card_for.add_listener(next_attack_modifier)
-        return card_for.generate_response()
+    def play_card(card) -> Response:
+        round_played = card.env.round_id
+        next_attack_modifier = FoldingStandNextAttackModifier(card, round_played)
+        card.add_listener(next_attack_modifier)
+        return card.generate_response()

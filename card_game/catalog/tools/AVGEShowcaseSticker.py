@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -9,7 +9,7 @@ from card_game.engine.engine_constants import EngineGroup
 class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 	def __init__(self, owner_card: AVGEToolCard):
 		super().__init__(
-			identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+			identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, AVGEShowcaseSticker),
 			group=EngineGroup.EXTERNAL_REACTORS,
 		)
 		self.owner_card = owner_card
@@ -18,6 +18,8 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 		from card_game.internal_events import PhasePickCard
 
 		if(not isinstance(event, PhasePickCard)):
+			return False
+		if(self.owner_card.card_attached is None or self.owner_card.card_attached.player is None):
 			return False
 		return (
 			event.player == self.owner_card.card_attached.player
@@ -37,7 +39,7 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 	def package(self):
 		return "AVGEAmbassador Reactor"
 
-	def react(self, args={}):
+	def react(self, args=None):
 		from card_game.internal_events import InputEvent, TransferCard
 		player = self.owner_card.player
 		coin_val = self.owner_card.env.cache.get(self.owner_card, AVGEShowcaseSticker._COIN_RESULT_KEY, None, one_look=True)
@@ -66,13 +68,15 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 			hand = player.cardholders[Pile.HAND]
 			if(len(deck) > 0):
 				self.propose(
-					TransferCard(
-						deck.peek(),
-						deck,
-						hand,
-						ActionTypes.NONCHAR,
-						self.owner_card,
-					)
+					AVGEPacket([
+						TransferCard(
+							deck.peek(),
+							deck,
+							hand,
+							ActionTypes.NONCHAR,
+							self.owner_card,
+						)
+					], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, AVGEShowcaseSticker))
 				)
 
 		return self.generate_response()
@@ -85,6 +89,6 @@ class AVGEShowcaseSticker(AVGEToolCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		self.add_listener(AVGEShowcaseStickerTurnStartReactor(self))
 		return self.generate_response()

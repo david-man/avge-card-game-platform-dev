@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
@@ -19,12 +19,12 @@ class MichelleKim(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, PlayNonCharacterCard, TransferCard
 
-        packet = [
+        packet = [] + [
             AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
+                card.player.opponent.get_active_card(),
                 10,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.STRING,
@@ -38,7 +38,7 @@ class MichelleKim(AVGECharacterCard):
         discard = card.player.cardholders[Pile.DISCARD]
 
         if len(deck) == 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, MichelleKim)))
             return card.generate_response()
 
         top = deck.peek()
@@ -48,16 +48,16 @@ class MichelleKim(AVGECharacterCard):
             packet.append(TransferCard(top, hand, discard, ActionTypes.ATK_1, card))
         else:
             packet.append(TransferCard(top, deck, hand, ActionTypes.ATK_1, card))
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, MichelleKim)))
         return card.generate_response()
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _MikuPlayReactor(AVGEReactor):
             def __init__(self):
-                super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MichelleKim), group=EngineGroup.EXTERNAL_REACTORS)
                 self.owner_card = owner_card
 
             def event_match(self, event):
@@ -91,21 +91,23 @@ class MichelleKim(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         last_miku_round = card.env.cache.get(card, MichelleKim._MIKU_PLAYED_ROUND_KEY, None, True)
         dmg = 80 if (last_miku_round == card.env.round_id) else 30
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                dmg,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    dmg,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, MichelleKim))
         )
 
         return card.generate_response()

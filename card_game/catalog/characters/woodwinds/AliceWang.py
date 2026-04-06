@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -18,13 +18,13 @@ class AliceWang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _OpponentHandEqualizer(AVGEReactor):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, AliceWang),
                     group=EngineGroup.EXTERNAL_REACTORS,
                 )
 
@@ -82,7 +82,7 @@ class AliceWang(AVGECharacterCard):
                             ]
                         },
                     )
-
+                
                 packet = [
                     TransferCard(
                         selected,
@@ -91,26 +91,28 @@ class AliceWang(AVGECharacterCard):
                         ActionTypes.PASSIVE,
                         owner_card,
                     )
-                    for selected in discarded_cards
+                    for selected in discarded_cards if isinstance(selected, AVGECard)
                 ]
-                self.propose(packet)
+                self.propose(AVGEPacket(packet, AVGEEngineID(owner_card, ActionTypes.PASSIVE, AliceWang)))
                 return self.generate_response()
 
         owner_card.add_listener(_OpponentHandEqualizer())
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                40,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    40,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, AliceWang))
         )
         return card.generate_response()

@@ -4,14 +4,14 @@ import random
 import math
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class DavidNextAttackHalvedModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.NONCHAR), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, DavidMan), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -45,7 +45,10 @@ class DavidNextAttackHalvedModifier(AVGEModifier):
     def modify(self, args=None):
         if args is None:
             args = {}
+        from card_game.internal_events import AVGECardHPChange
+
         event = self.attached_event
+        assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(-math.floor(event.magnitude / 2))
         return self.generate_response()
 
@@ -72,8 +75,8 @@ class DavidMan(AVGECharacterCard):
         return used != card.env.round_id
 
     @staticmethod
-    def active(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard, EmptyEvent
+    def active(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, TransferCardCreator, EmptyEvent
 
         discard = card.player.cardholders[Pile.DISCARD]
         deck = card.player.cardholders[Pile.DECK]
@@ -113,25 +116,29 @@ class DavidMan(AVGECharacterCard):
 
         def generate_packet():
             if chosen_card is None or chosen_card not in discard:
-                return [EmptyEvent("DavidMan active had no valid discard target at resolve.", ActionTypes.ACTIVATE_ABILITY, card)]
-            return [TransferCard(chosen_card, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, new_idx)]
+                return AVGEPacket([EmptyEvent("DavidMan active had no valid discard target at resolve.", ActionTypes.ACTIVATE_ABILITY, card)], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, DavidMan))
+            return AVGEPacket([
+                TransferCardCreator(chosen_card, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, new_idx)
+            ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, DavidMan))
 
-        card.propose(generate_packet)
+        card.propose(generate_packet())
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, DavidMan))
         )
 
         card.add_listener(DavidNextAttackHalvedModifier(card))

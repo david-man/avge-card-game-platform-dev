@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -21,7 +20,7 @@ class MasonYu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGEEnergyTransfer, InputEvent
 
         player = card.player
@@ -54,23 +53,27 @@ class MasonYu(AVGECharacterCard):
                 },
             )
 
-        card.propose(AVGEEnergyTransfer(player.energy[0], player, chosen, ActionTypes.ATK_1, card))
+        card.propose(
+            AVGEPacket([
+                AVGEEnergyTransfer(player.energy[0], player, chosen, ActionTypes.ATK_1, card)
+            ], AVGEEngineID(card, ActionTypes.ATK_1, MasonYu))
+        )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGEStatusChange, AVGECardHPChange, InputEvent
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardStatusChange, AVGECardHPChange, InputEvent
         from card_game.constants import StatusChangeType, StatusEffect
 
         player = card.player
-        already_arranger = [c for c in player.get_cards_in_play() if int(c.statuses_attached.get(StatusEffect.ARRANGER, 0)) > 0]
+        already_arranger = [c for c in player.get_cards_in_play() if isinstance(c, AVGECharacterCard) and len(c.statuses_attached.get(StatusEffect.ARRANGER, [])) > 0]
         packet = []
         for c in player.get_cards_in_play():
-            packet.append(AVGEStatusChange(c, StatusEffect.ARRANGER, StatusChangeType.ADD, ActionTypes.ATK_2, card))
+            packet.append(AVGECardStatusChange(StatusEffect.ARRANGER, StatusChangeType.ADD, c, ActionTypes.ATK_2, card))
 
         if len(already_arranger) == 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
             return card.generate_response()
 
         coin_keys = [MasonYu._ATK2_COIN_BASE + str(i) for i in range(len(already_arranger))]
@@ -93,10 +96,10 @@ class MasonYu(AVGECharacterCard):
                 },
             )
 
-        heads = sum(rolls)
+        heads = sum(roll for roll in rolls if roll is not None)
 
         if heads < 2:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
             return card.generate_response()
 
         opp_cards = player.opponent.get_cards_in_play()
@@ -121,7 +124,7 @@ class MasonYu(AVGECharacterCard):
                     card,
                 )
             )
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
             return card.generate_response()
 
         chosen_1 = card.env.cache.get(card, MasonYu._ATK2_TARGET_1, None, True)
@@ -156,6 +159,7 @@ class MasonYu(AVGECharacterCard):
                 card,
             )
         )
+        assert chosen_2 is not None
         packet.append(
             AVGECardHPChange(
                 chosen_2,
@@ -166,6 +170,6 @@ class MasonYu(AVGECharacterCard):
                 card,
             )
         )
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
 
         return card.generate_response()

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEConstrainer import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor, AVGEAbstractEventListener
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class DemiLuDamageBlockModifier(AVGEAssessor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, DemiLu), group=EngineGroup.EXTERNAL_PRECHECK_1)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -52,16 +52,18 @@ class DemiLuDamageBlockModifier(AVGEAssessor):
 
 class DemiLuConstraint(AVGEConstraint):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__((owner_card, AVGEConstrainerType.PASSIVE))
+        super().__init__(AVGEEngineID(owner_card, ActionTypes.PASSIVE, DemiLu))
         self.owner_card = owner_card
 
-    def match(self, obj: AVGEAbstractEventListener | AVGEConstraint):
+    def match(self, obj):
         from card_game.catalog.stadiums.SteinertPracticeRoom import SteinertPracticeRoomAttackExtraCostAssessor
         from card_game.catalog.stadiums.SteinertBasement import SteinertBasementAttackExtraCostAssessor
+        from card_game.internal_events import PlayCharacterCard
 
         if not isinstance(obj, (SteinertPracticeRoomAttackExtraCostAssessor, SteinertBasementAttackExtraCostAssessor)):
             return False
         event = obj.attached_event
+        assert isinstance(event, PlayCharacterCard)
         return event.card == self.owner_card
 
     def update_status(self):
@@ -84,28 +86,30 @@ class DemiLu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(DemiLuDamageBlockModifier(card))
         card.add_constrainer(DemiLuConstraint(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         bench_cards = [c for c in card.player.cardholders[Pile.BENCH] if c != card]
-        found_piano = any(c.card_type == CardType.PIANO for c in bench_cards)
+        found_piano = any(c.card_type == CardType.PIANO for c in bench_cards if isinstance(c, AVGECharacterCard))
         dmg = 80 if found_piano else 50
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                dmg,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    dmg,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, DemiLu))
         )
 
         return card.generate_response()

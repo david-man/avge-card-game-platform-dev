@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
 
 class _MatthewTurnBeginReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MatthewWang), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -31,7 +31,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
     def react(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import InputEvent, TransferCard
+        from card_game.internal_events import InputEvent, TransferCardCreator
 
         owner = self.owner_card
         env = owner.env
@@ -81,7 +81,17 @@ class _MatthewTurnBeginReactor(AVGEReactor):
             )
 
         if choice == 1:
-            owner.propose(TransferCard(lambda: deck.peek(), deck, owner.player.cardholders[Pile.HAND], ActionTypes.PASSIVE, owner))
+            owner.propose(
+                AVGEPacket([
+                    TransferCardCreator(
+                        lambda: deck.peek(),
+                        deck,
+                        owner.player.cardholders[Pile.HAND],
+                        ActionTypes.PASSIVE,
+                        owner,
+                    )
+                ], AVGEEngineID(owner, ActionTypes.PASSIVE, MatthewWang))
+            )
 
         return self.generate_response()
 
@@ -99,23 +109,25 @@ class MatthewWang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(_MatthewTurnBeginReactor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                60,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    60,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, MatthewWang))
         )
 
         return card.generate_response()

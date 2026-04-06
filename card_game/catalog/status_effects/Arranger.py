@@ -13,7 +13,7 @@ class ArrangerStatusReactor(AVGEReactor):
 
 	def __init__(self):
 		super().__init__(
-			identifier=(None, AVGEEventListenerType.ENV),
+			identifier=(None, ActionTypes.ENV),
 			group=EngineGroup.EXTERNAL_REACTORS,
 		)
 

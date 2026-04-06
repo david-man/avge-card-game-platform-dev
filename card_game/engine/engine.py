@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar, cast
 from .engine_queue import EngineQueue
-from . import event
+from .event import Event, DeferredEvent, Packet
 from .engine_constants import *
 from card_game.constants import Data, Response, ResponseType, INTERRUPT_KEY
 
@@ -9,20 +9,21 @@ if TYPE_CHECKING:
     from . import event_listener
     from . import constrainer
 
-class Engine():
+EV = TypeVar("EV", bound=Event)
+class Engine(Generic[EV]):
     def __init__(self):
-        self._constraints : list[constrainer.Constraint] = []#list of active constraints
-        self._constraints_backup : list[constrainer.Constraint] = None
+        self._constraints : list[constrainer.Constraint[EV]] = []#list of active constraints
+        self._constraints_backup : list[constrainer.Constraint[EV]] = []
 
-        self._external_listeners : list[event_listener.AbstractEventListener] = []
-        self._external_listeners_backup : list[event_listener.AbstractEventListener] = None
+        self._external_listeners : list[event_listener.AbstractEventListener[EV]] = []
+        self._external_listeners_backup : list[event_listener.AbstractEventListener[EV]] = []
 
-        self.event_running : event.Event = None
-        self.packet_running : event.PacketAssembler = event.PacketAssembler([], self)
+        self.event_running : EV | None = None
+        self.packet_running : Packet[EV] = Packet([])
         self.listeners_attached_during_packet : set[event_listener.AbstractEventListener] = set([])
-        self.event_stack : list[event.Event] = []
-        self._queue : EngineQueue[event.PacketAssembler] = EngineQueue()
-    def add_constraint(self, constraint : 'constrainer.Constraint'):
+        self.event_stack : list[EV] = []
+        self._queue : EngineQueue[Packet[EV]] = EngineQueue()
+    def add_constraint(self, constraint : 'constrainer.Constraint[EV]'):
         #first, check if this constrainer falls under other constrainers. if it does, drop it.
         for c in self._constraints:
             if(c.match(constraint)):
@@ -32,7 +33,7 @@ class Engine():
 
         #check all of the active constraints that aren't this 
         #and see if any of them fall under this one. if they do, deactivate them
-        deactivated_constrainers : list[constrainer.Constraint]= []
+        deactivated_constrainers : list[constrainer.Constraint[EV]]= []
         for c in self._constraints[:-1]:
             if(constraint.match(c)):
                 deactivated_constrainers.append(c)
@@ -42,36 +43,35 @@ class Engine():
 
     def _probe_constraints(self):
         #Probes constraints to make sure they're all still active.
-        deactivated_constrainers : list[constrainer.Constraint]= []
+        deactivated_constrainers : list[constrainer.Constraint[EV]]= []
         for c in self._constraints:
             c.update_status()
             if(c._invalidated):
                 deactivated_constrainers.append(c)
         self._constraints = [c for c in self._constraints if c not in deactivated_constrainers]
 
-    def add_listener(self, listener : event_listener.AbstractEventListener):
+    def add_listener(self, listener : event_listener.AbstractEventListener[EV]):
         self._external_listeners.append(listener)
         listener.engine = self
     
     def _probe_listeners(self):
         #Probes listeners to make sure they're all still active.
-        deactivated_listeners : list[event_listener.AbstractEventListener]= []
+        deactivated_listeners : list[event_listener.AbstractEventListener[EV]]= []
         for l in self._external_listeners:
             l.update_status()
             if(l._invalidated):
                 deactivated_listeners.append(l)
         self._external_listeners = [l for l in self._external_listeners if l not in deactivated_listeners]
     
-    def _propose(self, new_event : event.Event | list[event.Event] | Callable[[], event.Event | list[event.Event]], priority : int = 0):
+    def _propose(self, new_packet : Packet[EV], priority : int = 0):
         #proposes an addition in the standard fashion
-        packet_assembler = event.PacketAssembler(new_event, self)
-        self._queue.propose(packet_assembler, priority)
+        self._queue.propose(new_packet, priority)
     
-    def forward(self, args : Data = None) -> Response:
+    def forward(self, args : Data | None = None) -> Response:
         if(args is None):
             args = {}
         if(self.event_running is None and len(self.packet_running) == 0 and self._queue.queue_len() == 0):
-            return Response(self, response_type=ResponseType.NO_MORE_EVENTS)
+            return Response(None, response_type=ResponseType.NO_MORE_EVENTS)
         elif(self.event_running is None and len(self.packet_running) == 0 and self._queue.queue_len() > 0):
             #prepares a new packet from the current queue to run
             self.packet_running = self._queue.pop()
@@ -88,10 +88,12 @@ class Engine():
             self.event_stack = []
             #reset listeners run
             self.listeners_attached_during_packet = set([])
-            return Response(self, response_type=ResponseType.NEXT_PACKET)
+            return Response(None, response_type=ResponseType.NEXT_PACKET)
         elif(self.event_running is None and len(self.packet_running) > 0):
             #prepares a fresh event from the current packet to run
             self.event_running = self.packet_running.get_next_event()
+            assert self.event_running is not None
+            self.event_running.attach_to_engine(self)
             
             #attach all required external listeners
             if(not self.event_running._external_listeners_attached):
@@ -100,13 +102,12 @@ class Engine():
                     if(attached):
                         self.listeners_attached_during_packet.add(listener)
                 self.event_running._external_listeners_attached = True
-            return Response(self, response_type=ResponseType.NEXT_EVENT)
+            return Response(None, response_type=ResponseType.NEXT_EVENT)
         else:
+            assert self.event_running is not None
             if(self.event_running.group_on == EngineGroup.CORE):
                 #opens the buffer for CORE and all groups after
                 self._queue.set_status(QueueStatus.BUFFERED)
-            if(not self.event_running._ready):
-                raise Exception("Tried to run event that wasn't ready!")
             response = self.event_running.forward(self._constraints, args)
             if(response.response_type == ResponseType.GAME_END):
                 return response
@@ -114,10 +115,10 @@ class Engine():
                 #place the interrupted event back into the packet
                 self.packet_running.insert(0, self.event_running)
                 #put the requested events in front of the existing packet
-                updated_packet = event.PacketAssembler([], self)
-                requested_addition = response.data.get(INTERRUPT_KEY, [])
+                updated_packet = Packet([])
+                requested_addition : list[Event | DeferredEvent] = response.data.get(INTERRUPT_KEY, [])
                 for e in requested_addition:
-                    if(not isinstance(e, event.Event)):
+                    if(not isinstance(e, Event) or isinstance(e, DeferredEvent)):
                         raise Exception("Attempted to update packet with a non-event")
                     updated_packet.append(e)
                 updated_packet.extend(self.packet_running)
@@ -138,8 +139,8 @@ class Engine():
                     #probe all listeners to ensure that the only ones left are the ones still active
                     self._probe_listeners()
                     #reset the backups, committing the changes
-                    self._constraints_backup = None
-                    self._external_listeners_backup = None
+                    self._constraints_backup = []
+                    self._external_listeners_backup = []
                     #change the response type to FINISHED_PACKET
                     response.response_type = ResponseType.FINISHED_PACKET
                     #set event running to None
@@ -187,9 +188,9 @@ class Engine():
                     #undo this event's core if it went through
                     self.event_running.invert_core(self.event_running.core_args)
                 #dispose of the packet and event completely
-                self.packet_running = event.PacketAssembler([], self)
+                self.packet_running = Packet([])
                 self.event_running = None
                 #reset the backups
-                self._constraints_backup = None
-                self._external_listeners_backup = None
+                self._constraints_backup = []
+                self._external_listeners_backup = []
             return response

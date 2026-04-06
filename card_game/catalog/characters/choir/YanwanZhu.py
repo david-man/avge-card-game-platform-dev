@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
@@ -8,7 +10,7 @@ from card_game.engine.engine_constants import EngineGroup
 
 class _YanwanStartReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, YanwanZhu), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -38,7 +40,7 @@ class _YanwanStartReactor(AVGEReactor):
         return "YanwanZhu Start Reactor"
 
     def react(self, args=None):
-        from card_game.internal_events import InputEvent, TransferCard
+        from card_game.internal_events import InputEvent, TransferCardCreator
 
         owner = self.owner_card
         env = owner.env
@@ -65,7 +67,12 @@ class _YanwanStartReactor(AVGEReactor):
             )
 
         if yn:
-            self.propose(TransferCard(lambda: deck.peek(), deck, hand, ActionTypes.PASSIVE, owner))
+            self.propose(
+                AVGEPacket(
+                    [TransferCardCreator(lambda: deck.peek(), deck, hand, ActionTypes.PASSIVE, owner)],
+                    AVGEEngineID(owner, ActionTypes.PASSIVE, YanwanZhu),
+                )
+            )
         return self.generate_response()
 
 
@@ -81,34 +88,37 @@ class YanwanZhu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(_YanwanStartReactor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            lambda: [
-                AVGECardHPChange(
-                    c,
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.CHOIR,
-                    ActionTypes.ATK_1,
-                    card,
-                ) for c in card.player.opponent.cardholders[Pile.BENCH]
-            ] + [
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.CHOIR,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-            ]
+            AVGEPacket(
+                lambda: [
+                    AVGECardHPChange(
+                        cast(AVGECharacterCard, c),
+                        10,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.CHOIR,
+                        ActionTypes.ATK_1,
+                        card,
+                    ) for c in card.player.opponent.cardholders[Pile.BENCH]
+                ] + [
+                    AVGECardHPChange(
+                        card.player.opponent.get_active_card(),
+                        50,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.CHOIR,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ],
+                AVGEEngineID(card, ActionTypes.ATK_1, YanwanZhu),
+            )
         )
 
         return card.generate_response()

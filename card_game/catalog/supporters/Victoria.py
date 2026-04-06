@@ -14,10 +14,10 @@ class Victoria(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+	def play_card(card: AVGECard) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
 
-		player = card_for.player
+		player = card.player
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
 
@@ -27,9 +27,9 @@ class Victoria(AVGESupporterCard):
 			picked = result[0]
 			return isinstance(picked, CardType)
 
-		selected_type = card_for.env.cache.get(card_for, Victoria._SELECTED_TYPE_KEY, None)
+		selected_type = card.env.cache.get(card, Victoria._SELECTED_TYPE_KEY, None)
 		if(selected_type is None):
-			return card_for.generate_response(
+			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
@@ -39,7 +39,7 @@ class Victoria(AVGESupporterCard):
 							InputType.DETERMINISTIC,
 							_type_input_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "victoria_pick_type"
 							},
@@ -51,12 +51,12 @@ class Victoria(AVGESupporterCard):
 			card
 			for card in deck
 			if isinstance(card, AVGECharacterCard)
-			and card.attributes.get(AVGECardAttribute.TYPE) == selected_type
+			and card.card_type == selected_type
 		]
 
 		if(len(matching_characters) < 1):
-			card_for.env.cache.delete(card_for, Victoria._SELECTED_TYPE_KEY)
-			return card_for.generate_response(ResponseType.CORE)
+			card.env.cache.delete(card, Victoria._SELECTED_TYPE_KEY)
+			return card.generate_response(ResponseType.CORE)
 
 		def _cards_and_destination_input_valid(result) -> bool:
 			if(len(result) != 2 or not isinstance(result[0], list)):
@@ -72,11 +72,11 @@ class Victoria(AVGESupporterCard):
 			return True
 
 		missing = object()
-		deck_card = card_for.env.cache.get(card_for, Victoria._CARD_DECK_KEY, missing, one_look=True)
-		hand_card = card_for.env.cache.get(card_for, Victoria._CARD_HAND_KEY, missing, one_look=True)
+		deck_card = card.env.cache.get(card, Victoria._CARD_DECK_KEY, missing, one_look=True)
+		hand_card = card.env.cache.get(card, Victoria._CARD_HAND_KEY, missing, one_look=True)
 
 		if(hand_card is missing):
-			return card_for.generate_response(
+			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
@@ -86,7 +86,7 @@ class Victoria(AVGESupporterCard):
 							InputType.DETERMINISTIC,
 							_cards_and_destination_input_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "victoria_pick_cards_and_destination",
 								"targets": matching_characters
@@ -96,7 +96,7 @@ class Victoria(AVGESupporterCard):
 				},
 			)
 
-		card_for.env.cache.delete(card_for, Victoria._SELECTED_TYPE_KEY)
+		card.env.cache.delete(card, Victoria._SELECTED_TYPE_KEY)
 
 		packet = []
 		if deck_card is not None:
@@ -104,15 +104,15 @@ class Victoria(AVGESupporterCard):
 							  deck,
 							  deck,
 							  ActionTypes.NONCHAR,
-							  card_for,
+							  card,
 							  0))
 		if hand_card is not None:
 			packet.append(TransferCard(hand_card,
 							  deck,
 							  hand,
 							  ActionTypes.NONCHAR,
-							  card_for))
+							  card))
 
 		if(len(packet) > 0):
-			card_for.propose(packet)
-		return card_for.generate_response(ResponseType.CORE)
+			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Victoria)))
+		return card.generate_response(ResponseType.CORE)

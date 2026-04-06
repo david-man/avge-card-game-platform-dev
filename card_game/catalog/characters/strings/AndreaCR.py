@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
-
+from typing import cast
 
 class AndreaCR(AVGECharacterCard):
     _REORDER_BASE_KEY = "andreacr_reorder_top"
@@ -19,7 +18,7 @@ class AndreaCR(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, ReorderCardholder
 
         opponent_deck = card.player.opponent.cardholders[Pile.DECK]
@@ -55,29 +54,21 @@ class AndreaCR(AVGECharacterCard):
                     ]
                 },
             )
-
-        chosen_ids = [c.unique_id for c in chosen_order]
+        chosen_ids = [cast(AVGECharacterCard, c).unique_id for c in chosen_order]
         original_order = list(opponent_deck.get_order())
         new_order = chosen_ids + [k for k in original_order if k not in chosen_ids]
-        card.propose(ReorderCardholder(opponent_deck, new_order, ActionTypes.ATK_1, card))
+        card.propose(
+            AVGEPacket([
+                ReorderCardholder(opponent_deck, new_order, ActionTypes.ATK_1, card)
+            ], AVGEEngineID(card, ActionTypes.ATK_1, AndreaCR))
+        )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange, AVGEEnergyTransfer
 
         opponent = card.player.opponent
-        packet = [
-            AVGECardHPChange(
-                lambda: opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
-            )
-        ]
-
         chosen_target = card.env.cache.get(card, AndreaCR._ENERGY_REMOVAL_KEY, None, True)
         if chosen_target is None:
             return card.generate_response(
@@ -100,11 +91,19 @@ class AndreaCR(AVGECharacterCard):
                 },
             )
 
-        def generate_packet():
-            p = list(packet)
-            for token in list(chosen_target.energy)[:min(2, len(chosen_target.energy))]:
-                p.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
-            return p
+        packet = [] + [
+            AVGECardHPChange(
+                opponent.get_active_card(),
+                20,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.STRING,
+                ActionTypes.ATK_2,
+                card,
+            )
+        ]
+        assert isinstance(chosen_target, AVGECharacterCard)
+        for token in list(chosen_target.energy)[:min(2, len(chosen_target.energy))]:
+            packet.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, AndreaCR)))
         return card.generate_response()

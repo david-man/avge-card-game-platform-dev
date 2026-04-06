@@ -9,24 +9,24 @@ class Angel(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+	def play_card(card: AVGECard) -> Response:
 		from card_game.catalog.tools.AVGETShirt import AVGETShirt
-		from card_game.internal_events import AVGEStatusChange
+		from card_game.internal_events import AVGECardStatusChange
 
 		def generate_packet():
-			player = card_for.player
+			player = card.player
 			opponent = player.opponent
 
 			packet = []
 
 			for character in player.get_cards_in_play():
 				packet.append(
-						AVGEStatusChange(
-							character,
+						AVGECardStatusChange(
 							StatusEffect.GOON,
 							StatusChangeType.ADD,
+							character,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 						)
 					)
 
@@ -36,15 +36,15 @@ class Angel(AVGESupporterCard):
 					continue
 
 				packet.append(
-					AVGEStatusChange(
-						character,
+					AVGECardStatusChange(
 						StatusEffect.GOON,
 						StatusChangeType.REMOVE,
+						character,
 						ActionTypes.NONCHAR,
-						card_for,
+						card,
 					)
 				)
 			return packet
-		card_for.propose(generate_packet)
+		card.propose(AVGEPacket(generate_packet(), AVGEEngineID(card, ActionTypes.NONCHAR, Angel)))
 
-		return card_for.generate_response(ResponseType.CORE)
+		return card.generate_response(ResponseType.CORE)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -16,7 +15,7 @@ class OwenLandry(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         def generate_packet():
@@ -31,6 +30,7 @@ class OwenLandry(AVGECharacterCard):
                 )
             ]
             for c in card.player.cardholders[Pile.BENCH]:
+                assert isinstance(c, AVGECharacterCard)
                 if c.card_type == CardType.GUITAR:
                     packet.append(
                         AVGECardHPChange(
@@ -44,11 +44,11 @@ class OwenLandry(AVGECharacterCard):
                     )
             return packet
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, OwenLandry)))
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer
 
         def generate_packet():
@@ -70,5 +70,5 @@ class OwenLandry(AVGECharacterCard):
                 )
             return packet
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, OwenLandry)))
         return card.generate_response()

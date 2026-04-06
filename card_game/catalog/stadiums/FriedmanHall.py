@@ -3,14 +3,14 @@ from __future__ import annotations
 import random
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FriedmanHall), group=EngineGroup.EXTERNAL_PRECHECK_1)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -30,10 +30,11 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 	def package(self):
 		return "FriedmanHall Assessor"
 
-	def assess(self, args={}):
+	def assess(self, args=None):
 		from card_game.internal_events import InputEvent, Phase2, TransferCard, PhasePickCard
 
-		event : PhasePickCard = self.attached_event
+		event = self.attached_event
+		assert isinstance(event, PhasePickCard)
 		if(event.temp_cache.get(FriedmanHall._TURNBEGIN_OVERRIDE_FLAG, False)):
 			return self.generate_response(ResponseType.FAST_FORWARD)
 
@@ -69,6 +70,7 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 
 		other = top_two_cards[1] if chosen == top_two_cards[0] else top_two_cards[0]
 		event.temp_cache[FriedmanHall._TURNBEGIN_OVERRIDE_FLAG] = True
+		assert chosen is not None
 		return self.generate_response(
 			ResponseType.INTERRUPT,
 			{INTERRUPT_KEY: [
@@ -86,6 +88,6 @@ class FriedmanHall(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		self.add_listener(FriedmanHallTurnBeginOverrideAssessor(self))
 		return self.generate_response()

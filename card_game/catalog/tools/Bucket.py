@@ -7,37 +7,37 @@ class Bucket(AVGEToolCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id)
-        self.original_type = None
+        self.original_type : CardType | None = None
 
     def deactivate_card(self):
-        from card_game.internal_events import AVGECardAttributeChange
-
+        from card_game.internal_events import AVGECardTypeChange
+        assert self.card_attached is not None
+        assert self.original_type is not None
         super().deactivate_card()
         self.propose(
-            AVGECardAttributeChange(
-                self.card_attached,
-                AVGECardAttribute.TYPE,
-                self.original_type,
-                AVGEAttributeModifier.SET_STATE,
-                ActionTypes.ENV,
-                self,
-                None,
-            )
+            AVGEPacket([
+                AVGECardTypeChange(
+                    self.card_attached,
+                    self.original_type,
+                    ActionTypes.ENV,
+                    None,
+                )
+            ], AVGEEngineID(None, ActionTypes.ENV, None))
         )
 
-    def play_card(self, parent_event: AVGEEvent) -> Response:
+    def play_card(self) -> Response:
         from card_game.avge_abstracts.AVGECardholder import AVGEToolCardholder
-        from card_game.internal_events import AVGECardAttributeChange
-        self.original_type = self.card_attached.attributes[AVGECardAttribute.TYPE]
+        from card_game.internal_events import AVGECardTypeChange
+        assert self.card_attached is not None
+        self.original_type = self.card_attached.card_type
         self.propose(
-            AVGECardAttributeChange(
-                self.card_attached,
-                AVGECardAttribute.TYPE,
-                CardType.PERCUSSION,
-                AVGEAttributeModifier.SET_STATE,
-                ActionTypes.PASSIVE,
-                self,
-                None,
-            )
+            AVGEPacket([
+                AVGECardTypeChange(
+                    self.card_attached,
+                    CardType.PERCUSSION,
+                    ActionTypes.ENV,
+                    None,
+                )
+            ], AVGEEngineID(self, ActionTypes.PASSIVE, Bucket))
         )
         return self.generate_response()

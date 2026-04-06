@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -18,8 +17,8 @@ class BettySolomon(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, TransferCardCreator
 
         player = card.player
         deck = player.cardholders[Pile.DECK]
@@ -49,17 +48,21 @@ class BettySolomon(AVGECharacterCard):
                 },
             )
 
-        card.propose(TransferCard(chosen_card, deck, deck, ActionTypes.ATK_1, card, 0))
+        card.propose(
+            AVGEPacket([
+                TransferCardCreator(chosen_card, deck, deck, ActionTypes.ATK_1, card, 0)
+            ], AVGEEngineID(card, ActionTypes.ATK_1, BettySolomon))
+        )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -74,6 +77,6 @@ class BettySolomon(AVGECharacterCard):
                     ActionTypes.ATK_2,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_2, BettySolomon))
         )
         return card.generate_response()

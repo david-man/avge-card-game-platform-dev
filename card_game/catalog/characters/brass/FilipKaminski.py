@@ -3,7 +3,7 @@ from __future__ import annotations
 from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
-from typing import Type
+from typing import cast
 from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange
 
 class FilipKaminski(AVGECharacterCard):
@@ -18,7 +18,7 @@ class FilipKaminski(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         possible_types = set([type(c) for c in 
                               card.player.cardholders[Pile.DECK]] + 
                               [type(c) for c in 
@@ -34,7 +34,8 @@ class FilipKaminski(AVGECharacterCard):
         if len(deck) == 0:
             return card.generate_response()
         top = deck.peek()
-        card.propose([TransferCard(top, deck, hand, ActionTypes.ATK_1, card)])
+        card.propose(AVGEPacket([TransferCard(top, deck, hand, ActionTypes.ATK_1, card)], 
+                                AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
         chosen_val = card.env.cache.get(card, FilipKaminski._TYPE_CHOICE_KEY, None, one_look=True)
         if chosen_val is None:
             return card.generate_response(
@@ -58,39 +59,42 @@ class FilipKaminski(AVGECharacterCard):
 
         top_type = type(top)
         if top_type == chosen_val:
-            card.propose(AVGECardHPChange(
-                lambda : card.player.opponent.get_active_card(),
+            card.propose(AVGEPacket([AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 60,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                ActionTypes.ATK_1,
                 CardType.BRASS,
+                ActionTypes.ATK_1,
                 card,
-            ))
+            )], AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         opponent = card.player.opponent
         opponent_bench : AVGECardholder = opponent.cardholders[Pile.BENCH]
-        card.propose(
-            lambda : [
+        def generate_packet():
+            p = ([
                 AVGECardHPChange(
-                    target,
+                    cast(AVGECharacterCard, target),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
-                    ActionTypes.ATK_2,
                     CardType.BRASS,
+                    ActionTypes.ATK_2,
                     card,
                 ) for target in opponent_bench] + 
                 [AVGECardHPChange(
                     opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
-                    ActionTypes.ATK_2,
                     CardType.BRASS,
+                    ActionTypes.ATK_2,
                     card
-                )]
+                )])
+            return p
+        card.propose(
+            AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, FilipKaminski))
         )
 
         return card.generate_response()

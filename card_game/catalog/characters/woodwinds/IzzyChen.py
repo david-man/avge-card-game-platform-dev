@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -19,16 +18,17 @@ class IzzyChen(AVGECharacterCard):
         self.has_passive = False
         self.has_active = True
 
-    def can_play_active(self) -> bool:
-        already_used = self.env.cache.get(self, IzzyChen._ACTIVE_USED_KEY, None, True)
-        if self.env.round_id == already_used:
+    @staticmethod
+    def can_play_active(card) -> bool:
+        already_used = card.env.cache.get(card, IzzyChen._ACTIVE_USED_KEY, None, True)
+        if card.env.round_id == already_used:
             return False
-        discard = self.player.cardholders[Pile.DISCARD]
+        discard = card.player.cardholders[Pile.DISCARD]
         return any(isinstance(c, AVGEStadiumCard) for c in discard.cards_by_id.values())
 
     @staticmethod
-    def active(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+    def active(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, TransferCardCreator
 
         player = card.player
         discard = player.cardholders[Pile.DISCARD]
@@ -57,12 +57,16 @@ class IzzyChen(AVGECharacterCard):
                 },
             )
 
-        card.propose(TransferCard(chosen_stadium, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, 0))
+        card.propose(
+            AVGEPacket([
+                TransferCardCreator(chosen_stadium, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, 0)
+            ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, IzzyChen))
+        )
         card.env.cache.set(card, IzzyChen._ACTIVE_USED_KEY, card.env.round_id)
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, InputEvent
 
         opponent_bench = card.player.opponent.cardholders[Pile.BENCH]
@@ -93,17 +97,16 @@ class IzzyChen(AVGECharacterCard):
         else:
             return card.generate_response()
 
-        card.propose(
-            lambda: [
-                AVGECardHPChange(
-                    bench_target,
-                    damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-                for bench_target in opponent_bench
-            ]
-        )
+        packet = [
+            AVGECardHPChange(
+                bench_target,
+                damage,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.WOODWIND,
+                ActionTypes.ATK_2,
+                card,
+            )
+            for bench_target in opponent_bench if isinstance(bench_target, AVGECharacterCard)
+        ]
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, IzzyChen)))
         return card.generate_response()

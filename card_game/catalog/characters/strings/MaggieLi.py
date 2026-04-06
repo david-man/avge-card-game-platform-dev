@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -18,37 +17,29 @@ class MaggieLi(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            AVGECardHPChange(
-                card,
-                20,
-                AVGEAttributeModifier.ADDITIVE,
-                CardType.STRING,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChange(
+                    card,
+                    20,
+                    AVGEAttributeModifier.ADDITIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, MaggieLi))
         )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
 
         opponent = card.player.opponent
-        packet = [
-            AVGECardHPChange(
-                lambda: opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
-            )
-        ]
 
         chosen_target = card.env.cache.get(card, MaggieLi._ENERGY_REMOVAL_KEY, None, True)
         if chosen_target is None:
@@ -72,14 +63,22 @@ class MaggieLi(AVGECharacterCard):
                 },
             )
 
-        def generate_packet():
-            p = list(packet)
-            if len(chosen_target.energy) < 2:
-                p.append(EmptyEvent("MaggieLi ATK2 target lacked enough energy.", ActionTypes.ATK_2, card))
-                return p
+        packet = [] + [
+            AVGECardHPChange(
+                opponent.get_active_card(),
+                20,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.STRING,
+                ActionTypes.ATK_2,
+                card,
+            )
+        ]
+        assert isinstance(chosen_target, AVGECharacterCard)
+        if len(chosen_target.energy) < 2:
+            packet.append(EmptyEvent("MaggieLi ATK2 target lacked enough energy.", ActionTypes.ATK_2, card))
+        else:
             for token in list(chosen_target.energy)[:2]:
-                p.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
-            return p
+                packet.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MaggieLi)))
         return card.generate_response()

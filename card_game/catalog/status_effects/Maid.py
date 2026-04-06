@@ -9,7 +9,7 @@ from card_game.engine.engine_constants import EngineGroup
 class MaidStatusDamageShieldModifier(AVGEModifier):
 	def __init__(self):
 		super().__init__(
-			identifier=(None, AVGEEventListenerType.ENV),
+			identifier=(None, ActionTypes.ENV),
 			group=EngineGroup.INTERNAL_1,
 			internal = True
 		)

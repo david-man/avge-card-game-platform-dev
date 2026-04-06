@@ -10,9 +10,9 @@ from card_game.internal_events import *
 _LAST_ROUND_USED_KEY = "carolyn-last-round-atkd"
 class _CarolynAttackTracker(AVGEAssessor):
     def __init__(self, owner_card : AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, CarolynZheng), group=EngineGroup.EXTERNAL_PRECHECK_1)
         self.owner_card = owner_card
-    def event_match(self, event : PlayCharacterCard):
+    def event_match(self, event : AVGEEvent):
         return isinstance(event, PlayCharacterCard) and event.caller_card == self.owner_card and event.card_action in [ActionTypes.ATK_1, ActionTypes.ATK_2]
     def event_effect(self):
         return True
@@ -30,7 +30,7 @@ class _CarolynAttackTracker(AVGEAssessor):
 
 class _CarolynAttackModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, CarolynZheng), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -65,6 +65,7 @@ class _CarolynAttackModifier(AVGEModifier):
         return
     
     def modify(self, args=None):
+        assert(isinstance(self.attached_event, AVGECardHPChange))
         event : AVGECardHPChange = self.attached_event
         # increase damage by 30 (damage is negative change_amount)
         event.modify_magnitude(30)
@@ -81,23 +82,24 @@ class CarolynZheng(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(caller_card : AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card : AVGECharacterCard) -> Response:
         # attach turn-start reactor to evaluate previous turn
-        caller_card.add_listener(_CarolynAttackTracker(caller_card))
-        caller_card.add_listener(_CarolynAttackModifier(caller_card))
-        return caller_card.generate_response()
+        card.add_listener(_CarolynAttackTracker(card))
+        card.add_listener(_CarolynAttackModifier(card))
+        return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-        packet = [AVGECardHPChange(
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
+        packet = []
+        packet.append([AVGECardHPChangeCreator(
                 lambda : card.player.opponent.get_active_card(),
                 70,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                ActionTypes.ATK_1,
                 CardType.BRASS,
+                ActionTypes.ATK_1,
                 card,
-            )]
-        card.propose(packet)
+            )])
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, CarolynZheng)))
         return card.generate_response()
 

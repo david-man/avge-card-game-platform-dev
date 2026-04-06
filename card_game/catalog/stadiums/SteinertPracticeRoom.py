@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor, AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 from card_game.internal_events import TransferCard, PlayCharacterCard
 class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertPracticeRoom), group=EngineGroup.EXTERNAL_PRECHECK_1)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -36,13 +36,13 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 	def package(self):
 		return "SteinertPracticeRoom BenchCap"
 
-	def assess(self, args={}):
+	def assess(self, args=None):
 		return self.generate_response(ResponseType.SKIP, {"msg": "SteinertPracticeRoom: cannot have more than 2 benched characters."})
 
 
 class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertPracticeRoom), group=EngineGroup.EXTERNAL_PRECHECK_1)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -72,7 +72,8 @@ class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 	def package(self):
 		return "SteinertPracticeRoom 15 minutes"
 
-	def modify(self, args={}):
+	def modify(self, args=None):
+		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement += 1
 		return self.generate_response()
@@ -87,10 +88,10 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		from card_game.internal_events import InputEvent, PlayCharacterCard, TransferCard
 		player = self.original_owner
-
+		assert player is not None
 		def _resolve_discards_for_player(target_player: AVGEPlayer, base_key: str, resolved_key: str) -> Response:
 
 			if(bool(self.env.cache.get(self, resolved_key, False))):
@@ -144,6 +145,7 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 
 			packet = []
 			for card in chosen:
+				assert isinstance(card, AVGECharacterCard)
 				packet.append(
 					TransferCard(
 						card,
@@ -158,7 +160,7 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 			if(len(packet) > 0):
 				return self.generate_response(ResponseType.INTERRUPT, {INTERRUPT_KEY: packet})
 			return self.generate_response(ResponseType.CORE)
-
+		
 		owner_resolve = _resolve_discards_for_player(
 			player,
 			SteinertPracticeRoom._OWNER_BENCH_DISCARD_KEY,

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from typing import cast
 
 
 class DanielYang(AVGECharacterCard):
@@ -16,13 +17,13 @@ class DanielYang(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _NoBrassBoostModifier(AVGEModifier):
             def __init__(self):
                 super().__init__(
-                    identifier=(card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(card, ActionTypes.PASSIVE, DanielYang),
                     group=EngineGroup.EXTERNAL_MODIFIERS_2,
                 )
 
@@ -60,7 +61,10 @@ class DanielYang(AVGECharacterCard):
             def modify(self, args=None):
                 if args is None:
                     args = {}
+                from card_game.internal_events import AVGECardHPChange
+
                 event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
                 event.modify_magnitude(20)
                 return self.generate_response()
 
@@ -68,14 +72,15 @@ class DanielYang(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         bench = card.player.cardholders[Pile.BENCH]
         piano_count = sum(1 for c in bench if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PIANO)
 
         def generate_packet():
-            packet = [
+            packet = []
+            packet.append([
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
@@ -84,12 +89,12 @@ class DanielYang(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 )
-            ]
+            ])
             if piano_count >= 3:
                 for b in card.player.opponent.cardholders[Pile.BENCH]:
                     packet.append(
                         AVGECardHPChange(
-                            b,
+                            cast(AVGECharacterCard, b),
                             30,
                             AVGEAttributeModifier.SUBSTRACTIVE,
                             CardType.PERCUSSION,
@@ -99,5 +104,5 @@ class DanielYang(AVGECharacterCard):
                     )
             return packet
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, DanielYang)))
         return card.generate_response()

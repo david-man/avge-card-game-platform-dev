@@ -3,7 +3,6 @@ from __future__ import annotations
 import random
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -24,39 +23,50 @@ class JoshuaKou(AVGECharacterCard):
         return len(hand) == 1 and hand.peek() == card
 
     @staticmethod
-    def active(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import TransferCard, EmptyEvent
+    def active(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import TransferCardCreator, EmptyEvent
 
         hand = card.player.cardholders[Pile.HAND]
         deck = card.player.cardholders[Pile.DECK]
 
         def generate_packet():
             if card not in hand:
-                return [EmptyEvent("JoshuaKou active failed: card not in hand.", ActionTypes.ACTIVATE_ABILITY, card)]
-            packet = [TransferCard(card, hand, deck, ActionTypes.ACTIVATE_ABILITY, card, lambda: random.randint(0, len(deck)))]
+                return AVGEPacket([EmptyEvent("JoshuaKou active failed: card not in hand.", ActionTypes.ACTIVATE_ABILITY, card)], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JoshuaKou))
+            packet = [
+                TransferCardCreator(
+                    card,
+                    hand,
+                    deck,
+                    ActionTypes.ACTIVATE_ABILITY,
+                    card,
+                    lambda: random.randint(0, len(deck)),
+                )
+            ]
             draw_count = min(4, len(deck) + 1)
             for _ in range(draw_count):
-                packet.append(TransferCard(lambda: deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card))
-            return packet
+                packet.append(TransferCardCreator(lambda: deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card))
+            return AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JoshuaKou))
 
-        card.propose(generate_packet)
+        card.propose(generate_packet())
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         last_round = card.env.cache.get(card, JoshuaKou._LAST_ATK1_ROUND_KEY, None, True)
         if last_round is None or last_round < card.env.round_id - 1:
             card.propose(
-                AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
-                    40,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.PIANO,
-                    ActionTypes.ATK_1,
-                    card,
-                )
+                AVGEPacket([
+                    AVGECardHPChangeCreator(
+                        lambda: card.player.opponent.get_active_card(),
+                        40,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.PIANO,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ], AVGEEngineID(card, ActionTypes.ATK_1, JoshuaKou))
             )
 
         card.env.cache.set(card, JoshuaKou._LAST_ATK1_ROUND_KEY, card.env.round_id)

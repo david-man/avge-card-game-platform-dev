@@ -11,15 +11,15 @@ class Michelle(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-		from card_game.internal_events import TransferCard
-		if(card_for.env.round_id == 0):
-			return card_for.generate_response(
+	def play_card(card: AVGECard) -> Response:
+		from card_game.internal_events import TransferCardCreator
+		if(card.env.round_id == 0):
+			return card.generate_response(
 				ResponseType.SKIP,
 				{"msg": "Michelle cannot be played on the first turn."},
 			)
 
-		opponent = card_for.player.opponent
+		opponent = card.player.opponent
 		opponent_hand = opponent.cardholders[Pile.HAND]
 		opponent_deck = opponent.cardholders[Pile.DECK]
 
@@ -29,28 +29,28 @@ class Michelle(AVGESupporterCard):
 
 		for card in hand_snapshot:
 			packet.append(
-				TransferCard(
+				TransferCardCreator(
 					card,
 					opponent_hand,
 					opponent_deck,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 					lambda: random.randint(0, len(opponent.cardholders[Pile.DECK])),
 				)
 			)
 
 		if(initial_deck_count + len(hand_snapshot) > 0):
 			packet.append(
-				TransferCard(
+				TransferCardCreator(
 					lambda : opponent.cardholders[Pile.DECK].peek(),
 					opponent_deck,
 					opponent_hand,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 				)
 			)
 
 		if(len(packet) > 0):
-			card_for.propose(packet)
+			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Michelle)))
 
-		return card_for.generate_response(ResponseType.CORE)
+		return card.generate_response(ResponseType.CORE)

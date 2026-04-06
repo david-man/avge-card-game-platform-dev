@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor, AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import PlayCharacterCard
 
 class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertBasement), group=EngineGroup.EXTERNAL_REACTORS)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -32,10 +32,12 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 	def package(self):
 		return "SteinertBasement Reactor"
 
-	def react(self, args={}):
+	def react(self, args=None):
 		from card_game.internal_events import TransferCard
 
 		event = self.attached_event
+		from card_game.internal_events import PhasePickCard
+		assert isinstance(event, PhasePickCard)
 		player : AVGEPlayer = event.player
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
@@ -43,13 +45,15 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 			player.env.winner = player.opponent
 			return self.generate_response(ResponseType.GAME_END, {"winner": player.opponent, "reason": "steinert basement extra draw failed"})
 
-		self.propose(TransferCard(deck.peek(), deck, hand, ActionTypes.ENV, self.owner_card))
+		self.propose(AVGEPacket([
+			TransferCard(deck.peek(), deck, hand, ActionTypes.ENV, self.owner_card)
+		], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, SteinertBasement)))
 		return self.generate_response()
 
 
 class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertBasement), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -80,7 +84,8 @@ class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
 	def package(self):
 		return "SteinertBasement AttackCost"
 
-	def modify(self, args={}):
+	def modify(self, args=None):
+		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement += 1
 		return self.generate_response()
@@ -90,7 +95,7 @@ class SteinertBasement(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		self.add_listener(SteinertBasementTwoInPlayBonusDrawReactor(self))
 		self.add_listener(SteinertBasementAttackExtraCostAssessor(self))
 		return self.generate_response()

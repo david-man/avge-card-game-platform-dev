@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor, AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import PlayNonCharacterCard
 
 class MainHallPlayLimitAssessor(AVGEAssessor):
 	def __init__(self, owner_card: AVGEStadiumCard, round : int):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_PRECHECK_1)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MainHall), group=EngineGroup.EXTERNAL_PRECHECK_1)
 		self.owner_card = owner_card
 		self.round_active = round
 
@@ -24,9 +24,10 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 			return False
 		player_id = event.card.player.unique_id
 		if(player_id == str(PlayerID.P1)):
-			count = int(self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0))
+			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0)
 		else:
-			count = int(self.owner_card.env.cache.get(self.owner_card, MainHall._P2_COUNT_KEY, 0))
+			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P2_COUNT_KEY, 0)
+		assert isinstance(count, int)
 		return count >= 3
 
 	def update_status(self):
@@ -39,13 +40,13 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 	def package(self):
 		return "MainHall Assessor"
 
-	def assess(self, args={}):
+	def assess(self, args=None):
 		return self.generate_response(ResponseType.SKIP, {"msg": "MainHall: player already played 3 non-character cards this turn."})
 
 
 class MainHallCountPlayReactor(AVGEReactor):
 	def __init__(self, owner_card: AVGEStadiumCard, round : int):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MainHall), group=EngineGroup.EXTERNAL_REACTORS)
 		self.owner_card = owner_card
 		self.round_active = round
 
@@ -72,21 +73,24 @@ class MainHallCountPlayReactor(AVGEReactor):
 	def package(self):
 		return "MainHall Reactor"
 
-	def react(self, args={}):
-		event : PlayNonCharacterCard= self.attached_event
+	def react(self, args=None):
+		event = self.attached_event
+		assert isinstance(event, PlayNonCharacterCard)
 		player_id = event.card.player.unique_id
 		if(player_id == str(PlayerID.P1)):
-			count = int(self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0))
+			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0)
+			assert(isinstance(count, int))
 			self.owner_card.env.cache.set(self.owner_card, MainHall._P1_COUNT_KEY, count + 1)
 		else:
-			count = int(self.owner_card.env.cache.get(self.owner_card, MainHall._P2_COUNT_KEY, 0))
+			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P2_COUNT_KEY, 0)
+			assert(isinstance(count, int))
 			self.owner_card.env.cache.set(self.owner_card, MainHall._P2_COUNT_KEY, count + 1)
 		return self.generate_response()
 
 
 class MainHallTurnStartResetReactor(AVGEReactor):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MainHall), group=EngineGroup.EXTERNAL_REACTORS)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -103,8 +107,10 @@ class MainHallTurnStartResetReactor(AVGEReactor):
 	def package(self):
 		return "MainHall Reactor"
 
-	def react(self, args={}):
+	def react(self, args=None):
 		event = self.attached_event
+		from card_game.internal_events import PhasePickCard
+		assert isinstance(event, PhasePickCard)
 		player_id = event.player.unique_id
 		if(player_id == str(PlayerID.P1)):
 			self.owner_card.env.cache.set(self.owner_card, MainHall._P1_COUNT_KEY, 0)
@@ -121,7 +127,7 @@ class MainHall(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
+	def play_card(self) -> Response:
 		owner_card = self
 
 		if(owner_card.original_owner is None):
@@ -134,5 +140,5 @@ class MainHall(AVGEStadiumCard):
 
 		owner_card.add_listener(MainHallPlayLimitAssessor(owner_card, owner_card.env.round_id + 1))
 		owner_card.add_listener(MainHallCountPlayReactor(owner_card, owner_card.env.round_id + 1))
-		owner_card.add_listener(MainHallTurnStartResetReactor(owner_card, owner_card.env.round_id + 1))
+		owner_card.add_listener(MainHallTurnStartResetReactor(owner_card))
 		return owner_card.generate_response()

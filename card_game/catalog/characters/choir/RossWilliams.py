@@ -4,12 +4,12 @@ from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import InputEvent, TransferCard, AtkPhase, AVGEPlayerAttributeChange
+from card_game.internal_events import InputEvent, TransferCardCreator, AtkPhase, AVGEPlayerAttributeChange
 
 
 class _RossPassiveAssessor(AVGEAssessor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_1)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, RossWilliams), group=EngineGroup.EXTERNAL_MODIFIERS_1)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -64,7 +64,9 @@ class _RossPassiveAssessor(AVGEAssessor):
             AVGEPlayerAttributeChange(self.owner_card.player, AVGEPlayerAttribute.ATTACKS_LEFT, 1, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, None),
             TurnEnd(self.owner_card.env, ActionTypes.ENV, None),
         ]
-        self.owner_card.propose(packet)
+        self.owner_card.propose(
+            AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RossWilliams))
+        )
         return self.generate_response(ResponseType.FAST_FORWARD)
 
 
@@ -81,12 +83,12 @@ class RossWilliams(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_listener(_RossPassiveAssessor(card))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         player = card.player
@@ -101,10 +103,15 @@ class RossWilliams(AVGECharacterCard):
         if player_has and not opp_has:
             deck = player.cardholders[Pile.DECK]
             hand = player.cardholders[Pile.HAND]
-            card.propose([
-                TransferCard(lambda: deck.peek(), deck, hand, ActionTypes.ATK_1, card)
-                for _ in range(min(2, len(deck)))
-            ])
+            card.propose(
+                AVGEPacket(
+                    [
+                        TransferCardCreator(lambda: deck.peek(), deck, hand, ActionTypes.ATK_1, card)
+                        for _ in range(min(2, len(deck)))
+                    ],
+                    AVGEEngineID(card, ActionTypes.ATK_1, RossWilliams),
+                )
+            )
             return card.generate_response()
 
         if opp_has and not player_has:
@@ -131,13 +138,18 @@ class RossWilliams(AVGECharacterCard):
                     },
                 )
             card.propose(
-                AVGECardHPChange(
-                    target,
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.CHOIR,
-                    ActionTypes.ATK_1,
-                    card,
+                AVGEPacket(
+                    [
+                        AVGECardHPChange(
+                            target,
+                            50,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.CHOIR,
+                            ActionTypes.ATK_1,
+                            card,
+                        )
+                    ],
+                    AVGEEngineID(card, ActionTypes.ATK_1, RossWilliams),
                 )
             )
 

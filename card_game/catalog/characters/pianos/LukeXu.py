@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEConstrainer import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEAbstractEventListener, AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 import math
@@ -10,17 +10,16 @@ import math
 
 class LukeXuPassiveConstraint(AVGEConstraint):
     def __init__(self, owner_card: AVGECharacterCard, round_played: int):
-        super().__init__((owner_card, AVGEConstrainerType.PASSIVE))
+        super().__init__(AVGEEngineID(owner_card, ActionTypes.PASSIVE, LukeXu))
         self.owner_card = owner_card
         self.round_played = round_played
 
-    def match(self, obj: AVGEAbstractEventListener | AVGEConstraint):
-        from card_game.avge_abstracts.AVGEEventListeners import AVGEEventListenerType
-
-        listener_id = obj.identifier
-        if listener_id[1] != AVGEEventListenerType.PASSIVE:
+    def match(self, obj):
+        if not isinstance(obj, AVGEAbstractEventListener) or isinstance(obj, AVGEConstraint):
             return False
-        listener_owner = listener_id[0]
+        if obj.identifier.action_type!= ActionTypes.PASSIVE:
+            return False
+        listener_owner = obj.identifier.caller_card
         return isinstance(listener_owner, AVGECharacterCard) and listener_owner.player == self.owner_card.player.opponent
 
     def update_status(self):
@@ -36,7 +35,7 @@ class LukeXuPassiveConstraint(AVGEConstraint):
 
 class LukeNextAttackHalvedModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.NONCHAR), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, LukeXu), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -70,7 +69,10 @@ class LukeNextAttackHalvedModifier(AVGEModifier):
     def modify(self, args=None):
         if args is None:
             args = {}
+        from card_game.internal_events import AVGECardHPChange
+
         event = self.attached_event
+        assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(-math.floor(event.magnitude / 2))
         return self.generate_response()
 
@@ -85,23 +87,25 @@ class LukeXu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         card.add_constrainer(LukeXuPassiveConstraint(card, card.env.round_id))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, LukeXu))
         )
 
         card.add_listener(LukeNextAttackHalvedModifier(card))

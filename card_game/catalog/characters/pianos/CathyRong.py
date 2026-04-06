@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -18,24 +17,24 @@ class CathyRong(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
 
         opponent = card.player.opponent
-        packet = [
-            AVGECardHPChange(
-                lambda: opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_1,
-                card,
-            )
-        ]
-
         bench_candidates = [c for c in opponent.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and len(c.energy) >= 1]
         if len(bench_candidates) == 0:
-            card.propose(packet)
+            card.propose(
+                AVGEPacket([
+                    AVGECardHPChange(
+                        opponent.get_active_card(),
+                        20,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.PIANO,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ], AVGEEngineID(card, ActionTypes.ATK_1, CathyRong))
+            )
             return card.generate_response()
 
         chosen = card.env.cache.get(card, CathyRong._ENERGY_TARGET_KEY, None, True)
@@ -61,22 +60,29 @@ class CathyRong(AVGECharacterCard):
                 },
             )
 
-        def generate_packet():
-            p = list(packet)
-            if chosen is None:
-                return p
-            if len(chosen.energy) <= 0:
-                p.append(EmptyEvent("CathyRong ATK1 target had no energy at resolve.", ActionTypes.ATK_1, card))
-                return p
-            p.append(AVGEEnergyTransfer(chosen.energy[0], chosen, chosen.player, ActionTypes.ATK_1, card))
-            return p
-
-        card.propose(generate_packet)
+        base_damage = AVGECardHPChange(
+            opponent.get_active_card(),
+            20,
+            AVGEAttributeModifier.SUBSTRACTIVE,
+            CardType.PIANO,
+            ActionTypes.ATK_1,
+            card,
+        )
+        if chosen is None:
+            card.propose(AVGEPacket([base_damage], AVGEEngineID(card, ActionTypes.ATK_1, CathyRong)))
+            return card.generate_response()
+        assert isinstance(chosen, AVGECharacterCard)
+        card.propose(
+            AVGEPacket([
+                base_damage,
+                AVGEEnergyTransfer(chosen.energy[0], chosen, chosen.player, ActionTypes.ATK_1, card),
+            ], AVGEEngineID(card, ActionTypes.ATK_1, CathyRong))
+        )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         dmg = 50
         bench = [c for c in card.player.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and c != card and c.card_type == CardType.PIANO]
@@ -84,14 +90,16 @@ class CathyRong(AVGECharacterCard):
             dmg = 80
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                dmg,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PIANO,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    dmg,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PIANO,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, CathyRong))
         )
 
         return card.generate_response()

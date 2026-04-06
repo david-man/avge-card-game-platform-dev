@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -19,12 +19,12 @@ class FelixChen(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _FelixDamageReducer(AVGEModifier):
             def __init__(self):
-                super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FelixChen), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 
             def event_match(self, event):
                 from card_game.internal_events import AVGECardHPChange
@@ -53,14 +53,18 @@ class FelixChen(AVGECharacterCard):
             def modify(self, args=None):
                 if args is None:
                     args = {}
-                self.attached_event.modify_magnitude(-10)
+                from card_game.internal_events import AVGECardHPChange
+
+                event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
+                event.modify_magnitude(-10)
                 return self.generate_response()
 
         owner_card.add_listener(_FelixDamageReducer())
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, InputEvent
 
         opponent = card.player.opponent
@@ -94,18 +98,18 @@ class FelixChen(AVGECharacterCard):
             dmg = 100
         else:
             return card.generate_response()
+        
 
-        card.propose(
-            lambda: [
-                AVGECardHPChange(
-                    target,
-                    dmg,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-                for target in opponent.cardholders[Pile.BENCH]
-            ]
-        )
+        packet = [
+            AVGECardHPChange(
+                target,
+                dmg,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.WOODWIND,
+                ActionTypes.ATK_1,
+                card,
+            )
+            for target in opponent.cardholders[Pile.BENCH] if isinstance(target, AVGECharacterCard)
+        ]
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, FelixChen)))
         return card.generate_response()

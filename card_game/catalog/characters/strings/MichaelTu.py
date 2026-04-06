@@ -3,7 +3,6 @@ from __future__ import annotations
 import random
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -20,7 +19,7 @@ class MichaelTu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGEEnergyTransfer, InputEvent
 
         player = card.player
@@ -53,11 +52,15 @@ class MichaelTu(AVGECharacterCard):
                 },
             )
 
-        card.propose(AVGEEnergyTransfer(player.energy[0], player, chosen, ActionTypes.ATK_1, card))
+        card.propose(
+            AVGEPacket([
+                AVGEEnergyTransfer(player.energy[0], player, chosen, ActionTypes.ATK_1, card)
+            ], AVGEEngineID(card, ActionTypes.ATK_1, MichaelTu))
+        )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, ReorderCardholder, TransferCard
 
         player = card.player
@@ -72,17 +75,17 @@ class MichaelTu(AVGECharacterCard):
                     
         deck_order = list(deck.get_order())
         random.shuffle(deck_order)
-        packet = [ReorderCardholder(deck, deck_order, ActionTypes.ATK_2, card)]
+        packet = [] + [ReorderCardholder(deck, deck_order, ActionTypes.ATK_2, card)]
 
         if first_char is None:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MichaelTu)))
             return card.generate_response()
 
         if first_char.card_type != CardType.STRING:
             packet.append(TransferCard(first_char, deck, hand, ActionTypes.ATK_2, card))
             packet.append(
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     30,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
@@ -91,6 +94,6 @@ class MichaelTu(AVGECharacterCard):
                 )
             )
 
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MichaelTu)))
 
         return card.generate_response()

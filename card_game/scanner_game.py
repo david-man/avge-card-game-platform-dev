@@ -6,16 +6,12 @@ from .avge_abstracts.AVGEPlayer import *
 from .internal_events import *
 import tkinter as tk
 import threading
-from typing import Callable
-from typing import TYPE_CHECKING
+from typing import Any, Callable
 from .catalog.characters.brass.BarronLee import BarronLee
 from .catalog.characters.pianos.HenryWang import HenryWang
 from .catalog.items.ConcertTicket import ConcertTicket
 from .catalog.stadiums.MainHall import MainHall
 from .catalog.tools.KikisHeadband import KikisHeadband
-
-if TYPE_CHECKING:
-    from typing import Any
 
 
 class ScannerDummyCharacter(AVGECharacterCard):
@@ -27,62 +23,72 @@ class ScannerDummyCharacter(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card, parent_event: AVGEEvent) -> Response:
+    def atk_1(card) -> Response:
         from .internal_events import AVGECardHPChange
 
+        target = card.player.opponent.get_active_card()
+        if(not isinstance(target, AVGECharacterCard)):
+            return card.generate_response()
+
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                10,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.BRASS,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChange(
+                    target,
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.BRASS,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, ScannerDummyCharacter))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card, parent_event: AVGEEvent) -> Response:
-        from .internal_events import AVGEStatusChange
+    def atk_2(card) -> Response:
+        from .internal_events import AVGECardStatusChange
 
         target = card.player.opponent.get_active_card()
+        if(not isinstance(target, AVGECharacterCard)):
+            return card.generate_response()
+
         card.propose(
-            AVGEStatusChange(
-                target,
-                StatusEffect.GOON,
-                StatusChangeType.ADD,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardStatusChange(
+                    StatusEffect.GOON,
+                    StatusChangeType.ADD,
+                    target,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, ScannerDummyCharacter))
         )
         return card.generate_response()
-
+p1_deck = [
+    BarronLee,
+    HenryWang,
+    ScannerDummyCharacter,
+    ScannerDummyCharacter,
+    ConcertTicket,
+    KikisHeadband,
+    MainHall,
+    ScannerDummyCharacter,
+]
+p2_deck = [
+    HenryWang,
+    BarronLee,
+    ScannerDummyCharacter,
+    ScannerDummyCharacter,
+    ConcertTicket,
+    KikisHeadband,
+    MainHall,
+    ScannerDummyCharacter,
+]
 
 def build_demo_environment() -> AVGEEnvironment:
     # Keep a deterministic deck order: first cards become active/bench, then non-chars can be drawn/played.
-    p1_deck = [
-        BarronLee,
-        HenryWang,
-        ScannerDummyCharacter,
-        ScannerDummyCharacter,
-        ConcertTicket,
-        KikisHeadband,
-        MainHall,
-        ScannerDummyCharacter,
-    ]
-    p2_deck = [
-        HenryWang,
-        BarronLee,
-        ScannerDummyCharacter,
-        ScannerDummyCharacter,
-        ConcertTicket,
-        KikisHeadband,
-        MainHall,
-        ScannerDummyCharacter,
-    ]
-    env = AVGEEnvironment(p1_deck, p2_deck)
-    print("HERE")
+    
+    env = AVGEEnvironment(p1_deck, p2_deck, PlayerID.P1)
     for player in env.players.values():
         deck = player.cardholders[Pile.DECK]
         active = player.cardholders[Pile.ACTIVE]
@@ -96,15 +102,22 @@ def build_demo_environment() -> AVGEEnvironment:
         # Draw remaining cards into hand so scanner commands can exercise non-character play paths.
         while(len(deck) > 0):
             env.transfer_card(deck.peek(), deck, hand)
-
     # Bootstrap passives with the real event path used by the engine.
     for player in env.players.values():
         for card in player.cardholders[Pile.ACTIVE] + player.cardholders[Pile.BENCH]:
             if(isinstance(card, AVGECharacterCard) and card.has_passive):
-                env.propose(PlayCharacterCard(card, ActionTypes.PASSIVE, ActionTypes.ENV, card))
+                env.propose(
+                    AVGEPacket([
+                        PlayCharacterCard(card, ActionTypes.PASSIVE, ActionTypes.ENV, card)
+                    ], AVGEEngineID(card, ActionTypes.PASSIVE, card.__class__))
+                )
 
     env.player_turn = env.players[PlayerID.P1]
-    env.propose(Phase2(env.player_turn, ActionTypes.ENV, None))
+    env.propose(
+        AVGEPacket([
+            Phase2(env.player_turn, ActionTypes.ENV, None)
+        ], AVGEEngineID(None, ActionTypes.ENV, None))
+    )
     
     return env
 
@@ -114,7 +127,7 @@ def update_label(label: tk.Label, text: str):
     label.config(text=text)
 
 
-def _safe_get_card(env: AVGEEnvironment, card_id: str) -> Card | None:
+def _safe_get_card(env: AVGEEnvironment, card_id: str) -> AVGECard | None:
     return env.cards.get(card_id)
 
 
@@ -214,7 +227,10 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
     tokens = raw.split()
 
     if(query_type == "phase2"):
-        player: AVGEPlayer = query_data.get("player_involved")
+        player_obj = query_data.get("player_involved")
+        if(not isinstance(player_obj, AVGEPlayer)):
+            return None
+        player: AVGEPlayer = player_obj
         if(player is None or len(tokens) == 0):
             return None
 
@@ -276,7 +292,7 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
             return None
         return {"input_result": [_coerce_input_value(v, env) for v in values]}
 
-    if(query_type in ["ext_modifier_order", "ext_reactor_order"]):
+    if(query_type in ["ext_modifier_order", "ext_reactor_order", "ordering"]):
         unordered_groups = query_data.get("unordered_groups", [])
         ordered = _parse_ordering(raw, unordered_groups)
         if(ordered is None):
@@ -395,9 +411,6 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                 resp = env.forward(parsed)
                 _print_board_state(env, f"post-input response={resp.response_type}")
 
-            if(resp.announce):
-                print("EVENT RESPONSE PKG:", resp.source.package())
-
             if(resp.response_type == ResponseType.SKIP):
                 print(f"SKIP: {resp.data}")
             elif(resp.response_type == ResponseType.FINISHED):
@@ -407,11 +420,23 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
             elif(resp.response_type == ResponseType.NO_MORE_EVENTS):
                 if(env.game_phase == GamePhase.ATK_PHASE):
                     if(env.player_turn.attributes[AVGEPlayerAttribute.ATTACKS_LEFT] > 0):
-                        env.propose(AtkPhase(env.player_turn, ActionTypes.ENV, None))
+                        env.propose(
+                            AVGEPacket([
+                                AtkPhase(env.player_turn, ActionTypes.ENV, None)
+                            ], AVGEEngineID(None, ActionTypes.ENV, None))
+                        )
                     else:
-                        env.propose(TurnEnd(env, ActionTypes.ENV, None))
+                        env.propose(
+                            AVGEPacket([
+                                TurnEnd(env, ActionTypes.ENV, None)
+                            ], AVGEEngineID(None, ActionTypes.ENV, None))
+                        )
                 elif(env.game_phase == GamePhase.PHASE_2):
-                    env.propose(Phase2(env.player_turn, ActionTypes.ENV, None))
+                    env.propose(
+                        AVGEPacket([
+                            Phase2(env.player_turn, ActionTypes.ENV, None)
+                        ], AVGEEngineID(None, ActionTypes.ENV, None))
+                    )
                 else:
                     break
 

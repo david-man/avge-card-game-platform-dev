@@ -1,6 +1,6 @@
 from __future__ import annotations
 from . import event_listener
-from typing import TYPE_CHECKING, Callable, Tuple
+from typing import TYPE_CHECKING, Callable, Sequence, Generic, TypeVar, cast
 from card_game.constants import *
 from . import engine_constants
 
@@ -8,95 +8,87 @@ if TYPE_CHECKING:
     from . import engine
     from . import constrainer
 
-class PacketAssembler():
-    def __init__(self, element : Event | list[Event] | Callable[[], Event | list[Event]], engine : engine.Engine):
-        if(isinstance(element, Event)):
+EV = TypeVar("EV", bound="Event")
+class Packet(Generic[EV]):
+    def __init__(self, element : Sequence[EV] | Sequence[DeferredEvent[EV]] | Sequence[EV|DeferredEvent[EV]] | Callable[[], Sequence[EV|DeferredEvent[EV]]]):
+        self.element : Sequence[EV | DeferredEvent[EV]] | Callable[[], Sequence[EV|DeferredEvent[EV]]]
+        if(not isinstance(element, Sequence) and not isinstance(element, Callable)):
             self.element = [element]
-        else:
+        elif(isinstance(element, Callable)):
             self.element = element
-        self.engine = engine
-    def insert(self, i : int, e : Event | list[Event]):
-        if(isinstance(self.element ,list)):
-            if(isinstance(e, Event)):
+        else:
+            self.element = cast(list[EV | DeferredEvent[EV]], element)
+    def insert(self, i : int, e : EV | DeferredEvent[EV] | list[DeferredEvent[EV] | EV]):
+        if(isinstance(self.element, list)):
+            if(not isinstance(e, list)):
                 self.element.insert(i, e)
             else:
                 self.element[i:i] = e
         else:
             raise Exception("Cannot insert into packet when packet not assembled")
-    def append(self, e : Event | list[Event]):
+    def append(self, e : EV | DeferredEvent[EV] | list[EV | DeferredEvent[EV]]):
         if(isinstance(self.element ,list)):
-            if(isinstance(e, Event)):
-                self.element.append(e)
-            else:
+            if(isinstance(e, list)):
                 self.element += e
+            else:
+                self.element.append(e)
         else:
             raise Exception("Cannot insert into packet when packet not assembled")
-    def extend(self, p : PacketAssembler):
-        if(isinstance(self.element ,list) and isinstance(p.element, list)):
-            self.element.extend(p.element)
+    def extend(self, p : Packet[EV]):
+        if(isinstance(self.element,list) and isinstance(p.element, list)):
+            self.element.extend(cast(list[DeferredEvent[EV] | EV], p.element))
         else:
             raise Exception("Cannot extend non-assembled packet assemblers")
     def assemble(self):
-        #Assembles the packet assembler into a list of events
-        if(isinstance(self.element, Callable)):
-            self.element = self.element()
-            if(isinstance(self.element, Event)):
-                self.element = [self.element]
+        #Assembles the packet into a list of events
+        if(callable(self.element)):
+            called = self.element()
+            if(not isinstance(called, list)):
+                raise Exception("Packet assembler returned a non-assembled packet")
+            self.element = called
     def __len__(self):
         if(not isinstance(self.element, list)):
             raise Exception("Tried to get length when packet not assembled yet")
         return len(self.element)
-    def get_next_event(self) -> Tuple[Event | None, PacketAssembler | None]:
+    def get_next_event(self) -> EV | None:
         if(not isinstance(self.element, list)):
             raise Exception("Tried to get next event when packet not assembled yet")
         else:
             if(len(self.element) == 0):
                 return None
             else:
-                next_event = self.element.pop(0)
-                if(not next_event._ready):
-                    next_event = next_event._assemble()
-                    next_event._prepare_post_assembly()
-                next_event.attach_to_engine(self.engine)
-                return next_event
-        
+                next_item = self.element.pop(0)
+                if(isinstance(next_item, DeferredEvent)):
+                    return cast(EV, next_item._assemble())
+                return cast(EV, next_item)
+
+class DeferredEvent(Generic[EV]):
+    def __init__(self, cls : type[EV], **kwargs):
+        self.kwargs = kwargs
+        self.cls = cls
+    def _assemble(self) -> EV:
+        resolved_kwargs = {
+            k: (v() if isinstance(v, Callable) else v)
+            for k, v in self.kwargs.items()
+        }
+        return self.cls(**resolved_kwargs)
 class Event():
     def __init__(self, **kwargs):
-        self.engine : engine.Engine = None
+        self.engine : engine.Engine | None = None
         self.event_listener_groups : dict[engine_constants.EngineGroup, list[event_listener.AbstractEventListener]] = {group : [] for group in engine_constants.EngineGroup}
         self.group_on = engine_constants.EngineGroup(0)
         self.groups_ordered : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
         self.groups_constrained : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
-        self.core_args : Data = None
+        self.core_args : Data = {}
         self.core_ran : bool = False
 
-        self._ready = False
-        self._external_listeners_attached = False
-
-        self._kwargs = kwargs
-
-    def _prepare_post_assembly(self):
-        if(self._ready):
-            raise Exception("Tried to prepare post assembly when already ready")
         self.generate_internal_listeners()
         for group in self.event_listener_groups.values():
             for listener in group:
                 listener.attach_to_event(self)
-        self._ready = True
+        self._external_listeners_attached = False
 
-    def _assemble(self):
-        if(self._ready):
-            raise Exception("Tried to assemble when already ready")
-        #resolves all lazy kwargs
-        resolved_kwargs = {
-            k: (v() if isinstance(v, Callable) else v)
-            for k, v in self._kwargs.items()
-        }
-        return type(self)(**resolved_kwargs)
-    
-    def make_announcement(self) -> bool:
-        #function that decides whether we should make an announcement. 
-        raise NotImplementedError()
+        self._kwargs = kwargs
     def package(self):
         #function that actually packages the event into an announcement
         raise NotImplementedError()
@@ -106,7 +98,7 @@ class Event():
             for listener in group:
                 if(constraint.match(listener)):
                     listener.invalidate()
-    def core_wrapper(self, args : Data = None) -> Response:
+    def core_wrapper(self, args : Data | None = None) -> Response:
         if(args is None):
             args = {}
         r = self.core(args)
@@ -115,13 +107,13 @@ class Event():
             self.core_ran = True
         return r
     
-    def core(self, args :Data = None) ->Response:
+    def core(self, args :Data | None = None) ->Response:
         if(args is None):
             args = {}
         #you should override this!
         #note that, in place of ACCEPT, you should return CORE 
         raise NotImplementedError()
-    def invert_core(self, args : Data = None) -> None:
+    def invert_core(self, args : Data | None = None) -> None:
         if(args is None):
             args = {}
         #this will only be relevant once core() is successfully run
@@ -136,10 +128,7 @@ class Event():
                           response_type : ResponseType =ResponseType.CORE,
                           data :Data = {}) ->Response:
         #Helper function to generate a response packet for core() easier
-        #Announce is true if Requires_Query OR if make_announcement() & CORE
-        return Response(self, response_type, data, 
-                            (self.make_announcement() and response_type==ResponseType.CORE)
-                            or (response_type==ResponseType.REQUIRES_QUERY))
+        return Response(self, response_type, data)
 
     def attach_to_engine(self, engine : engine.Engine):
         self.engine = engine
@@ -168,9 +157,10 @@ class Event():
         for group in self.event_listener_groups:
             for listener in self.event_listener_groups[group]:
                 listener.detach_from_event()
-    def propose(self, e : Event | list[Event] | Callable[[], Event | list[Event]], priority : int = 0):
-        self.engine._propose(e, priority)
-    def forward(self, constraints : list[constrainer.Constraint], args :Data = None) ->Response:
+    def propose(self, p : Packet, priority : int = 0):
+        assert self.engine is not None
+        self.engine._propose(p, priority)
+    def forward(self, constraints : list[constrainer.Constraint], args :Data | None = None) ->Response:
         if(args is None):
             args = {}
         if(self.group_on.value == engine_constants.MAX_GROUP
@@ -200,7 +190,7 @@ class Event():
                         if(constraint._should_attach(listener)):
                             listener.detach_from_event()
                             self.event_listener_groups[self.group_on].remove(listener)
-                            return Response(self, ResponseType.ACCEPT, data = {'constrainer_announced': constraint.package()}, announce = constraint.make_announcement())
+                            return Response(self, ResponseType.ACCEPT, data = {'constrainer_announced': constraint.package()})
             #if all event listeners constrained, we can mark the group as constrained
             self.groups_constrained[self.group_on] = True
             #step 2: consider ordering if must be
@@ -214,7 +204,7 @@ class Event():
                             self.groups_ordered[self.group_on] = True
                             return Response(self, ResponseType.ACCEPT, {})
                     return Response(self, ResponseType.REQUIRES_QUERY,
-                                        {"query_type": "ordering", 'unordered_groups': self.event_listener_groups[self.group_on]}, True)
+                                        {"query_type": "ordering", 'unordered_groups': self.event_listener_groups[self.group_on]})
 
             self.groups_ordered[self.group_on] = True
             #step 3: question whether to go through with the listener
@@ -223,6 +213,7 @@ class Event():
                 #skip if invalidated
                 return Response(self, ResponseType.ACCEPT)
             else:
+                response = Response(self, ResponseType.ACCEPT)
                 if(isinstance(next_listener, event_listener.AssessorEventListener)):
                     response = next_listener.assess(args)
                 elif(isinstance(next_listener, event_listener.PostCheckEventListener)):

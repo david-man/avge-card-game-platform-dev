@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
@@ -16,13 +16,13 @@ class FionaLi(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGEStatusChange, TransferCard
+    def passive(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardStatusChange, TransferCard
         owner_card = card
 
         class _BenchMaidReactor(AVGEReactor):
             def __init__(self):
-                super().__init__(identifier=(owner_card, AVGEEventListenerType.PASSIVE), group=EngineGroup.EXTERNAL_REACTORS)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FionaLi), group=EngineGroup.EXTERNAL_REACTORS)
                 self.owner_card = owner_card
 
             def update_status(self):
@@ -49,15 +49,24 @@ class FionaLi(AVGECharacterCard):
                 if args is None:
                     args = {}
                 event = self.attached_event
+                assert isinstance(event, TransferCard)
 
                 if event.pile_from.pile_type == Pile.ACTIVE and event.pile_from.player == self.owner_card.player:
                     if isinstance(event.card, AVGECharacterCard):
-                        self.owner_card.propose(AVGEStatusChange(event.card, StatusEffect.MAID, StatusChangeType.REMOVE, ActionTypes.NONCHAR, self.owner_card))
+                        self.owner_card.propose(
+                            AVGEPacket([
+                                AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.REMOVE, event.card, ActionTypes.NONCHAR, self.owner_card)
+                            ], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FionaLi))
+                        )
                         return self.generate_response()
 
                 if event.pile_to.pile_type == Pile.ACTIVE and event.pile_to.player == self.owner_card.player:
                     if isinstance(event.card, AVGECharacterCard):
-                        self.owner_card.propose(AVGEStatusChange(event.card, StatusEffect.MAID, StatusChangeType.ADD, ActionTypes.NONCHAR, self.owner_card))
+                        self.owner_card.propose(
+                            AVGEPacket([
+                                AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.ADD, event.card, ActionTypes.NONCHAR, self.owner_card)
+                            ], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FionaLi))
+                        )
                         return self.generate_response()
 
                 return self.generate_response()
@@ -65,24 +74,30 @@ class FionaLi(AVGECharacterCard):
         if owner_card.cardholder.pile_type == Pile.BENCH:
             active = owner_card.player.get_active_card()
             if isinstance(active, AVGECharacterCard):
-                owner_card.propose(AVGEStatusChange(active, StatusEffect.MAID, StatusChangeType.ADD, ActionTypes.PASSIVE, owner_card))
+                owner_card.propose(
+                    AVGEPacket([
+                        AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.ADD, active, ActionTypes.PASSIVE, owner_card)
+                    ], AVGEEngineID(owner_card, ActionTypes.PASSIVE, FionaLi))
+                )
 
         owner_card.add_listener(_BenchMaidReactor())
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                40,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    40,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, FionaLi))
         )
 
         return card.generate_response()

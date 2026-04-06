@@ -28,7 +28,7 @@ class EngineQueue(Generic[T]):
         if(len(self.main_queue) > 0):
             return _heap.heappop(self.main_queue)[2]
         else:
-            return None
+            raise IndexError("Pop on empty queue")
     def flush_buffer(self):
         #Flushes the buffer into the active queue and transitions into an open state
         if(self.queue_status == QueueStatus.BUFFERED):
@@ -37,7 +37,7 @@ class EngineQueue(Generic[T]):
                 self.propose(item, priority)
             self.buffered_queue = []
 
-    def clear_buffer(self) -> list[T]:
+    def clear_buffer(self):
         #Returns the buffer, clears it, and opens the active queue
         self.queue_status = QueueStatus.OPEN
         self.buffered_queue = []

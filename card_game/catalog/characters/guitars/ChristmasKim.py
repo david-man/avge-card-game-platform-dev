@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -18,24 +17,26 @@ class ChristmasKim(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.GUITAR,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.GUITAR,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, ChristmasKim))
         )
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder, AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder, AVGECardHPChangeCreator
 
         player = card.player
         deck = player.cardholders[Pile.DECK]
@@ -54,7 +55,7 @@ class ChristmasKim(AVGECharacterCard):
         for c in char_cards:
             packet.append(TransferCard(c, deck, hand, ActionTypes.ATK_2, card))
             packet.append(
-                AVGECardHPChange(
+                AVGECardHPChangeCreator(
                     lambda: card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
@@ -95,8 +96,11 @@ class ChristmasKim(AVGECharacterCard):
                 cid = c.unique_id
                 if cid in new_order:
                     new_order.remove(cid)
-            new_order = [choice.unique_id for choice in order_choice] + new_order
+            chosen_order = [choice for choice in order_choice if choice is not None]
+            if len(chosen_order) != len(nonchars):
+                return card.generate_response()
+            new_order = [choice.unique_id for choice in chosen_order] + new_order
             packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card))
 
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, ChristmasKim)))
         return card.generate_response()

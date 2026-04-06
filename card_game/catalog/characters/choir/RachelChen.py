@@ -35,16 +35,15 @@ class RachelChen(AVGECharacterCard):
         return False
 
     @staticmethod
-    def active(card : AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def active(card : AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, TransferCard
         discard = card.player.cardholders[Pile.DISCARD]
         hand = card.player.cardholders[Pile.HAND]
 
         # collect candidate items in discard
         candidates = [c for c in list(discard) if isinstance(c, (ConcertProgram, ConcertTicket))]
-        missing = object()
-        chosen = card.env.cache.get(card, RachelChen._CARD_PICK_KEY, missing, True)
-        if chosen is missing:
+        chosen = card.env.cache.get(card, RachelChen._CARD_PICK_KEY, None, True)
+        if chosen is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -62,15 +61,20 @@ class RachelChen(AVGECharacterCard):
                     ]
                 },
             )
-
-        card.propose([TransferCard(chosen, discard, hand, ActionTypes.ACTIVATE_ABILITY, card)])
+        assert(isinstance(chosen, AVGECharacterCard))
+        card.propose(
+            AVGEPacket(
+                [TransferCard(chosen, discard, hand, ActionTypes.ACTIVATE_ABILITY, card)],
+                AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, RachelChen),
+            )
+        )
         # mark used this round
         card.env.cache.set(card, RachelChen._ACTIVE_USE_KEY, card.env.round_id)
 
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         player = card.player
@@ -114,6 +118,7 @@ class RachelChen(AVGECharacterCard):
             )
         else:
             for char in chars:
+                assert(isinstance(char, AVGECharacterCard))
                 packet.append(
                     AVGECardHPChange(
                         char,
@@ -124,5 +129,5 @@ class RachelChen(AVGECharacterCard):
                         card,
                     )
                 )
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, RachelChen)))
         return card.generate_response()

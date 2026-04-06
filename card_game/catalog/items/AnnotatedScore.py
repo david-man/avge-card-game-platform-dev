@@ -15,38 +15,38 @@ class AnnotatedScore(AVGEItemCard):
 	
 	
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent, args: Data = None) -> Response:
+	def play_card(card) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
 
-		opponent = card_for.player.opponent
+		opponent = card.player.opponent
 
 		opponent_hand = opponent.cardholders[Pile.HAND]
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
 
 		if(len(opponent_discard) == 0):
-			return card_for.generate_response(ResponseType.SKIP, {"msg": "Opponent has no cards in discard."})
+			return card.generate_response(ResponseType.SKIP, {"msg": "Opponent has no cards in discard."})
 
 		if(len(opponent_hand) == 0):
-			return card_for.generate_response(ResponseType.SKIP, {"msg": "Opponent has no cards in hand to reveal."})
+			return card.generate_response(ResponseType.SKIP, {"msg": "Opponent has no cards in hand to reveal."})
 
-		hand_pick = card_for.env.cache.get(card_for, AnnotatedScore._OPPONENT_HAND_DISCARD_KEY, None, True)
-		discard_pick = card_for.env.cache.get(card_for, AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY, None, True)
+		hand_pick = card.env.cache.get(card, AnnotatedScore._OPPONENT_HAND_DISCARD_KEY, None, True)
+		discard_pick = card.env.cache.get(card, AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY, None, True)
 		if(hand_pick is None):
 			def _valid(result):
 				if(len(result) != 2):
 					return False
 				return result[0] in opponent_hand and result[1] in opponent_discard
-			return card_for.generate_response(
+			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
 						InputEvent(
-							card_for.player,
+							card.player,
 							[AnnotatedScore._OPPONENT_HAND_DISCARD_KEY, AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY],
 							InputType.DETERMINISTIC,
 							_valid,
 							ActionTypes.NONCHAR,
-							card_for,
+							card,
 							{
 								"query_label": "annotated_score_discard_hand",
 								"opponent_hand": list(opponent_hand),
@@ -56,21 +56,22 @@ class AnnotatedScore(AVGEItemCard):
 					]
 				},
 			)
+		assert discard_pick is not None
 		packet = [
 			TransferCard(
 				discard_pick,
 				opponent_discard,
 				opponent_hand,
 				ActionTypes.NONCHAR,
-				card_for,
+				card,
 			),
 			TransferCard(
 				hand_pick,
 				opponent_hand,
 				opponent_discard,
 				ActionTypes.NONCHAR,
-				card_for,
+				card,
 			)
 		]
-		card_for.propose(packet)
-		return card_for.generate_response()
+		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, AnnotatedScore)))
+		return card.generate_response()

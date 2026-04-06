@@ -6,7 +6,7 @@ from card_game.constants import ResponseType, INTERRUPT_KEY
 from card_game.engine.constrainer import Constraint
 from card_game.engine.engine import Engine
 from card_game.engine.engine_constants import EngineGroup, QueueStatus
-from card_game.engine.event import Event
+from card_game.engine.event import DeferredEvent, Event, Packet
 from card_game.engine.event_listener import AssessorEventListener, ModifierEventListener, ReactorEventListener
 
 
@@ -35,9 +35,10 @@ class BaseEvent(Event):
         return
 
 
-class CountingExternalListener(AssessorEventListener[str]):
+class CountingExternalListener(AssessorEventListener[Event]):
     def __init__(self, identifier: str, should_effect: bool = True, ttl_events: int | None = None):
-        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = identifier
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.call_count = 0
         self.should_effect = should_effect
         self.ttl_events = ttl_events
@@ -66,9 +67,10 @@ class CountingExternalListener(AssessorEventListener[str]):
         return "counting-external-listener"
 
 
-class SkipListener(AssessorEventListener[str]):
+class SkipListener(AssessorEventListener[Event]):
     def __init__(self, group: EngineGroup):
-        super().__init__(identifier="skip-listener", group=group, internal=True)
+        self.identifier = "skip-listener"
+        super().__init__(group=group, internal=True)
 
     def event_match(self, event: Event) -> bool:
         return True
@@ -89,9 +91,10 @@ class SkipListener(AssessorEventListener[str]):
         return "skip-listener"
 
 
-class CountingInternalListener(AssessorEventListener[str]):
+class CountingInternalListener(AssessorEventListener[Event]):
     def __init__(self, identifier: str, group: EngineGroup = EngineGroup.INTERNAL_1):
-        super().__init__(identifier=identifier, group=group, internal=True)
+        self.identifier = identifier
+        super().__init__(group=group, internal=True)
         self.call_count = 0
         self.invalidated_after_first = False
 
@@ -116,9 +119,10 @@ class CountingInternalListener(AssessorEventListener[str]):
         return "counting-internal-listener"
 
 
-class QueryListener(AssessorEventListener[str]):
+class QueryListener(AssessorEventListener[Event]):
     def __init__(self):
-        super().__init__(identifier="query-listener", group=EngineGroup.INTERNAL_1, internal=True)
+        self.identifier = "query-listener"
+        super().__init__(group=EngineGroup.INTERNAL_1, internal=True)
         self.call_count = 0
 
     def event_match(self, event: Event) -> bool:
@@ -143,9 +147,10 @@ class QueryListener(AssessorEventListener[str]):
         return "query-listener"
 
 
-class CountingModifierListener(ModifierEventListener[str]):
+class CountingModifierListener(ModifierEventListener[Event]):
     def __init__(self, identifier: str, should_effect: bool = True):
-        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = identifier
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.call_count = 0
         self.should_effect = should_effect
 
@@ -169,16 +174,17 @@ class CountingModifierListener(ModifierEventListener[str]):
         return "counting-modifier-listener"
 
 
-class TagConstraint(Constraint[str]):
+class TagConstraint(Constraint[Event]):
     def __init__(self, identifier: str):
-        super().__init__(identifier)
+        super().__init__()
+        self.identifier = identifier
 
     def match(self, obj) -> bool:
         if isinstance(obj, Constraint):
             return False
         return getattr(obj, "identifier", None) == self.identifier
 
-    def constrain_listener(self, listener: AssessorEventListener[str]):
+    def constrain_listener(self, listener: AssessorEventListener[Event]):
         return True
 
     def update_status(self):
@@ -232,7 +238,7 @@ class DeltaEvent(BaseEvent):
     def core(self, args={}):
         self.state.value += self.delta
         if self.propose_extra:
-            self.propose(BaseEvent())
+            self.propose(Packet([BaseEvent()]))
         return self.generate_core_response()
 
     def get_kwargs(self):
@@ -312,13 +318,16 @@ class ProposeDeferredAssemblerEvent(BaseEvent):
 
     def core(self, args={}):
         self.propose(
-            lambda: [
-                DeltaEvent(
-                    state=self.state,
-                    delta=self.deferred_delta_source["delta"],
-                    propose_extra=False,
-                )
-            ]
+            Packet(
+                lambda: [
+                    DeferredEvent(
+                        DeltaEvent,
+                        state=self.state,
+                        delta=lambda: self.deferred_delta_source["delta"],
+                        propose_extra=False,
+                    )
+                ]
+            )
         )
         return self.generate_core_response()
 
@@ -351,7 +360,7 @@ class DeferredKwargsDeltaEvent(BaseEvent):
     def core(self, args={}):
         self.state.value += self.delta
         if self.propose_extra:
-            self.propose(BaseEvent())
+            self.propose(Packet([BaseEvent()]))
         return self.generate_core_response()
 
     def invert_core(self, args={}) -> None:
@@ -372,9 +381,11 @@ class AssemblyTimingDeltaEvent(BaseEvent):
         self.delta = delta
 
         if delta is not None:
+            self.delta = delta
             super().__init__(state=state, delta=delta)
         elif metrics is not None and delta_source is not None:
-            super().__init__(state=state, delta=lambda: self.resolve_delta())
+            self.delta = self.resolve_delta()
+            super().__init__(state=state, delta=self.delta)
         else:
             raise ValueError("AssemblyTimingDeltaEvent requires either delta or (metrics and delta_source)")
 
@@ -389,6 +400,7 @@ class AssemblyTimingDeltaEvent(BaseEvent):
             "state": self.state,
             "metrics": self.metrics,
             "delta_source": self.delta_source,
+            "delta": self.delta,
         }
 
     def core(self, args={}):
@@ -489,9 +501,10 @@ class UpdatePacketReplayEvent(BaseEvent):
         super().__init__(cache=cache, touch_key=touch_key, input_key=input_key)
 
 
-class CacheTouchModifier(ModifierEventListener[str]):
+class CacheTouchModifier(ModifierEventListener[Event]):
     def __init__(self, cache: RollbackCache, touch_key: str, metrics: dict[str, int]):
-        super().__init__(identifier="touch-mod", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = "touch-mod"
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.cache = cache
         self.touch_key = touch_key
         self.metrics = metrics
@@ -517,9 +530,10 @@ class CacheTouchModifier(ModifierEventListener[str]):
         return "cache-touch-modifier"
 
 
-class RequestInputModifier(ModifierEventListener[str]):
+class RequestInputModifier(ModifierEventListener[Event]):
     def __init__(self, cache: RollbackCache, input_key: str, metrics: dict[str, int]):
-        super().__init__(identifier="input-mod", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = "input-mod"
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.cache = cache
         self.input_key = input_key
         self.metrics = metrics
@@ -552,9 +566,10 @@ class RequestInputModifier(ModifierEventListener[str]):
         return "request-input-modifier"
 
 
-class DownstreamBlockAssessor(AssessorEventListener[str]):
+class DownstreamBlockAssessor(AssessorEventListener[Event]):
     def __init__(self, cache: RollbackCache, input_key: str, metrics: dict[str, int]):
-        super().__init__(identifier="downstream-block", group=EngineGroup.EXTERNAL_PRECHECK_2, internal=False)
+        self.identifier = "downstream-block"
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_2, internal=False)
         self.cache = cache
         self.input_key = input_key
         self.metrics = metrics
@@ -598,9 +613,10 @@ class InterruptChainReplayEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class SequencedInterruptModifier(ModifierEventListener[str]):
+class SequencedInterruptModifier(ModifierEventListener[Event]):
     def __init__(self, identifier: str, cache: RollbackCache, input_key: str):
-        super().__init__(identifier=identifier, group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = identifier
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.cache = cache
         self.input_key = input_key
         self.interrupt_count = 0
@@ -660,9 +676,10 @@ class InterruptPayloadEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class InterruptThenFastForwardAssessor(AssessorEventListener[str]):
+class InterruptThenFastForwardAssessor(AssessorEventListener[Event]):
     def __init__(self, metrics: dict[str, int]):
-        super().__init__(identifier="interrupt-then-ff", group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        self.identifier = "interrupt-then-ff"
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -693,9 +710,10 @@ class InterruptThenFastForwardAssessor(AssessorEventListener[str]):
         return "interrupt-then-fast-forward-assessor"
 
 
-class DownstreamOverrideModifier(ModifierEventListener[str]):
+class DownstreamOverrideModifier(ModifierEventListener[Event]):
     def __init__(self, metrics: dict[str, int]):
-        super().__init__(identifier="downstream-override-mod", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = "downstream-override-mod"
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -718,9 +736,10 @@ class DownstreamOverrideModifier(ModifierEventListener[str]):
         return "downstream-override-modifier"
 
 
-class InterruptThenAcceptAssessor(AssessorEventListener[str]):
+class InterruptThenAcceptAssessor(AssessorEventListener[Event]):
     def __init__(self, metrics: dict[str, int]):
-        super().__init__(identifier="interrupt-then-accept", group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        self.identifier = "interrupt-then-accept"
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -777,9 +796,10 @@ class OrderedInterruptCandidateEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class OrderedInterruptAssessor(AssessorEventListener[str]):
+class OrderedInterruptAssessor(AssessorEventListener[Event]):
     def __init__(self, order: list[str]):
-        super().__init__(identifier="ordered-interrupt", group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        self.identifier = "ordered-interrupt"
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
         self.order = order
         self.did_interrupt = False
 
@@ -846,9 +866,10 @@ class OrderedModifierInterruptCandidateEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class OrderedInterruptModifier(ModifierEventListener[str]):
+class OrderedInterruptModifier(ModifierEventListener[Event]):
     def __init__(self, order: list[str]):
-        super().__init__(identifier="ordered-interrupt-modifier", group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        self.identifier = "ordered-interrupt-modifier"
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
         self.order = order
         self.did_interrupt = False
 
@@ -892,9 +913,10 @@ class OrderedReactorInterruptCandidateEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class OrderedInterruptReactor(ReactorEventListener[str]):
+class OrderedInterruptReactor(ReactorEventListener[Event]):
     def __init__(self, order: list[str]):
-        super().__init__(identifier="ordered-interrupt-reactor", group=EngineGroup.EXTERNAL_REACTORS, internal=False)
+        self.identifier = "ordered-interrupt-reactor"
+        super().__init__(group=EngineGroup.EXTERNAL_REACTORS, internal=False)
         self.order = order
         self.did_interrupt = False
 
@@ -925,9 +947,10 @@ class OrderedInterruptReactor(ReactorEventListener[str]):
         return "ordered-interrupt-reactor"
 
 
-class AttachTracingModifier(ModifierEventListener[str]):
+class AttachTracingModifier(ModifierEventListener[Event]):
     def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
-        super().__init__(identifier=identifier, group=group, internal=False)
+        self.identifier = identifier
+        super().__init__(group=group, internal=False)
         self.trace = trace
         self.attach_count = 0
         self.detach_count = 0
@@ -977,9 +1000,10 @@ class AttachStateConstraint(TagConstraint):
         return getattr(obj, "identifier", None) == self.identifier
 
 
-class AttachTracingAssessor(AssessorEventListener[str]):
+class AttachTracingAssessor(AssessorEventListener[Event]):
     def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
-        super().__init__(identifier=identifier, group=group, internal=False)
+        self.identifier = identifier
+        super().__init__(group=group, internal=False)
         self.trace = trace
         self.attach_count = 0
         self.detach_count = 0
@@ -1016,9 +1040,10 @@ class AttachTracingAssessor(AssessorEventListener[str]):
         return "attach-tracing-assessor"
 
 
-class AttachTracingReactor(ReactorEventListener[str]):
+class AttachTracingReactor(ReactorEventListener[Event]):
     def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
-        super().__init__(identifier=identifier, group=group, internal=False)
+        self.identifier = identifier
+        super().__init__(group=group, internal=False)
         self.trace = trace
         self.attach_count = 0
         self.detach_count = 0
@@ -1127,13 +1152,13 @@ class IndefiniteCacheToggleInterruptEvent(BaseEvent):
 
 
 class EngineEdgeCaseTests(unittest.TestCase):
-    def make_engine(self) -> Engine:
-        eng = Engine()
+    def make_engine(self) -> Engine[Event]:
+        eng = Engine[Event]()
         if not hasattr(eng, "_reset_constraints"):
             eng._reset_constraints = lambda: None
         return eng
 
-    def drain_engine(self, eng: Engine, max_steps: int = 200):
+    def drain_engine(self, eng: Engine[Event], max_steps: int = 200):
         last = None
         for _ in range(max_steps):
             last = eng.forward({})
@@ -1141,7 +1166,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
                 return last
         self.fail("Engine did not reach NO_MORE_EVENTS in max_steps")
 
-    def forward_with_cache(self, eng: Engine, cache: RollbackCache, args=None):
+    def forward_with_cache(self, eng: Engine[Event], cache: RollbackCache, args=None):
         if args is None:
             args = {}
         response = eng.forward(args)
@@ -1153,7 +1178,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             cache.rewind()
         return response
 
-    def forward_until(self, eng: Engine, predicate, max_steps: int = 200):
+    def forward_until(self, eng: Engine[Event], predicate, max_steps: int = 200):
         last = None
         for _ in range(max_steps):
             last = eng.forward({})
@@ -1163,14 +1188,14 @@ class EngineEdgeCaseTests(unittest.TestCase):
 
     def test_skip_before_core_reopens_queue_for_next_packets(self):
         eng = self.make_engine()
-        eng._propose([PreCoreSkipEvent()])
+        eng._propose(Packet([PreCoreSkipEvent()]))
 
         last = self.drain_engine(eng)
         self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(eng._queue.queue_status, QueueStatus.OPEN)
 
         state = MutableState()
-        eng._propose([DeltaEvent(state, 3)])
+        eng._propose(Packet([DeltaEvent(state, 3)]))
         last_after = self.drain_engine(eng)
         self.assertEqual(last_after.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(state.value, 3)
@@ -1178,10 +1203,10 @@ class EngineEdgeCaseTests(unittest.TestCase):
     def test_skip_after_core_reverts_current_and_prior_events_in_packet(self):
         eng = self.make_engine()
         state = MutableState()
-        eng._propose([
+        eng._propose(Packet([
             DeltaEvent(state, 5),
             PostCoreSkipEvent(state, 7),
-        ])
+        ]))
 
         last = self.drain_engine(eng)
         self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1190,10 +1215,10 @@ class EngineEdgeCaseTests(unittest.TestCase):
     def test_skip_clears_buffered_proposals_from_failed_packet(self):
         eng = self.make_engine()
         state = MutableState()
-        eng._propose([
+        eng._propose(Packet([
             DeltaEvent(state, 2, propose_extra=True),
             PreCoreSkipEvent(),
-        ])
+        ]))
 
         last = self.drain_engine(eng)
         self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1203,13 +1228,13 @@ class EngineEdgeCaseTests(unittest.TestCase):
     def test_listener_added_mid_packet_is_not_persisted_after_skip(self):
         eng = self.make_engine()
         listener = CountingExternalListener(identifier="tmp-listener")
-        eng._propose([
+        eng._propose(Packet([
             AddListenerEvent(listener),
             PreCoreSkipEvent(),
-        ])
+        ]))
         self.drain_engine(eng)
 
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
         self.drain_engine(eng)
         self.assertEqual(listener.call_count, 0)
         self.assertTrue(listener._invalidated)
@@ -1220,14 +1245,14 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(listener)
 
         transient_constraint = TagConstraint("tagged")
-        eng._propose([
+        eng._propose(Packet([
             AddConstraintEvent(transient_constraint),
             PreCoreSkipEvent(),
-        ])
+        ]))
         self.drain_engine(eng)
         baseline_calls = listener.call_count
 
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
         self.drain_engine(eng)
         self.assertEqual(listener.call_count, baseline_calls + 1)
         self.assertNotIn(transient_constraint, eng._constraints)
@@ -1237,7 +1262,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         listener = CountingExternalListener(identifier="ttl-listener", ttl_events=1)
         eng.add_listener(listener)
 
-        eng._propose([BaseEvent(), BaseEvent()])
+        eng._propose(Packet([BaseEvent(), BaseEvent()]))
         self.drain_engine(eng)
 
         self.assertEqual(listener.call_count, 1)
@@ -1251,7 +1276,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             def generate_internal_listeners(self_nonlocal):
                 self_nonlocal.event_listener_groups[EngineGroup.INTERNAL_1].append(query_listener)
 
-        eng._propose([QueryEvent()])
+        eng._propose(Packet([QueryEvent()]))
 
         self.assertEqual(eng.forward({}).response_type, ResponseType.NEXT_PACKET)
         self.assertEqual(eng.forward({}).response_type, ResponseType.NEXT_EVENT)
@@ -1277,7 +1302,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
     def test_invalidated_internal_listener_is_skipped(self):
         eng = self.make_engine()
         event = InternalInvalidatedEvent()
-        eng._propose([event])
+        eng._propose(Packet([event]))
 
         self.drain_engine(eng)
         self.assertEqual(event.listener.call_count, 0)
@@ -1285,7 +1310,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
     def test_internal_listener_with_false_event_effect_is_skipped(self):
         eng = self.make_engine()
         event = InternalNoEffectEvent()
-        eng._propose([event])
+        eng._propose(Packet([event]))
 
         self.drain_engine(eng)
         self.assertEqual(event.listener.call_count, 0)
@@ -1295,7 +1320,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         state = MutableState()
         deferred_delta_source = {"delta": 1}
 
-        eng._propose([ProposeDeferredAssemblerEvent(state, deferred_delta_source)])
+        eng._propose(Packet([ProposeDeferredAssemblerEvent(state, deferred_delta_source)]))
 
         response = None
         for _ in range(50):
@@ -1320,7 +1345,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             metrics["packet_assembles"] += 1
             return [DeltaEvent(state, 4)]
 
-        eng._propose(packet_factory)
+        eng._propose(Packet(packet_factory))
 
         self.assertEqual(metrics["packet_assembles"], 0)
 
@@ -1333,6 +1358,33 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertEqual(state.value, 4)
         self.assertEqual(metrics["packet_assembles"], 1)
 
+    def test_packet_mixes_event_and_deferred_event_items(self):
+        eng = self.make_engine()
+        state = MutableState()
+        deferred_delta_source = {"delta": 5}
+
+        eng._propose(Packet(
+            [
+                DeltaEvent(state, 2),
+                DeferredEvent(
+                    DeltaEvent,
+                    state=state,
+                    delta=lambda: deferred_delta_source["delta"],
+                    propose_extra=False,
+                ),
+                DeltaEvent(state, 3),
+            ]
+        ))
+
+        self.assertEqual(eng.forward({}).response_type, ResponseType.NEXT_PACKET)
+        self.assertEqual(eng.forward({}).response_type, ResponseType.NEXT_EVENT)
+
+        deferred_delta_source["delta"] = 7
+
+        last = self.drain_engine(eng)
+        self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(state.value, 12)
+
     def test_empty_packet_is_a_safe_noop(self):
         eng = self.make_engine()
         listener = CountingExternalListener(identifier="baseline-listener")
@@ -1340,7 +1392,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(listener)
         eng.add_constraint(constraint)
 
-        eng._propose([])
+        eng._propose(Packet([]))
 
         first = eng.forward({})
         second = eng.forward({})
@@ -1360,7 +1412,16 @@ class EngineEdgeCaseTests(unittest.TestCase):
         metrics = {"event_kwarg_resolves": 0}
         delta_source = {"delta": 7}
 
-        eng._propose([AssemblyTimingDeltaEvent(state, metrics, delta_source)])
+        eng._propose(Packet(
+            [
+                DeferredEvent(
+                    AssemblyTimingDeltaEvent,
+                    state=state,
+                    metrics=metrics,
+                    delta_source=delta_source,
+                )
+            ]
+        ))
 
         self.assertEqual(metrics["event_kwarg_resolves"], 0)
 
@@ -1377,17 +1438,48 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertEqual(state.value, 7)
         self.assertEqual(metrics["event_kwarg_resolves"], 1)
 
-    def test_proposed_event_instance_uses_deferred_get_kwargs_callables(self):
+    def test_deferred_event_uses_callable_kwargs_at_assembly_time(self):
         eng = self.make_engine()
         state = MutableState()
         deferred_delta_source = {"delta": 2}
 
-        eng._propose(DeferredKwargsDeltaEvent(state, delta=0, deferred_delta_source=deferred_delta_source))
+        eng._propose(Packet([
+            DeferredEvent(
+                DeferredKwargsDeltaEvent,
+                state=state,
+                delta=lambda: deferred_delta_source["delta"],
+                propose_extra=False,
+            )
+        ]))
         deferred_delta_source["delta"] = 9
 
         last = self.drain_engine(eng)
         self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(state.value, 9)
+
+    def test_normal_event_instance_stays_static_while_deferred_event_is_just_in_time(self):
+        eng = self.make_engine()
+        state = MutableState()
+        delta_source = {"delta": 3}
+
+        eng._propose(Packet(
+            [
+                DeltaEvent(state, delta_source["delta"]),
+                DeferredEvent(
+                    DeltaEvent,
+                    state=state,
+                    delta=lambda: delta_source["delta"],
+                    propose_extra=False,
+                ),
+            ]
+        ))
+
+        # Mutate after packet composition; normal event should keep 3 while deferred event reads 7.
+        delta_source["delta"] = 7
+
+        last = self.drain_engine(eng)
+        self.assertEqual(last.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(state.value, 10)
 
     def test_later_event_lambda_uses_object_modified_by_prior_event(self):
         eng = self.make_engine()
@@ -1398,12 +1490,17 @@ class EngineEdgeCaseTests(unittest.TestCase):
             "event_kwarg_resolves": 0,
         }
 
-        eng._propose(
+        eng._propose(Packet(
             [
                 MutateDeltaSourceEvent(delta_source, new_delta=11, metrics=metrics),
-                AssemblyTimingDeltaEvent(state, metrics, delta_source),
+                DeferredEvent(
+                    AssemblyTimingDeltaEvent,
+                    state=state,
+                    metrics=metrics,
+                    delta_source=delta_source,
+                ),
             ]
-        )
+        ))
 
         last = self.drain_engine(eng)
 
@@ -1432,7 +1529,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(RequestInputModifier(cache, input_key, metrics))
         eng.add_listener(DownstreamBlockAssessor(cache, input_key, metrics))
 
-        eng._propose([UpdatePacketReplayEvent(cache, touch_key, input_key)])
+        eng._propose(Packet([UpdatePacketReplayEvent(cache, touch_key, input_key)]))
 
         saw_interrupt = False
         saw_requires_query = False
@@ -1477,7 +1574,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(constrained_listener)
         eng.add_constraint(TagConstraint("constrained"))
 
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
         final = self.drain_engine(eng)
 
         self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1490,7 +1587,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(listener_a)
         eng.add_listener(listener_b)
 
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
         ordering_query = self.forward_until(
             eng,
             lambda r: r.response_type in [ResponseType.REQUIRES_QUERY, ResponseType.NO_MORE_EVENTS],
@@ -1511,7 +1608,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(remaining_2)
         eng.add_constraint(TagConstraint("constrained"))
 
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         saw_constraint_announcement = False
         ordering_query = None
@@ -1539,7 +1636,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_constraint(TagConstraint("constrained_1"))
         eng.add_constraint(TagConstraint("constrained_2"))
 
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         saw_ordering_query = False
         final = None
@@ -1570,7 +1667,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
 
         eng.add_listener(InterruptThenFastForwardAssessor(metrics))
         eng.add_listener(DownstreamOverrideModifier(metrics))
-        eng._propose([OverrideCandidateEvent(metrics)])
+        eng._propose(Packet([OverrideCandidateEvent(metrics)]))
 
         saw_interrupt = False
 
@@ -1600,7 +1697,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
 
         eng.add_listener(InterruptThenAcceptAssessor(metrics))
         eng.add_listener(DownstreamOverrideModifier(metrics))
-        eng._propose([OverrideCandidateEvent(metrics)])
+        eng._propose(Packet([OverrideCandidateEvent(metrics)]))
 
         saw_interrupt = False
         for _ in range(200):
@@ -1629,7 +1726,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(mod_a)
         eng.add_listener(mod_b)
 
-        eng._propose([InterruptChainReplayEvent(cache, metrics)])
+        eng._propose(Packet([InterruptChainReplayEvent(cache, metrics)]))
 
         saw_interrupts = 0
         saw_ordering = False
@@ -1668,7 +1765,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         order: list[str] = []
 
         eng.add_listener(OrderedInterruptAssessor(order))
-        eng._propose([OrderedInterruptCandidateEvent(order)])
+        eng._propose(Packet([OrderedInterruptCandidateEvent(order)]))
 
         final = self.drain_engine(eng)
         self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1678,7 +1775,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng = self.make_engine()
         order: list[str] = []
 
-        eng._propose([OrderedCoreInterruptEvent(order)])
+        eng._propose(Packet([OrderedCoreInterruptEvent(order)]))
 
         final = self.drain_engine(eng)
         self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1689,7 +1786,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         order: list[str] = []
 
         eng.add_listener(OrderedInterruptModifier(order))
-        eng._propose([OrderedModifierInterruptCandidateEvent(order)])
+        eng._propose(Packet([OrderedModifierInterruptCandidateEvent(order)]))
 
         final = self.drain_engine(eng)
         self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1700,7 +1797,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         order: list[str] = []
 
         eng.add_listener(OrderedInterruptReactor(order))
-        eng._propose([OrderedReactorInterruptCandidateEvent(order)])
+        eng._propose(Packet([OrderedReactorInterruptCandidateEvent(order)]))
 
         final = self.drain_engine(eng)
         self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
@@ -1713,7 +1810,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         listener = AttachTracingModifier("trace-target", EngineGroup.EXTERNAL_MODIFIERS_2, trace)
         eng.add_listener(listener)
         eng.add_constraint(AttachStateConstraint("trace-target", trace))
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         self.drain_engine(eng)
 
@@ -1731,7 +1828,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         listener = AttachTracingModifier("detach-target", EngineGroup.EXTERNAL_MODIFIERS_2, trace)
         eng.add_listener(listener)
         eng.add_constraint(AttachStateConstraint("detach-target", trace))
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         self.drain_engine(eng)
 
@@ -1750,7 +1847,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng.add_listener(constrained)
         eng.add_listener(survivor)
         eng.add_constraint(AttachStateConstraint("constrained-target", trace))
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         self.drain_engine(eng)
 
@@ -1768,7 +1865,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         listener = AttachTracingAssessor("assessor-target", EngineGroup.EXTERNAL_PRECHECK_1, trace)
         eng.add_listener(listener)
         eng.add_constraint(AttachStateConstraint("assessor-target", trace))
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         self.drain_engine(eng)
 
@@ -1787,7 +1884,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         listener = AttachTracingReactor("reactor-target", EngineGroup.EXTERNAL_REACTORS, trace)
         eng.add_listener(listener)
         eng.add_constraint(AttachStateConstraint("reactor-target", trace))
-        eng._propose([BaseEvent()])
+        eng._propose(Packet([BaseEvent()]))
 
         self.drain_engine(eng)
 
@@ -1809,7 +1906,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             "erase_runs": 0,
         }
 
-        eng._propose([IndefiniteCacheToggleInterruptEvent(cache, key, metrics)])
+        eng._propose(Packet([IndefiniteCacheToggleInterruptEvent(cache, key, metrics)]))
 
         terminal_responses = {
             ResponseType.NO_MORE_EVENTS,

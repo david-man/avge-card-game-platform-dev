@@ -10,31 +10,35 @@ class MaidOutfit(AVGEToolCard):
 		super().__init__(unique_id)
 
 	def deactivate_card(self):
-		from card_game.internal_events import AVGEStatusChange
+		from card_game.internal_events import AVGECardStatusChange
 
 		super().deactivate_card()
-
+		assert self.card_attached is not None
 		self.propose(
-			AVGEStatusChange(
-				self.card_attached,
+			AVGEPacket([
+				AVGECardStatusChange(
 				StatusEffect.MAID,
 				StatusChangeType.REMOVE,
+				self.card_attached,
 				ActionTypes.ENV,
 				self,
-			)
+				)
+			], AVGEEngineID(None, ActionTypes.ENV, None))
 		)
 
-	def play_card(self, parent_event: AVGEEvent) -> Response:
-		from card_game.internal_events import AVGEStatusChange
-
+	def play_card(self) -> Response:
+		from card_game.internal_events import AVGECardStatusChange
+		assert self.card_attached is not None
 		self.propose(
-			AVGEStatusChange(
-				self.card_attached,
+			AVGEPacket([
+				AVGECardStatusChange(
 				StatusEffect.MAID,
 				StatusChangeType.ADD,
+				self.card_attached,
 				ActionTypes.NONCHAR,
 				self,
-			)
+				)
+			], AVGEEngineID(self, ActionTypes.NONCHAR, MaidOutfit))
 		)
 
 		return self.generate_response()

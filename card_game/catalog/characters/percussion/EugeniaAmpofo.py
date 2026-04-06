@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard, AVGEEnergyTransfer, EmptyEvent
+from card_game.internal_events import InputEvent, AVGECardHPChangeCreator, TransferCard, AVGEEnergyTransfer, EmptyEvent
 
 
 class EugeniaAmpofo(AVGECharacterCard):
@@ -31,7 +30,7 @@ class EugeniaAmpofo(AVGECharacterCard):
         return used_round != card.env.round_id
 
     @staticmethod
-    def active(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def active(card: AVGECharacterCard) -> Response:
         bench_chars = card.player.cardholders[Pile.BENCH]
         choice = card.env.cache.get(card, EugeniaAmpofo._ATTACH_CHOICE_KEY, None, True)
         if choice is None:
@@ -77,13 +76,14 @@ class EugeniaAmpofo(AVGECharacterCard):
             ]
 
         card.env.cache.set(card, EugeniaAmpofo._ATTACH_USED_ROUND_KEY, card.env.round_id)
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)))
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        packet = [
-            AVGECardHPChange(
+    def atk_1(card: AVGECharacterCard) -> Response:
+        packet = []
+        packet.append([
+            AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
@@ -91,18 +91,17 @@ class EugeniaAmpofo(AVGECharacterCard):
                 ActionTypes.ATK_1,
                 card,
             )
-        ]
+        ])
 
         bench_holder = card.player.cardholders[Pile.BENCH]
         active_holder = card.player.cardholders[Pile.ACTIVE]
-        perc_candidates = [c for c in bench_holder if c.card_type == CardType.PERCUSSION]
+        perc_candidates = [c for c in bench_holder if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION]
         if len(perc_candidates) == 0:
-            card.propose(packet)
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EugeniaAmpofo)))
             return card.generate_response()
 
-        missing = object()
-        pick = card.env.cache.get(card, EugeniaAmpofo._BENCH_SWAP_KEY, missing, True)
-        if pick is missing:
+        pick = card.env.cache.get(card, EugeniaAmpofo._BENCH_SWAP_KEY, None, True)
+        if pick is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -127,6 +126,6 @@ class EugeniaAmpofo(AVGECharacterCard):
         if pick is not None:
             packet.append(TransferCard(pick, bench_holder, active_holder, ActionTypes.ATK_1, card))
             packet.append(TransferCard(card, active_holder, bench_holder, ActionTypes.ATK_1, card))
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EugeniaAmpofo)))
 
         return card.generate_response()

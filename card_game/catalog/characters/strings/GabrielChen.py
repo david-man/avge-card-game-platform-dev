@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -22,8 +21,8 @@ class GabrielChen(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
 
         if card.hp != 60:
             return card.generate_response()
@@ -51,21 +50,23 @@ class GabrielChen(AVGECharacterCard):
             )
 
         card.propose(
-            AVGECardHPChange(
-                chosen,
-                70,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    chosen,
+                    70,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, GabrielChen))
         )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
 
         r0 = card.env.cache.get(card, GabrielChen._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, GabrielChen._COIN_KEY_1, None, True)
@@ -140,9 +141,11 @@ class GabrielChen(AVGECharacterCard):
             )
 
         dmg_amt = 60 if mode == "three60" else 70
+        packet = []
         for tgt in chosen:
-            card.propose(
-                AVGECardHPChange(
+            assert isinstance(tgt, AVGECharacterCard)
+            packet.append(
+                AVGECardHPChangeCreator(
                     tgt,
                     dmg_amt,
                     AVGEAttributeModifier.SUBSTRACTIVE,
@@ -151,4 +154,5 @@ class GabrielChen(AVGECharacterCard):
                     card,
                 )
             )
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, GabrielChen)))
         return card.generate_response()

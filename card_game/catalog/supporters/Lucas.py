@@ -12,9 +12,9 @@ class Lucas(AVGESupporterCard):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card_for: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+	def play_card(card: AVGECard) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
-		player = card_for.player
+		player = card.player
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
 
@@ -28,20 +28,19 @@ class Lucas(AVGESupporterCard):
 					board_characters.append(character)
 
 		board_types = {
-			character.attributes.get(AVGECardAttribute.TYPE)
+			character.card_type
 			for character in board_characters
-			if character.attributes.get(AVGECardAttribute.TYPE) is not None
 		}
 
 		eligible_deck_characters = [
 			card
 			for card in deck
 			if isinstance(card, AVGECharacterCard)
-			and card.attributes.get(AVGECardAttribute.TYPE) not in board_types
+			and card.card_type not in board_types
 		]
 
 		if(len(eligible_deck_characters) < 1):
-			return card_for.generate_response(ResponseType.CORE)
+			return card.generate_response(ResponseType.CORE)
 
 
 		def _input_valid(result) -> bool:
@@ -58,17 +57,17 @@ class Lucas(AVGESupporterCard):
 			return True
 
 		missing = object()
-		top_deck_card = card_for.env.cache.get(card_for, Lucas._CARD_DECK_KEY, missing, True)
-		hand_card = card_for.env.cache.get(card_for, Lucas._CARD_HAND_KEY, missing, True)
+		top_deck_card = card.env.cache.get(card, Lucas._CARD_DECK_KEY, missing, True)
+		hand_card = card.env.cache.get(card, Lucas._CARD_HAND_KEY, missing, True)
 		if(top_deck_card is missing):
-			return card_for.generate_interrupt([
+			return card.generate_interrupt([
 				InputEvent(
-					card_for.player,
+					card.player,
 					[Lucas._CARD_DECK_KEY, Lucas._CARD_HAND_KEY],
 					InputType.DETERMINISTIC,
 					_input_valid,
 					ActionTypes.NONCHAR,
-					card_for,
+					card,
 					{"query_label": "lucas-choice",
 	  				"targets": eligible_deck_characters}
 				)
@@ -80,16 +79,16 @@ class Lucas(AVGESupporterCard):
 							  deck,
 							  deck,
 							  ActionTypes.NONCHAR,
-							  card_for,
+							  card,
 							  0))
 		if hand_card is not None:
 			packet.append(TransferCard(hand_card,
 							  deck,
 							  hand,
 							  ActionTypes.NONCHAR,
-							  card_for))
+							  card))
 
 
 		if(len(packet) > 0):
-			card_for.propose(packet)
-		return card_for.generate_response(ResponseType.CORE)
+			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Lucas)))
+		return card.generate_response(ResponseType.CORE)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -20,7 +19,7 @@ class KeiWatanabe(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         opponent = card.player.opponent
@@ -48,20 +47,22 @@ class KeiWatanabe(AVGECharacterCard):
             )
 
         card.propose(
-            AVGECardHPChange(
-                chosen,
-                10,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PERCUSSION,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChange(
+                    chosen,
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PERCUSSION,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, KeiWatanabe))
         )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, PlayCharacterCard, AVGEEnergyTransfer, EmptyEvent
 
         candidates = [
@@ -110,9 +111,11 @@ class KeiWatanabe(AVGECharacterCard):
                     ]
                 },
             )
-
+        assert isinstance(chosen, AVGECharacterCard)
+        assert isinstance(action_type, ActionTypes)
         def generate_packet():
-            packet = [PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card)]
+            packet = []
+            packet += [PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card)]
             if len(card.energy) == 0:
                 packet.append(
                     EmptyEvent(
@@ -126,5 +129,5 @@ class KeiWatanabe(AVGECharacterCard):
                 packet.append(AVGEEnergyTransfer(token, card, chosen, ActionTypes.ATK_2, card))
             return packet
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
         return card.generate_response()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -19,8 +18,8 @@ class AntongChen(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
 
         last_atk2 = card.env.cache.get(card, AntongChen._LAST_ATK2_ROUND_KEY, None)
         if last_atk2 is not None and card.env.round_id - last_atk2 <= 2:
@@ -46,33 +45,35 @@ class AntongChen(AVGECharacterCard):
                 },
             )
 
-        heads = sum(vals)
+        heads = sum(int(v) for v in vals if v is not None)
         if heads <= 0:
             return card.generate_response()
 
         dmg = 20 * heads
         card.propose(
-            AVGECardHPChange(
+            AVGEPacket([
+                AVGECardHPChangeCreator(
                 lambda: card.player.opponent.get_active_card(),
                 dmg,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.GUITAR,
                 ActionTypes.ATK_1,
                 card,
-            )
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, AntongChen))
         )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, AVGEEnergyTransfer, EmptyEvent
 
         def generate_packet():
             packet = []
             if(len(card.energy) > 2):
-                packet = [
-                    AVGECardHPChange(
+                packet.append(
+                    AVGECardHPChangeCreator(
                         lambda: card.player.opponent.get_active_card(),
                         90,
                         AVGEAttributeModifier.SUBSTRACTIVE,
@@ -80,7 +81,7 @@ class AntongChen(AVGECharacterCard):
                         ActionTypes.ATK_2,
                         card,
                     )
-                ]
+                )
                 for token in list(card.energy)[:2]:
                     packet.append(AVGEEnergyTransfer(token, card, card.player, ActionTypes.ATK_2, card))
             else:
@@ -88,5 +89,5 @@ class AntongChen(AVGECharacterCard):
             return packet
 
         card.env.cache.set(card, AntongChen._LAST_ATK2_ROUND_KEY, card.env.round_id)
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, AntongChen)))
         return card.generate_response()

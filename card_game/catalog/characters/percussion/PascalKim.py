@@ -3,14 +3,14 @@ from __future__ import annotations
 import random
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
 class _PascalDelayedReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard, trigger_round: int):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.NONCHAR), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, PascalKim), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
         self.trigger_round = trigger_round
 
@@ -35,17 +35,19 @@ class _PascalDelayedReactor(AVGEReactor):
     def react(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import AVGECardHPChange
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         self.owner_card.propose(
-            AVGECardHPChange(
-                lambda: self.owner_card.player.opponent.get_active_card(),
-                70,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PERCUSSION,
-                ActionTypes.PASSIVE,
-                self.owner_card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: self.owner_card.player.opponent.get_active_card(),
+                    70,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PERCUSSION,
+                    ActionTypes.PASSIVE,
+                    self.owner_card,
+                )
+            ], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PascalKim))
         )
         self.invalidate()
         return self.generate_response()
@@ -62,8 +64,8 @@ class PascalKim(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
 
         hp = card.hp
         if hp <= 20:
@@ -74,21 +76,23 @@ class PascalKim(AVGECharacterCard):
             dmg = 20
 
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                dmg,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PERCUSSION,
-                ActionTypes.ATK_1,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    dmg,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PERCUSSION,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, PascalKim))
         )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import TransferCard, ReorderCardholder
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import TransferCard, ReorderCardholderCreator
 
         deck = card.player.cardholders[Pile.DECK]
         packet = []
@@ -96,7 +100,7 @@ class PascalKim(AVGECharacterCard):
         src = card.cardholder
         packet.append(TransferCard(card, src, deck, ActionTypes.ATK_2, card, None))
         packet.append(
-            ReorderCardholder(
+            ReorderCardholderCreator(
                 deck,
                 lambda: random.sample(deck.get_order(), len(deck)),
                 ActionTypes.ATK_2,
@@ -105,7 +109,7 @@ class PascalKim(AVGECharacterCard):
         )
 
         trigger_round = card.player.opponent.get_next_turn()
-        card.env.add_listener(_PascalDelayedReactor(card, trigger_round))
+        card.add_listener(_PascalDelayedReactor(card, trigger_round))
 
-        card.propose(packet)
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, PascalKim)))
         return card.generate_response()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier, AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -19,13 +19,13 @@ class DanielZhu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _DamageRedirectModifier(AVGEModifier):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, DanielZhu),
                     group=EngineGroup.EXTERNAL_MODIFIERS_2,
                 )
 
@@ -60,6 +60,8 @@ class DanielZhu(AVGECharacterCard):
                 from card_game.internal_events import InputEvent
 
                 event = self.attached_event
+                from card_game.internal_events import AVGECardHPChange
+                assert isinstance(event, AVGECardHPChange)
                 env = owner_card.env
                 redirect_amount = env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, None, True)
                 if redirect_amount is None:
@@ -96,7 +98,7 @@ class DanielZhu(AVGECharacterCard):
         class _DamageRedirectReactor(AVGEReactor):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, DanielZhu),
                     group=EngineGroup.EXTERNAL_REACTORS,
                 )
 
@@ -130,16 +132,19 @@ class DanielZhu(AVGECharacterCard):
                     args = {}
                 from card_game.internal_events import AVGECardHPChange
 
-                redirect_amount = int(owner_card.env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, 0, True))
+                redirect_amount = owner_card.env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, 0, True)
+                assert isinstance(redirect_amount, int)
                 owner_card.propose(
-                    AVGECardHPChange(
-                        owner_card,
-                        redirect_amount,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.WOODWIND,
-                        ActionTypes.PASSIVE,
-                        owner_card,
-                    )
+                    AVGEPacket([
+                        AVGECardHPChange(
+                            owner_card,
+                            redirect_amount,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.WOODWIND,
+                            ActionTypes.PASSIVE,
+                            owner_card,
+                        )
+                    ], AVGEEngineID(owner_card, ActionTypes.PASSIVE, DanielZhu))
                 )
                 return self.generate_response()
 
@@ -148,8 +153,8 @@ class DanielZhu(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+    def atk_2(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
 
         roll = card.env.cache.get(card, DanielZhu._D6_ROLL_KEY, None, True)
         if roll is None:
@@ -172,13 +177,15 @@ class DanielZhu(AVGECharacterCard):
 
         damage = 30 + 10 * int(roll)
         card.propose(
-            AVGECardHPChange(
-                lambda: card.player.opponent.get_active_card(),
-                damage,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_2,
-                card,
-            )
+            AVGEPacket([
+                AVGECardHPChangeCreator(
+                    lambda: card.player.opponent.get_active_card(),
+                    damage,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_2, DanielZhu))
         )
         return card.generate_response()

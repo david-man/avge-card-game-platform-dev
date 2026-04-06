@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -16,13 +16,13 @@ class WestonPoe(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _DamageReflector(AVGEReactor):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, WestonPoe),
                     group=EngineGroup.EXTERNAL_REACTORS,
                 )
 
@@ -64,15 +64,19 @@ class WestonPoe(AVGECharacterCard):
                 from card_game.internal_events import AVGECardHPChange
 
                 event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
+                assert isinstance(event.caller_card, AVGECharacterCard)
                 self.propose(
-                    AVGECardHPChange(
-                        event.caller_card,
-                        event.magnitude,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.WOODWIND,
-                        ActionTypes.PASSIVE,
-                        owner_card,
-                    )
+                    AVGEPacket([
+                        AVGECardHPChange(
+                            event.caller_card,
+                            event.magnitude,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.WOODWIND,
+                            ActionTypes.PASSIVE,
+                            owner_card,
+                        )
+                    ], AVGEEngineID(owner_card, ActionTypes.PASSIVE, WestonPoe))
                 )
                 return self.generate_response()
 
@@ -80,13 +84,13 @@ class WestonPoe(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -94,13 +98,13 @@ class WestonPoe(AVGECharacterCard):
                     card,
                 ),
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_1, WestonPoe))
         )
         return card.generate_response()

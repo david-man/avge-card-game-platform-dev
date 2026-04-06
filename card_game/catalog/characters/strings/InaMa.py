@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 
 
@@ -31,7 +30,7 @@ class InaMa(AVGECharacterCard):
         return False
 
     @staticmethod
-    def active(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def active(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGEEnergyTransfer, InputEvent, EmptyEvent
 
         candidates = [c for c in card.player.get_cards_in_play() if c.card_type == CardType.STRING and len(c.energy) >= 1]
@@ -57,18 +56,24 @@ class InaMa(AVGECharacterCard):
                 },
             )
 
-        def generate_packet():
-            if len(chosen.energy) <= 0:
-                return [EmptyEvent("InaMa active source had no energy at resolve.", ActionTypes.ACTIVATE_ABILITY, card)]
-            return [AVGEEnergyTransfer(chosen.energy[0], chosen, card, ActionTypes.ACTIVATE_ABILITY, card)]
-
-        card.propose(generate_packet)
+        if len(chosen.energy) <= 0:
+            card.propose(
+                AVGEPacket([
+                    EmptyEvent("InaMa active source had no energy at resolve.", ActionTypes.ACTIVATE_ABILITY, card)
+                ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, InaMa))
+            )
+        else:
+            card.propose(
+                AVGEPacket([
+                    AVGEEnergyTransfer(chosen.energy[0], chosen, card, ActionTypes.ACTIVATE_ABILITY, card)
+                ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, InaMa))
+            )
         card.env.cache.set(card, InaMa._ACTIVE_USED_KEY, card.env.round_id)
         return card.generate_response()
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
 
         r0 = card.env.cache.get(card, InaMa._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, InaMa._COIN_KEY_1, None, True)
@@ -94,14 +99,16 @@ class InaMa(AVGECharacterCard):
         heads = int(r0) + int(r1) + int(r2)
         if heads > 0:
             card.propose(
-                AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
-                    40 * heads,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_1,
-                    card,
-                )
+                AVGEPacket([
+                    AVGECardHPChangeCreator(
+                        lambda: card.player.opponent.get_active_card(),
+                        40 * heads,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.STRING,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ], AVGEEngineID(card, ActionTypes.ATK_1, InaMa))
             )
 
         return card.generate_response()

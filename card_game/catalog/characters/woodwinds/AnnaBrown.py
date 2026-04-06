@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -16,13 +16,13 @@ class AnnaBrown(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def passive(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def passive(card: AVGECharacterCard) -> Response:
         owner_card = card
 
         class _BenchDamageReducer(AVGEModifier):
             def __init__(self):
                 super().__init__(
-                    identifier=(owner_card, AVGEEventListenerType.PASSIVE),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, AnnaBrown),
                     group=EngineGroup.EXTERNAL_MODIFIERS_2,
                 )
 
@@ -55,7 +55,10 @@ class AnnaBrown(AVGECharacterCard):
             def modify(self, args=None):
                 if args is None:
                     args = {}
+                from card_game.internal_events import AVGECardHPChange
+
                 event = self.attached_event
+                assert isinstance(event, AVGECardHPChange)
                 event.modify_magnitude(-20)
                 return self.generate_response()
 
@@ -63,13 +66,13 @@ class AnnaBrown(AVGECharacterCard):
         return owner_card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         card.propose(
-            [
+            AVGEPacket([
                 AVGECardHPChange(
-                    lambda: card.player.opponent.get_active_card(),
+                    card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
@@ -84,6 +87,6 @@ class AnnaBrown(AVGECharacterCard):
                     ActionTypes.ATK_2,
                     card,
                 ),
-            ]
+            ], AVGEEngineID(card, ActionTypes.ATK_2, AnnaBrown))
         )
         return card.generate_response()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
+from typing import cast
 
 
 class RyanDu(AVGECharacterCard):
@@ -16,15 +17,16 @@ class RyanDu(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.constants import ActionTypes
 
         def generate_packet():
             opponent = card.player.opponent
             bench_count = len(card.player.cardholders[Pile.BENCH])
             damage = 30 + 10 * bench_count
             return [
-                AVGECardHPChange(
+                AVGECardHPChangeCreator(
                     lambda: opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
@@ -34,11 +36,11 @@ class RyanDu(AVGECharacterCard):
                 )
             ]
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, RyanDu)))
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
 
         player = card.player
@@ -80,5 +82,5 @@ class RyanDu(AVGECharacterCard):
                 packet.append(EmptyEvent("Tried to run Ryan ATK2, but failed b/c energy dipped too low.", ActionTypes.ATK_2, card))
             return packet
 
-        card.propose(generate_packet)
+        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, RyanDu)))
         return card.generate_response()

@@ -4,10 +4,10 @@ from card_game.avge_abstracts.AVGECards import *
 from card_game.avge_abstracts.AVGEEventListeners import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import InputEvent, AVGECardHPChange
+from card_game.internal_events import InputEvent, AVGECardHPChange, AVGECardHPChangeCreator
 class _VincentHealReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=(owner_card, AVGEEventListenerType.ATK_2), group=EngineGroup.EXTERNAL_REACTORS)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.ATK_2, VincentChen), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -35,7 +35,7 @@ class _VincentHealReactor(AVGEReactor):
         return "VincentChen Heal Reactor"
 
     def react(self, args=None) -> Response:
-        self.attached_event : AVGECardHPChange
+        assert(isinstance(self.attached_event, AVGECardHPChange))
         heal_amt = self.attached_event.magnitude
 
         # collect benched friendly characters
@@ -64,14 +64,14 @@ class _VincentHealReactor(AVGEReactor):
                 },
             )
         self.propose(
-                AVGECardHPChange(
+                AVGEPacket([AVGECardHPChange(
                     chosen,
                     heal_amt,
                     AVGEAttributeModifier.ADDITIVE,
-                    ActionTypes.ATK_2,
                     CardType.ALL,
+                    ActionTypes.ATK_2,
                     self.owner_card,
-                )
+                )], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, VincentChen))
             )
         self.invalidate()
         return self.generate_response()
@@ -87,32 +87,34 @@ class VincentChen(AVGECharacterCard):
         self.has_active = False
 
     @staticmethod
-    def atk_1(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         card.propose(
-            AVGECardHPChange(
+            AVGEPacket([AVGECardHPChangeCreator(
                 lambda : card.player.opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                ActionTypes.ATK_1,
                 CardType.ALL,
+                ActionTypes.ATK_1,
                 card,
-            )
+            )], AVGEEngineID(card, ActionTypes.ATK_1, VincentChen))
         )
 
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard, parent_event: AVGEEvent) -> Response:
+    def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         # attach reactor to heal one benched character for the same amount dealt
         card.add_listener(_VincentHealReactor(card))
 
-        card.propose(AVGECardHPChange(
+        card.propose(
+            AVGEPacket([AVGECardHPChangeCreator(
                 lambda : card.player.opponent.get_active_card(),
                 40,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                ActionTypes.ATK_2,
                 CardType.BRASS,
+                ActionTypes.ATK_2,
                 card,
-            ))
+            )], AVGEEngineID(card, ActionTypes.ATK_2, VincentChen))
+        )
         return card.generate_response()

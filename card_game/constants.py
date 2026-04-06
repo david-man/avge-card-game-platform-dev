@@ -5,9 +5,8 @@ from dataclasses import dataclass
 if TYPE_CHECKING:
     from card_game.engine.event import Event
     from card_game.engine.event_listener import AbstractEventListener
-    from card_game.abstract.card import Card
     from card_game.avge_abstracts.AVGEPlayer import AVGEPlayer
-    from card_game.avge_abstracts.AVGECards import AVGECharacterCard
+    from card_game.avge_abstracts.AVGECards import AVGECharacterCard, AVGECard
     from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
 type Data = dict[str, Any]
 
@@ -36,16 +35,22 @@ class ResponseType(StrEnum):
     NO_MORE_EVENTS = "NO_MORE_EVENTS"
     NEXT_EVENT = "NEXT_EVENT"
     NEXT_PACKET = 'NEXT_PACKET'
+
+@dataclass
+class AVGEEngineID():
+    caller_card : AVGECard | None
+    action_type : ActionTypes
+    header_class : type[AVGECard] | None
 class Response():
     def __init__(self, 
-                 source : Event | AbstractEventListener | Card | None,#None source reserved for very edge-case circumstances.
+                 source : Event | AbstractEventListener | AVGECard | None,#None source reserved for very edge-case circumstances.
                  response_type : ResponseType = ResponseType.ACCEPT, 
-                 data : Data = {},
-                 announce : bool = False):
+                 data : Data | None = {}):
         self.response_type = response_type
+        if(data is None):
+            data = {}
         self.data = data
         self.source = source
-        self.announce = announce
 
 class AVGEAttributeModifier(StrEnum):
     ADDITIVE = 'additive'
@@ -67,7 +72,7 @@ class AVGEPlayerAttribute(StrEnum):
 @dataclass
 class EnergyToken():
     unique_id : str#energy tokens are instantiated in the beginning w/ unique_id's. they cannot be generated, but they can end up voided (by sending it to the Environment)
-    holder : AVGEPlayer | AVGECharacterCard | AVGEEnvironment= None
+    holder : AVGEPlayer | AVGECharacterCard | AVGEEnvironment | None = None
     def attach(self, new_holder : AVGEPlayer | AVGECharacterCard | AVGEEnvironment):
         self.holder = new_holder
         self.holder.energy.append(self)
@@ -76,8 +81,8 @@ class EnergyToken():
         self.holder = None
         if(old_holder is not None):
             old_holder.energy.remove(self)
-    def __eq__(self, other : EnergyToken):
-        return self.unique_id == other.unique_id
+    def __eq__(self, other : object):
+        return isinstance(other, EnergyToken) and self.unique_id == other.unique_id
 
 class StatusChangeType(StrEnum):
     ADD = "ADD"

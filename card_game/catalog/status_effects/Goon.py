@@ -9,7 +9,7 @@ from card_game.engine.engine_constants import EngineGroup
 class GoonStatusTransferModifier(AVGEModifier):
 	def __init__(self):
 		super().__init__(
-			identifier=(None, AVGEEventListenerType.ENV),
+			identifier=(None, ActionTypes.ENV),
 			group=EngineGroup.EXTERNAL_MODIFIERS_1,
 		)
 	def event_match(self, event):
@@ -41,7 +41,7 @@ class GoonStatusTransferModifier(AVGEModifier):
 class GoonStatusChangeReactor(AVGEReactor):
 	def __init__(self):
 		super().__init__(
-			identifier=(None, AVGEEventListenerType.ENV),
+			identifier=(None, ActionTypes.ENV),
 			group=EngineGroup.EXTERNAL_REACTORS,
 		)
 
@@ -95,7 +95,7 @@ class GoonStatusChangeReactor(AVGEReactor):
 class GoonFoldingStandAttackModifier(AVGEModifier):
 	def __init__(self, owner_card: AVGEItemCard, round_played):
 		super().__init__(
-			identifier=(owner_card, AVGEEventListenerType.NONCHAR),
+			identifier=(owner_card, ActionTypes.NONCHAR),
 			group=EngineGroup.EXTERNAL_MODIFIERS_2,
 		)
 		self.owner_card = owner_card
@@ -148,7 +148,7 @@ class GoonFoldingStandAttackModifier(AVGEModifier):
 class GoonBUOStandAttackModifier(AVGEModifier):
 	def __init__(self, owner_card: AVGEItemCard, round_played):
 		super().__init__(
-			identifier=(owner_card, AVGEEventListenerType.NONCHAR),
+			identifier=(owner_card, ActionTypes.NONCHAR),
 			group=EngineGroup.EXTERNAL_MODIFIERS_2,
 		)
 		self.owner_card = owner_card
