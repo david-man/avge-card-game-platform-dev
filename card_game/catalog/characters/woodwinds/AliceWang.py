@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-
+from card_game.constants import ActionTypes
 
 class AliceWang(AVGECharacterCard):
     _CARDS_TO_DISCARD_BASE_KEY = "alice_cards_to_discard_"
@@ -40,13 +40,7 @@ class AliceWang(AVGECharacterCard):
 
             def update_status(self):
                 return
-
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "AliceWang Reactor"
-
+            
             def react(self, args=None):
                 if args is None:
                     args = {}
@@ -77,13 +71,14 @@ class AliceWang(AVGECharacterCard):
                                     {
                                         "query_label": "alicewang_discard_passive",
                                         "targets": list(opponent_hand),
+                                        "display": list(opponent_hand)
                                     },
                                 )
                             ]
                         },
                     )
                 
-                packet = [
+                packet : PacketType = [
                     TransferCard(
                         selected,
                         opponent_hand,
@@ -101,18 +96,22 @@ class AliceWang(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    40,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, AliceWang))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        40,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, AliceWang)))
         return card.generate_response()

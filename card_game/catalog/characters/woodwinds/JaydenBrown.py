@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-
 
 class JaydenBrown(AVGECharacterCard):
     _D6_ROLL_KEY = "jayden_d6_roll"
@@ -94,7 +93,7 @@ class JaydenBrown(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
+        from card_game.internal_events import AVGECardHPChange, InputEvent
 
         roll = card.env.cache.get(card, JaydenBrown._D6_ROLL_KEY, None, True)
         if roll is None:
@@ -116,16 +115,20 @@ class JaydenBrown(AVGECharacterCard):
             )
 
         damage = 30 + 10 * int(roll)
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, JaydenBrown))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JaydenBrown)))
         return card.generate_response()

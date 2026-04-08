@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -56,7 +55,7 @@ class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
 	def assess(self, args=None):
 		return self.generate_response(
 			ResponseType.SKIP,
-			{"msg": "Emma: this character cannot be swapped out this turn."},
+			{MESSAGE_KEY: "Emma: this character cannot be swapped out this turn."},
 		)
 
 
@@ -75,27 +74,20 @@ class Emma(AVGESupporterCard):
 		opponent_bench = opponent.cardholders[Pile.BENCH]
 
 		if(len(opponent_bench) == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "Opponent has no benched character to switch with."})
-
-		def _input_valid(result) -> bool:
-			return (
-				len(result) == 1
-				and isinstance(result[0], AVGECharacterCard)
-				and result[0] in opponent_bench
-			)
-
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Opponent has no benched character to switch with."})
 		selected_bench = card.env.cache.get(card, Emma._SELECTED_BENCH_KEY, None, one_look=True)
 		if(selected_bench is None):
 			return card.generate_interrupt([InputEvent(
 							card.player,
 							[Emma._SELECTED_BENCH_KEY],
-							InputType.DETERMINISTIC,
-							_input_valid,
+							InputType.SELECTION,
+							lambda res: True,
 							ActionTypes.NONCHAR,
 							card,
 							{
 								"query_label": "emma_opponent_bench_switch",
-								"targets": list(opponent_bench)
+								"targets": list(opponent_bench),
+								"display": list(opponent_bench)
 							},
 						)])
 		locked_character = selected_bench

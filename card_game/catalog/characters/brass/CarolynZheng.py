@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
-from card_game.avge_abstracts.AVGEEnvironment import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import *
@@ -90,16 +88,16 @@ class CarolynZheng(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
-        packet = []
-        packet.append([AVGECardHPChangeCreator(
-                lambda : card.player.opponent.get_active_card(),
+        from card_game.internal_events import AVGECardHPChange
+        def generate_packet() -> PacketType:
+            return [AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 70,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.BRASS,
                 ActionTypes.ATK_1,
                 card,
-            )])
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, CarolynZheng)))
+            )]
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, CarolynZheng)))
         return card.generate_response()
 

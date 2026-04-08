@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, TransferCard, TransferCardCreator
-from card_game.engine.event import DeferredEvent
+from card_game.internal_events import InputEvent, TransferCard
 
 class BenCherekIII(AVGECharacterCard):
     _YES_NO_KEY = "bencherek_yn_key"
@@ -38,14 +37,16 @@ class BenCherekIII(AVGECharacterCard):
             )
 
         if yn:
-            card.propose(AVGEPacket([
-                TransferCardCreator(
-                    lambda: card.player.get_active_card(),
+            def gen() -> PacketType:
+                return [TransferCard(
+                    card.player.get_active_card(),
                     card.player.cardholders[Pile.ACTIVE],
                     card.player.cardholders[Pile.BENCH],
                     ActionTypes.PASSIVE,
                     card,
-                ),
+                )]
+            card.propose(AVGEPacket([
+                gen,
                 TransferCard(
                     card,
                     card.cardholder,
@@ -58,19 +59,19 @@ class BenCherekIII(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, AVGECardHPChange
+        from card_game.internal_events import AVGECardHPChange
 
-        packet = []
-        packet.append([
-            AVGECardHPChangeCreator(
-                lambda: card.player.opponent.get_active_card(),
+        packet : PacketType= []
+        def gen() -> PacketType:
+            return [AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 50,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.GUITAR,
                 ActionTypes.ATK_1,
                 card,
-            )
-        ])
+            )]
+        packet.append(gen)
 
         for c in card.player.cardholders[Pile.BENCH]:
             assert isinstance(c, AVGECharacterCard)

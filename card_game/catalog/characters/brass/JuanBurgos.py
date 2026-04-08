@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import AVGECardHPChange, AVGECardHPChangeCreator
+from card_game.internal_events import AVGECardHPChange
 
 
 
@@ -67,7 +66,7 @@ class JuanBurgos(AVGECharacterCard):
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         opponent = card.player.opponent
-        def generate_packet():
+        def generate_packet() -> PacketType:
         # count brass characters on your bench
             bench = card.player.cardholders[ Pile.BENCH ]
             brass_count = 0
@@ -79,14 +78,14 @@ class JuanBurgos(AVGECharacterCard):
             extra = 20 * brass_count
             damage = 40 + extra
 
-            return [AVGECardHPChangeCreator(
-                    lambda : opponent.get_active_card(),
+            return [AVGECardHPChange(
+                    opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.BRASS,
                     ActionTypes.ATK_1,
                     card,
                 )]
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, JuanBurgos)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JuanBurgos)))
 
         return card.generate_response()

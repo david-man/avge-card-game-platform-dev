@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class JoshuaKou(AVGECharacterCard):
     _LAST_ATK1_ROUND_KEY = "joshuakou_atk1_last_round"
@@ -24,48 +24,80 @@ class JoshuaKou(AVGECharacterCard):
 
     @staticmethod
     def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import TransferCardCreator, EmptyEvent
+        from card_game.internal_events import TransferCard, EmptyEvent
 
         hand = card.player.cardholders[Pile.HAND]
         deck = card.player.cardholders[Pile.DECK]
 
-        def generate_packet():
+        def generate_packet() -> PacketType:
             if card not in hand:
-                return AVGEPacket([EmptyEvent("JoshuaKou active failed: card not in hand.", ActionTypes.ACTIVATE_ABILITY, card)], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JoshuaKou))
-            packet = [
-                TransferCardCreator(
+                return [
+                    EmptyEvent(
+                        ActionTypes.ACTIVATE_ABILITY,
+                        card,
+                        response_data={MESSAGE_KEY: "JoshuaKou active failed: card not in hand."},
+                    )
+                ]
+            
+            packet: PacketType = [
+                EmptyEvent(
+                    ActionTypes.ACTIVATE_ABILITY,
+                    card,
+                    response_data={
+                        REVEAL_KEY: [card]
+                    }
+                ),
+                TransferCard(
                     card,
                     hand,
                     deck,
                     ActionTypes.ACTIVATE_ABILITY,
                     card,
-                    lambda: random.randint(0, len(deck)),
+                    random.randint(0, len(deck)),
                 )
             ]
-            draw_count = min(4, len(deck) + 1)
-            for _ in range(draw_count):
-                packet.append(TransferCardCreator(lambda: deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card))
-            return AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JoshuaKou))
+            def draw_top() -> PacketType:
+                if len(deck) == 0:
+                    return []
+                return [
+                    TransferCard(
+                        deck.peek(),
+                        deck,
+                        hand,
+                        ActionTypes.ACTIVATE_ABILITY,
+                        card,
+                    )
+                ]
 
-        card.propose(generate_packet())
+            for _ in range(4):
+                packet.append(draw_top)
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JoshuaKou)))
         return card.generate_response()
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         last_round = card.env.cache.get(card, JoshuaKou._LAST_ATK1_ROUND_KEY, None, True)
         if last_round is None or last_round < card.env.round_id - 1:
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChangeCreator(
-                        lambda: card.player.opponent.get_active_card(),
+            def generate_packet() -> PacketType:
+                active = card.player.opponent.get_active_card()
+                return [
+                    AVGECardHPChange(
+                        active,
                         40,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PIANO,
                         ActionTypes.ATK_1,
                         card,
                     )
+                ]
+
+            card.propose(
+                AVGEPacket([
+                    generate_packet
                 ], AVGEEngineID(card, ActionTypes.ATK_1, JoshuaKou))
             )
 

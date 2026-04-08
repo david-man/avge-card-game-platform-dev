@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class MaidOutfit(AVGEToolCard):
 
@@ -12,19 +12,20 @@ class MaidOutfit(AVGEToolCard):
 	def deactivate_card(self):
 		from card_game.internal_events import AVGECardStatusChange
 
-		super().deactivate_card()
+		
 		assert self.card_attached is not None
 		self.propose(
 			AVGEPacket([
 				AVGECardStatusChange(
 				StatusEffect.MAID,
-				StatusChangeType.REMOVE,
+				StatusChangeType.ERASE,
 				self.card_attached,
 				ActionTypes.ENV,
 				self,
 				)
 			], AVGEEngineID(None, ActionTypes.ENV, None))
 		)
+		super().deactivate_card()
 
 	def play_card(self) -> Response:
 		from card_game.internal_events import AVGECardStatusChange

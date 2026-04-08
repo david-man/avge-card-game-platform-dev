@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -82,19 +81,20 @@ class CavinXue(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        from card_game.internal_events import AVGECardHPChange
+        def generate() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_1,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, CavinXue))
+            ]
+        card.propose(
+            AVGEPacket([generate], AVGEEngineID(card, ActionTypes.ATK_1, CavinXue))
         )
 
         return card.generate_response()

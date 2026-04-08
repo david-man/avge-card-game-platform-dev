@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor, AVGEReactor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import PlayNonCharacterCard
@@ -13,7 +12,6 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 		self.round_active = round
 
 	def event_match(self, event):
-
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, PlayNonCharacterCard)):
@@ -34,14 +32,8 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 		if(not self.owner_card._is_active_stadium()):
 			self.invalidate()
 
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "MainHall Assessor"
-
 	def assess(self, args=None):
-		return self.generate_response(ResponseType.SKIP, {"msg": "MainHall: player already played 3 non-character cards this turn."})
+		return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "MainHall: player already played 3 non-character cards this turn."})
 
 
 class MainHallCountPlayReactor(AVGEReactor):
@@ -51,8 +43,6 @@ class MainHallCountPlayReactor(AVGEReactor):
 		self.round_active = round
 
 	def event_match(self, event):
-		
-
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, PlayNonCharacterCard)):
@@ -66,12 +56,6 @@ class MainHallCountPlayReactor(AVGEReactor):
 	def update_status(self):
 		if(not self.owner_card._is_active_stadium()):
 			self.invalidate()
-
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "MainHall Reactor"
 
 	def react(self, args=None):
 		event = self.attached_event
@@ -101,12 +85,6 @@ class MainHallTurnStartResetReactor(AVGEReactor):
 		if(not self.owner_card._is_active_stadium()):
 			self.invalidate()
 
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "MainHall Reactor"
-
 	def react(self, args=None):
 		event = self.attached_event
 		from card_game.internal_events import PhasePickCard
@@ -129,12 +107,8 @@ class MainHall(AVGEStadiumCard):
 
 	def play_card(self) -> Response:
 		owner_card = self
-
-		if(owner_card.original_owner is None):
-			owner_card.original_owner = owner_card.player
-
 		if(owner_card.env.round_id == 0):
-			return owner_card.generate_response(ResponseType.SKIP, {"msg": "MainHall cannot be played on the first turn."})
+			return owner_card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "MainHall cannot be played on the first turn."})
 		owner_card.env.cache.set(owner_card, MainHall._P1_COUNT_KEY, 0)
 		owner_card.env.cache.set(owner_card, MainHall._P2_COUNT_KEY, 0)
 

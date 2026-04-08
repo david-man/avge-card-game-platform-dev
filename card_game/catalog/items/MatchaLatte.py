@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
-
+from card_game.constants import ActionTypes
+from card_game.catalog.stadiums.PetterutiLounge import PetterutiLounge
 class MatchaLatte(AVGEItemCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
@@ -14,13 +14,16 @@ class MatchaLatte(AVGEItemCard):
 	def play_card(card) -> Response:
 		from card_game.internal_events import AVGECardHPChange
 		packet = []
-		for card in card.player.get_cards_in_play():
+		heal = 10
+		if(len(card.env.stadium_cardholder) > 0 and isinstance(card.env.stadium_cardholder, PetterutiLounge)):
+			heal = 20
+		for c in card.player.get_cards_in_play():
 			packet.append(
 				AVGECardHPChange(
-					card,
-					10,
+					c,
+					heal,
 					AVGEAttributeModifier.ADDITIVE,
-					card.card_type,
+					CardType.ALL,
 					ActionTypes.NONCHAR,
 					card,
 				)

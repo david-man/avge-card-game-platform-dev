@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.catalog.items.ConcertProgram import ConcertProgram
 from card_game.catalog.items.ConcertTicket import ConcertTicket
@@ -22,26 +22,19 @@ class SarahChen(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ]
         card.propose(
-            AVGEPacket([
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                ),
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                ),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, SarahChen))
+            AVGEPacket([gen for _ in range(2)], AVGEEngineID(card, ActionTypes.ATK_1, SarahChen))
         )
         return card.generate_response()
 
@@ -56,15 +49,13 @@ class SarahChen(AVGECharacterCard):
 
         eligible_cards = [
             hand_card
-            for hand_card in hand.cards_by_id.values()
+            for hand_card in hand
             if isinstance(hand_card, (ConcertProgram, ConcertTicket))
         ]
-        target_cards = [target for target in opponent.get_cards_in_play() if isinstance(target, AVGECharacterCard)]
-        if len(eligible_cards) == 0 or len(target_cards) == 0:
-            return card.generate_response()
+        if len(eligible_cards) == 0:
+            return card.generate_response(data={MESSAGE_KEY: "No concert programs or tickets in hand!"})
 
-        discard_selection = card.env.cache.get(card, SarahChen._DISCARD_SELECTION_KEY, None, True)
-        target_selection = card.env.cache.get(card, SarahChen._TARGET_SELECTION_KEY, None, True)
+        discard_selection = card.env.cache.get(card, SarahChen._DISCARD_SELECTION_KEY, None)
         if discard_selection is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -72,14 +63,37 @@ class SarahChen(AVGECharacterCard):
                     INTERRUPT_KEY: [
                         InputEvent(
                             player,
-                            [SarahChen._DISCARD_SELECTION_KEY, SarahChen._TARGET_SELECTION_KEY],
+                            [SarahChen._DISCARD_SELECTION_KEY],
                             InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "sarah_chen_atk_2",
-                                "targets": [eligible_cards, target_cards],
+                                "query_label": "sarah_chen_atk_2_discard",
+                                "targets": eligible_cards,
+                                "display": list(hand)
+                            },
+                        )
+                    ]
+                },
+            )
+        target_selection = card.env.cache.get(card, SarahChen._TARGET_SELECTION_KEY, None, True)
+        if target_selection is None:
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            player,
+                            [SarahChen._TARGET_SELECTION_KEY],
+                            InputType.SELECTION,
+                            lambda r: True,
+                            ActionTypes.ATK_2,
+                            card,
+                            {
+                                "query_label": "sarah_chen_atk_2_target",
+                                "targets": opponent.get_cards_in_play(),
+                                "display": opponent.get_cards_in_play()
                             },
                         )
                     ]
@@ -105,4 +119,5 @@ class SarahChen(AVGECharacterCard):
                 ),
             ], AVGEEngineID(card, ActionTypes.ATK_2, SarahChen))
         )
+        card.env.cache.delete(card, SarahChen._DISCARD_SELECTION_KEY)
         return card.generate_response()

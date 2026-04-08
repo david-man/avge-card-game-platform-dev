@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from typing import cast
 from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange
@@ -32,7 +31,7 @@ class FilipKaminski(AVGECharacterCard):
         deck = card.player.cardholders[Pile.DECK]
         hand = card.player.cardholders[Pile.HAND]
         if len(deck) == 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "no cards in deck!"})
         top = deck.peek()
         card.propose(AVGEPacket([TransferCard(top, deck, hand, ActionTypes.ATK_1, card)], 
                                 AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
@@ -49,8 +48,9 @@ class FilipKaminski(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "filip-type-guess",
-                             "targets": list(possible_types)},
+                            {"query_label": "filip_type_guess",
+                             "targets": list(possible_types),
+                             "display": list(possible_types)},
                         )
                     ]
                 },
@@ -74,8 +74,8 @@ class FilipKaminski(AVGECharacterCard):
     def atk_2(card: AVGECharacterCard) -> Response:
         opponent = card.player.opponent
         opponent_bench : AVGECardholder = opponent.cardholders[Pile.BENCH]
-        def generate_packet():
-            p = ([
+        def generate_packet() -> PacketType:
+            p : PacketType = [
                 AVGECardHPChange(
                     cast(AVGECharacterCard, target),
                     10,
@@ -83,18 +83,18 @@ class FilipKaminski(AVGECharacterCard):
                     CardType.BRASS,
                     ActionTypes.ATK_2,
                     card,
-                ) for target in opponent_bench] + 
-                [AVGECardHPChange(
+                ) for target in opponent_bench] 
+            p += [AVGECardHPChange(
                     opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.BRASS,
                     ActionTypes.ATK_2,
                     card
-                )])
+                )]
             return p
         card.propose(
-            AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, FilipKaminski))
+            AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, FilipKaminski))
         )
 
         return card.generate_response()

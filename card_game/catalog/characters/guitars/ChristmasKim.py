@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.constants import *
+from card_game.avge_abstracts import *
+from card_game.constants import ActionTypes, CardType, AVGEAttributeModifier, Response,MESSAGE_KEY, ResponseType, INTERRUPT_KEY, InputType
 
 
 class ChristmasKim(AVGECharacterCard):
@@ -18,89 +18,95 @@ class ChristmasKim(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        from card_game.internal_events import AVGECardHPChange
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_1,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, ChristmasKim))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, ChristmasKim))
         )
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder, AVGECardHPChangeCreator
-
+        from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder, AVGECardHPChange, EmptyEvent
         player = card.player
         deck = player.cardholders[Pile.DECK]
         hand = player.cardholders[Pile.HAND]
 
         n = min(3, len(deck))
         if n == 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY:"No cards in deck!"})
         top_cards = deck.peek_n(n)
 
         char_cards = [c for c in top_cards if isinstance(c, AVGECharacterCard)]
         nonchars = [c for c in top_cards if not isinstance(c, AVGECharacterCard)]
 
-        packet = []
+        packet : PacketType= []
 
         for c in char_cards:
             packet.append(TransferCard(c, deck, hand, ActionTypes.ATK_2, card))
-            packet.append(
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+            def gen() -> PacketType:
+                return [AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_2,
                     card,
-                )
+                )]
+            packet.append(
+                gen
+            )
+        keys = [ChristmasKim._ORDER_KEY + str(i) for i in range(len(nonchars))]
+        order_choice = [card.env.cache.get(card, key, None, True) for key in keys]
+        if order_choice[0] is None:
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            player,
+                            keys,
+                            InputType.SELECTION,
+                            lambda r: True,
+                            ActionTypes.ATK_2,
+                            card,
+                            {
+                                "query_label": "christmas_kim_reorder_top",
+                                "targets": nonchars,
+                                "display": char_cards + nonchars
+                            },
+                        )
+                    ]
+                },
             )
 
-        if len(nonchars) == 1:
-            packet.append(TransferCard(nonchars[0], deck, deck, ActionTypes.ATK_2, card, 0))
-        elif len(nonchars) > 1:
-            keys = [ChristmasKim._ORDER_KEY + str(i) for i in range(len(nonchars))]
-            order_choice = [card.env.cache.get(card, key, None, True) for key in keys]
-            if order_choice[0] is None:
-                return card.generate_response(
-                    ResponseType.INTERRUPT,
-                    {
-                        INTERRUPT_KEY: [
-                            InputEvent(
-                                player,
-                                keys,
-                                InputType.SELECTION,
-                                lambda r: True,
-                                ActionTypes.ATK_2,
-                                card,
-                                {
-                                    "query_label": "christmas-reorder-top",
-                                    "targets": nonchars,
-                                },
-                            )
-                        ]
-                    },
-                )
-
-            new_order = list(deck.get_order())
-            for c in top_cards:
-                cid = c.unique_id
-                if cid in new_order:
-                    new_order.remove(cid)
-            chosen_order = [choice for choice in order_choice if choice is not None]
-            if len(chosen_order) != len(nonchars):
-                return card.generate_response()
-            new_order = [choice.unique_id for choice in chosen_order] + new_order
-            packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card))
+        new_order = list(deck.get_order())
+        for c in top_cards:
+            cid = c.unique_id
+            if cid in new_order:
+                new_order.remove(cid)
+        chosen_order = [choice for choice in order_choice if choice is not None]
+        if len(chosen_order) != len(nonchars):
+            return card.generate_response()
+        new_order = [choice.unique_id for choice in chosen_order] + new_order
+        packet.append(EmptyEvent(
+            ActionTypes.ATK_2,
+            card,
+            response_data={
+                REVEAL_KEY: char_cards
+            }
+        ))
+        packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card))
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, ChristmasKim)))
         return card.generate_response()

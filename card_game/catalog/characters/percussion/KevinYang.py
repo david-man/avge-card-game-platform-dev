@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
+from card_game.constants import ActionTypes
 
 
 class KevinYang(AVGECharacterCard):
@@ -19,7 +20,7 @@ class KevinYang(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
+        from card_game.internal_events import InputEvent, AVGECardHPChange
 
         roll = card.env.cache.get(card, KevinYang._D6_KEY, None, True)
         if roll is None:
@@ -34,7 +35,7 @@ class KevinYang(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "kevin-yang-d6"},
+                            {"query_label": "kevin_yang_d6"},
                         )
                     ]
                 },
@@ -42,24 +43,26 @@ class KevinYang(AVGECharacterCard):
 
         val = int(roll)
         if val <= 4:
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChangeCreator(
-                        lambda: card.player.opponent.get_active_card(),
+            def gen() -> PacketType:
+                return [
+                    AVGECardHPChange(
+                        card.player.opponent.get_active_card(),
                         70,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PERCUSSION,
                         ActionTypes.ATK_1,
                         card,
                     )
-                ], AVGEEngineID(card, ActionTypes.ATK_1, KevinYang))
+                ]
+            card.propose(
+                AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, KevinYang))
             )
 
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
+        from card_game.internal_events import InputEvent, AVGECardHPChange
 
         rolls = [card.env.cache.get(card, key, None, True) for key in KevinYang._D6_KEYS_4]
         if rolls[0] is None:
@@ -74,7 +77,7 @@ class KevinYang(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "kevin-yang-4d6"},
+                            {"query_label": "kevin_yang_4d6"},
                         )
                     ]
                 },
@@ -82,18 +85,19 @@ class KevinYang(AVGECharacterCard):
 
         lowest = min(int(v) for v in rolls if v is not None)
         damage = 40 * lowest
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_2,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, KevinYang))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, KevinYang))
         )
 
         return card.generate_response()

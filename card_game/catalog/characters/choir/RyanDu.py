@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from typing import cast
 
@@ -18,16 +17,16 @@ class RyanDu(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
         from card_game.constants import ActionTypes
 
-        def generate_packet():
+        def generate_packet() -> PacketType:
             opponent = card.player.opponent
             bench_count = len(card.player.cardholders[Pile.BENCH])
             damage = 30 + 10 * bench_count
             return [
-                AVGECardHPChangeCreator(
-                    lambda: opponent.get_active_card(),
+                AVGECardHPChange(
+                    opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.CHOIR,
@@ -36,7 +35,7 @@ class RyanDu(AVGECharacterCard):
                 )
             ]
 
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, RyanDu)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, RyanDu)))
         return card.generate_response()
 
     @staticmethod
@@ -79,8 +78,8 @@ class RyanDu(AVGECharacterCard):
                     )
                 )
             else:
-                packet.append(EmptyEvent("Tried to run Ryan ATK2, but failed b/c energy dipped too low.", ActionTypes.ATK_2, card))
+                packet.append(EmptyEvent(ActionTypes.ATK_2, card, response_data={MESSAGE_KEY: "Tried to run Ryan ATK2, but failed b/c energy dipped too low."}))
             return packet
 
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, RyanDu)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, RyanDu)))
         return card.generate_response()

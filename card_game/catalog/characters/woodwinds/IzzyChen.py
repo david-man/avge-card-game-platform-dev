@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class IzzyChen(AVGECharacterCard):
     _COIN_FLIP_1_KEY = "izzy_coin_flip_1"
@@ -28,13 +28,14 @@ class IzzyChen(AVGECharacterCard):
 
     @staticmethod
     def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCardCreator
+        from card_game.internal_events import InputEvent, TransferCard
 
         player = card.player
         discard = player.cardholders[Pile.DISCARD]
         deck = player.cardholders[Pile.DECK]
         stadiums = [c for c in discard.cards_by_id.values() if isinstance(c, AVGEStadiumCard)]
-
+        if len(stadiums) == 0:
+            return card.generate_response()
         chosen_stadium = card.env.cache.get(card, IzzyChen._ACTIVE_STADIUM_CHOICE, None, True)
         if chosen_stadium is None:
             return card.generate_response(
@@ -51,17 +52,14 @@ class IzzyChen(AVGECharacterCard):
                             {
                                 "query_label": "izzy_stadium_recover",
                                 "targets": stadiums,
+                                "display": list(discard)
                             },
                         )
                     ]
                 },
             )
 
-        card.propose(
-            AVGEPacket([
-                TransferCardCreator(chosen_stadium, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, 0)
-            ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, IzzyChen))
-        )
+        card.propose(AVGEPacket([TransferCard(chosen_stadium, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, 0)], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, IzzyChen)))
         card.env.cache.set(card, IzzyChen._ACTIVE_USED_KEY, card.env.round_id)
         return card.generate_response()
 
@@ -97,7 +95,7 @@ class IzzyChen(AVGECharacterCard):
         else:
             return card.generate_response()
 
-        packet = [
+        packet : PacketType = [
             AVGECardHPChange(
                 bench_target,
                 damage,

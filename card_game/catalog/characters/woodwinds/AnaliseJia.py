@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class AnaliseJia(AVGECharacterCard):
     def __init__(self, unique_id):
@@ -44,8 +44,8 @@ class AnaliseJia(AVGECharacterCard):
     def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
 
-        def packet():
-            p = [] +[
+        def packet() -> PacketType:
+            p : PacketType = [
                 AVGECardHPChange(
                     character,
                     30,
@@ -57,10 +57,16 @@ class AnaliseJia(AVGECharacterCard):
                 for character in card.player.get_cards_in_play()
             ]
             if len(card.energy) == 0:
-                p.append(EmptyEvent("AnaliseJia ATK2 had no attached energy to remove.", ActionTypes.ATK_2, card))
+                p.append(
+                    EmptyEvent(
+                        ActionTypes.ATK_2,
+                        card,
+                        response_data={"message": "AnaliseJia ATK2 had no attached energy to remove."},
+                    )
+                )
             else:
                 p.append(AVGEEnergyTransfer(card.energy[0], card, card.player, ActionTypes.ATK_2, card))
             return p
 
-        card.propose(AVGEPacket(packet(), AVGEEngineID(card, ActionTypes.ATK_2, AnaliseJia)))
+        card.propose(AVGEPacket([packet], AVGEEngineID(card, ActionTypes.ATK_2, AnaliseJia)))
         return card.generate_response()

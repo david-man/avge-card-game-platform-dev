@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class KathySun(AVGECharacterCard):
     _OPPONENT_SHUFFLE_KEY_1 = "kathysun_opponent_shuffle_selection_1"
@@ -22,30 +22,25 @@ class KathySun(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCardCreator
+        from card_game.internal_events import InputEvent, TransferCard, EmptyEvent
 
         opponent = card.player.opponent
         opponent_hand = opponent.cardholders[Pile.HAND]
         opponent_deck = opponent.cardholders[Pile.DECK]
 
-        if len(opponent_hand) <= 2:
-            packet = [] + [
-                TransferCardCreator(
-                    hand_card,
-                    opponent_hand,
-                    opponent_deck,
-                    ActionTypes.ATK_1,
-                    card,
-                    lambda: random.randint(0, len(opponent_deck)),
-                )
-                for hand_card in list(opponent_hand)
-            ]
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, KathySun)))
-            return card.generate_response()
+        packet : PacketType = []
+        packet.append(EmptyEvent(
+            ActionTypes.ATK_1,
+            card,
+            response_data={
+                REVEAL_KEY: list(opponent_hand)
+            }
+        ))
 
-        chosen_for_shuffle_1 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_1, None, True)
-        chosen_for_shuffle_2 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_2, None, True)
-        if chosen_for_shuffle_1 is None:
+        missing = object()
+        chosen_for_shuffle_1 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_1, missing, True)
+        chosen_for_shuffle_2 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_2, missing, True)
+        if chosen_for_shuffle_1 is missing:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -60,37 +55,38 @@ class KathySun(AVGECharacterCard):
                             {
                                 "query_label": "kathy_sun_opponent_shuffle",
                                 "targets": list(opponent_hand),
+                                "display": list(opponent_hand),
+                                "allow_none": True
                             },
                         )
                     ]
                 },
             )
-        assert chosen_for_shuffle_2 is not None
-        card.propose(
-            AVGEPacket([
-                TransferCardCreator(
-                    chosen_for_shuffle_1,
-                    opponent_hand,
-                    opponent_deck,
-                    ActionTypes.ATK_1,
-                    card,
-                    lambda: random.randint(0, len(opponent_deck)),
-                ),
-                TransferCardCreator(
-                    chosen_for_shuffle_2,
-                    opponent_hand,
-                    opponent_deck,
-                    ActionTypes.ATK_1,
-                    card,
-                    lambda: random.randint(0, len(opponent_deck)),
-                ),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, KathySun))
-        )
+        assert chosen_for_shuffle_2 is not missing
+        def generate_packet(card) -> PacketType:
+            packet: PacketType = []
+            if isinstance(card, AVGECard):
+                packet.append(
+                    TransferCard(
+                        card,
+                        opponent_hand,
+                        opponent_deck,
+                        ActionTypes.ATK_1,
+                        card,
+                        random.randint(0, len(opponent_deck)),
+                    )
+                )
+            return packet
+        
+        g1 = lambda: generate_packet(chosen_for_shuffle_1)
+        g2 = lambda: generate_packet(chosen_for_shuffle_2)
+
+        card.propose(AVGEPacket([g1, g2], AVGEEngineID(card, ActionTypes.ATK_1, KathySun)))
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
+        from card_game.internal_events import AVGECardHPChange, InputEvent
 
         roll = card.env.cache.get(card, KathySun._D6_ROLL_KEY, None, True)
         if roll is None:
@@ -112,16 +108,20 @@ class KathySun(AVGECharacterCard):
             )
 
         damage = 30 + 10 * int(roll)
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, KathySun))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_2,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, KathySun)))
         return card.generate_response()

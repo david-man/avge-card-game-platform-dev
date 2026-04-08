@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 
-
+from card_game.constants import ActionTypes
 class ConcertTicket(AVGEItemCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
@@ -12,7 +12,7 @@ class ConcertTicket(AVGEItemCard):
 	
 	@staticmethod
 	def play_card(card) -> Response:
-		from card_game.internal_events import TransferCardCreator
+		from card_game.internal_events import TransferCard
 
 		hand = card.player.cardholders[Pile.HAND]
 		deck = card.player.cardholders[Pile.DECK]
@@ -20,24 +20,25 @@ class ConcertTicket(AVGEItemCard):
 		current_hand_size = len(hand)
 
 		if(current_hand_size == 1):
-			return card.generate_response(ResponseType.SKIP, {"msg": "ConcertTicket cannot be played as the only card in hand."})
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "ConcertTicket cannot be played as the only card in hand."})
 
 		if(current_hand_size >= 4):
-			return card.generate_response(ResponseType.SKIP, {"msg": "ConcertTicket cannot be played when hand size is already 3 or more."})
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "ConcertTicket cannot be played when hand size is already 3 or more."})
 
 		draw_needed = 4 - current_hand_size
 		draw_count = min(draw_needed, len(deck))
-		packet = []
-		for _ in range(draw_count):
-			packet.append(
-				TransferCardCreator(
-					lambda: deck.peek(),
-					deck,
-					hand,
-					ActionTypes.NONCHAR,
-					card,
-				)
-			)
-
+		def gen() -> PacketType:
+			packet = []
+			if(len(deck) == 3):
+				return []
+			else:
+				return [TransferCard(
+						deck.peek(),
+						deck,
+						hand,
+						ActionTypes.NONCHAR,
+						card,
+					)]
+		packet : PacketType = [gen] * draw_count
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, ConcertTicket)))
 		return card.generate_response()

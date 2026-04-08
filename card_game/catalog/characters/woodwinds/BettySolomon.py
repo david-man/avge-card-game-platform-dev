@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class BettySolomon(AVGECharacterCard):
     _ATK_1_KEY = "betty_deck_top"
@@ -18,11 +18,11 @@ class BettySolomon(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCardCreator
+        from card_game.internal_events import InputEvent, TransferCard
 
         player = card.player
         deck = player.cardholders[Pile.DECK]
-        character_cards = [candidate for candidate in deck.cards_by_id.values() if isinstance(candidate, AVGECharacterCard)]
+        character_cards = [candidate for candidate in deck if isinstance(candidate, AVGECharacterCard)]
         if len(character_cards) == 0:
             return card.generate_response()
 
@@ -42,16 +42,16 @@ class BettySolomon(AVGECharacterCard):
                             {
                                 "query_label": "betty_solomon_outreach",
                                 "targets": character_cards,
+                                "display":list(deck)
                             },
                         )
                     ]
                 },
             )
-
-        card.propose(
-            AVGEPacket([
-                TransferCardCreator(chosen_card, deck, deck, ActionTypes.ATK_1, card, 0)
-            ], AVGEEngineID(card, ActionTypes.ATK_1, BettySolomon))
+        p : PacketType= [
+                TransferCard(chosen_card, deck, deck, ActionTypes.ATK_1, card, 0)
+            ]
+        card.propose(AVGEPacket(p, AVGEEngineID(card, ActionTypes.ATK_1, BettySolomon))
         )
         return card.generate_response()
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -52,16 +51,16 @@ class FoldingStandNextAttackModifier(AVGEModifier):
         event = self.attached_event
         from card_game.internal_events import AVGECardHPChange
         assert isinstance(event, AVGECardHPChange)
-        event.modify_magnitude(10)
+        dmg = 10
+        if(isinstance(event.caller_card, AVGECharacterCard) and len(event.caller_card.statuses_attached[StatusEffect.GOON]) > 0):
+            dmg = 20
+        event.modify_magnitude(dmg)
         return self.generate_response()
 
 
 class FoldingStand(AVGEItemCard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-
-    
-    
     @staticmethod
     def play_card(card) -> Response:
         round_played = card.env.round_id

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class Richard(AVGESupporterCard):
 	def __init__(self, unique_id):

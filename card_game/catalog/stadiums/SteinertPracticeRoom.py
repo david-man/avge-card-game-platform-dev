@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor, AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -16,6 +15,8 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, TransferCard)):
+			return False
+		if(not event.catalyst_action == ActionTypes.PLAYER_CHOICE):
 			return False
 		if(event.pile_to.pile_type != Pile.BENCH):
 			return False
@@ -37,7 +38,7 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 		return "SteinertPracticeRoom BenchCap"
 
 	def assess(self, args=None):
-		return self.generate_response(ResponseType.SKIP, {"msg": "SteinertPracticeRoom: cannot have more than 2 benched characters."})
+		return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "SteinertPracticeRoom: cannot have more than 2 benched characters."})
 
 
 class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
@@ -50,8 +51,6 @@ class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, PlayCharacterCard)):
-			return False
-		if(event.catalyst_action != ActionTypes.PLAYER_CHOICE):
 			return False
 		if(event.card_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]):
 			return False

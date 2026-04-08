@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -79,7 +79,7 @@ class SasMajumder(AVGECharacterCard):
                                     lambda r: True,
                                     ActionTypes.PASSIVE,
                                     owner_card,
-                                    {"query_label": "sas-passive"},
+                                    {"query_label": "sas_majumder_passive"},
                                 )
                             ]
                         },
@@ -106,26 +106,37 @@ class SasMajumder(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import TransferCardCreator, AVGECardHPChangeCreator
-
-        packet = [] + [
-            AVGECardHPChangeCreator(
-                lambda: card.player.opponent.get_active_card(),
+        from card_game.internal_events import TransferCard, AVGECardHPChange, EmptyEvent
+        def gen_1() -> PacketType:
+            return [AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 10,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.PERCUSSION,
-                ActionTypes.ATK_1,
+                ActionTypes.ATK_2,
                 card,
-            ) for _ in range(4)
-        ]
+            )]
+        packet : PacketType = ([gen_1] * 4)
         if len(card.player.cardholders[Pile.DECK]) > 0:
+            def gen_2() -> PacketType:
+                return [
+                    TransferCard(
+                        card.player.cardholders[Pile.DECK].peek(),
+                        card.player.cardholders[Pile.DECK],
+                        card.player.cardholders[Pile.HAND],
+                        ActionTypes.ATK_2,
+                        card,
+                    )
+                ]
             packet.append(
-                TransferCardCreator(
-                    lambda: card.player.cardholders[Pile.DECK].peek(),
-                    card.player.cardholders[Pile.DECK],
-                    card.player.cardholders[Pile.HAND],
-                    ActionTypes.ATK_1,
+                gen_2
+            )
+        else:
+            packet.append(
+                EmptyEvent(
+                    ActionTypes.ATK_2,
                     card,
+                    response_data={MESSAGE_KEY: "No more cards to draw from deck"}
                 )
             )
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SasMajumder)))

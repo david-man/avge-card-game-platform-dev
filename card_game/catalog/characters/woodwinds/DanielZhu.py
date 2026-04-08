@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier, AVGEReactor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -48,11 +47,6 @@ class DanielZhu(AVGECharacterCard):
             def update_status(self):
                 return
 
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "DanielZhu Damage Redirect Modifier"
 
             def modify(self, args=None):
                 if args is None:
@@ -121,11 +115,6 @@ class DanielZhu(AVGECharacterCard):
             def update_status(self):
                 return
 
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "DanielZhu Damage Redirect Reactor"
 
             def react(self, args=None):
                 if args is None:
@@ -154,7 +143,7 @@ class DanielZhu(AVGECharacterCard):
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
+        from card_game.internal_events import AVGECardHPChange, InputEvent
 
         roll = card.env.cache.get(card, DanielZhu._D6_ROLL_KEY, None, True)
         if roll is None:
@@ -176,16 +165,18 @@ class DanielZhu(AVGECharacterCard):
             )
 
         damage = 30 + 10 * int(roll)
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
                     ActionTypes.ATK_2,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, DanielZhu))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, DanielZhu))
         )
         return card.generate_response()

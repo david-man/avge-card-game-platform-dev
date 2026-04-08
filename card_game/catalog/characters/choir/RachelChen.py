@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.catalog.items import ConcertProgram, ConcertTicket
@@ -55,8 +55,9 @@ class RachelChen(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
-                            {"query_label": "rachel_retrieve_item", 
-                             "targets": candidates},
+                            {"query_label": "rachel_chen_retrieve_item", 
+                             "targets": candidates,
+                             "display":candidates},
                         )
                     ]
                 },
@@ -87,7 +88,7 @@ class RachelChen(AVGECharacterCard):
                 choir_count += 1
 
         if choir_count <= 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "No choir in play!"})
 
         # build list of opponent character targets (can be chosen multiple times)
 
@@ -109,7 +110,7 @@ class RachelChen(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "rachel_atk1_targets",
+                            {"query_label": "rachel_chen_atk1_targets",
                             "targets": opponent.get_cards_in_play(),
                             "allow_repeats": True},
                         )

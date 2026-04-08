@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardHPChange, AVGECardHPChangeCreator, TransferCard
+from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard
 
 
 class LoangChiang(AVGECharacterCard):
@@ -19,17 +19,19 @@ class LoangChiang(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        packet = []
-        packet += [
-            AVGECardHPChangeCreator(
-                lambda: card.player.opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PERCUSSION,
-                ActionTypes.ATK_1,
-                card,
-            )
-        ]
+        packet : PacketType = []
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PERCUSSION,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ]
+        packet += [gen]
 
         bench_holder = card.player.cardholders[Pile.BENCH]
         active_holder = card.player.cardholders[Pile.ACTIVE]
@@ -38,8 +40,9 @@ class LoangChiang(AVGECharacterCard):
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, LoangChiang)))
             return card.generate_response()
 
-        pick = card.env.cache.get(card, LoangChiang._BENCH_SWAP_KEY, None, True)
-        if pick is None:
+        missing = object()
+        pick = card.env.cache.get(card, LoangChiang._BENCH_SWAP_KEY, missing, True)
+        if pick is missing:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -52,8 +55,9 @@ class LoangChiang(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "LoangChiang-benched-percussion-swap",
+                                "query_label": "loang_chiang_benched_percussion_swap",
                                 "targets": perc_candidates,
+                                "display": list(bench_holder),
                                 "allow_none": True,
                             },
                         )
@@ -70,9 +74,8 @@ class LoangChiang(AVGECharacterCard):
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        card.propose(
-            AVGEPacket(
-                lambda: [
+        def gen() -> PacketType:
+            return [
                     AVGECardHPChange(
                         c,
                         30,
@@ -81,7 +84,10 @@ class LoangChiang(AVGECharacterCard):
                         ActionTypes.ATK_2,
                         card,
                     ) for c in card.player.get_cards_in_play()
-                ],
+                ]
+        card.propose(
+            AVGEPacket(
+                [gen],
                 AVGEEngineID(card, ActionTypes.ATK_2, LoangChiang),
             )
         )

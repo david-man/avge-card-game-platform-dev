@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class AnnotatedScore(AVGEItemCard):
 	_OPPONENT_HAND_DISCARD_KEY = "annotatedscore_opponent_hand_discard"
@@ -24,40 +24,57 @@ class AnnotatedScore(AVGEItemCard):
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
 
 		if(len(opponent_discard) == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "Opponent has no cards in discard."})
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Opponent has no cards in discard."})
 
 		if(len(opponent_hand) == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "Opponent has no cards in hand to reveal."})
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Opponent has no cards in hand to reveal."})
 
-		hand_pick = card.env.cache.get(card, AnnotatedScore._OPPONENT_HAND_DISCARD_KEY, None, True)
-		discard_pick = card.env.cache.get(card, AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY, None, True)
+		hand_pick = card.env.cache.get(card, AnnotatedScore._OPPONENT_HAND_DISCARD_KEY, None)
+		
 		if(hand_pick is None):
-			def _valid(result):
-				if(len(result) != 2):
-					return False
-				return result[0] in opponent_hand and result[1] in opponent_discard
 			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
 					INTERRUPT_KEY: [
 						InputEvent(
 							card.player,
-							[AnnotatedScore._OPPONENT_HAND_DISCARD_KEY, AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY],
-							InputType.DETERMINISTIC,
-							_valid,
+							[AnnotatedScore._OPPONENT_HAND_DISCARD_KEY],
+							InputType.SELECTION,
+							lambda r : True,
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "annotated_score_discard_hand",
-								"opponent_hand": list(opponent_hand),
-								"opponent_discard": list(opponent_discard)
+								"query_label": "annotated_score_hand",
+								"targets": list(opponent_hand),
+								"display": list(opponent_hand)
+							},
+						)
+					]
+				},
+			)
+		discard_pick = card.env.cache.get(card, AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY, None, True)
+		if(hand_pick is None):
+			return card.generate_response(
+				ResponseType.INTERRUPT,
+				{
+					INTERRUPT_KEY: [
+						InputEvent(
+							card.player,
+							[AnnotatedScore._OPPONENT_DISCARD_RETURN_KEY],
+							InputType.SELECTION,
+							lambda r : True,
+							ActionTypes.NONCHAR,
+							card,
+							{
+								"query_label": "annotated_score_discard",
+								"targets": list(opponent_discard)
 							},
 						)
 					]
 				},
 			)
 		assert discard_pick is not None
-		packet = [
+		packet : PacketType= [
 			TransferCard(
 				discard_pick,
 				opponent_discard,
@@ -74,4 +91,5 @@ class AnnotatedScore(AVGEItemCard):
 			)
 		]
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, AnnotatedScore)))
+		card.env.cache.delete(card, AnnotatedScore._OPPONENT_HAND_DISCARD_KEY)
 		return card.generate_response()

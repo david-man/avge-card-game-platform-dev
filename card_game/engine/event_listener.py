@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from . import engine
     from . import engine_constants
     from .constrainer import Constraint
-    from .event import DeferredEvent, Event, Packet
+    from .event import Event, Packet
 
 EV = TypeVar('EV', bound='Event')
 class AbstractEventListener(Generic[EV]):
@@ -53,10 +53,6 @@ class AbstractEventListener(Generic[EV]):
     def _should_attach(self, event : EV):
         #all internal events are valid by default
         return (self.internal) or ((not self._invalidated) and (self.event_match(event)))
-    def make_announcement(self) -> bool:
-        raise NotImplementedError()
-    def package(self):
-        raise NotImplementedError()
     def on_packet_completion(self):
         """
         a function that gets called at the end if the attached event's overall pacekt is completed successfully

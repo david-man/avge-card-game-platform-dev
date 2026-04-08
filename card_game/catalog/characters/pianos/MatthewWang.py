@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
@@ -22,16 +22,10 @@ class _MatthewTurnBeginReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "MatthewWang turn-begin reactor"
-
     def react(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import InputEvent, TransferCardCreator
+        from card_game.internal_events import InputEvent, TransferCard
 
         owner = self.owner_card
         env = owner.env
@@ -52,7 +46,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {"query_label": "matthew-wang-1coin"},
+                            {"query_label": "matthew_wang_1coin"},
                         )
                     ]
                 },
@@ -74,22 +68,29 @@ class _MatthewTurnBeginReactor(AVGEReactor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {"query_label": "matthew-successful-coin"},
+                            {"query_label": "matthew_wang_successful_coin"},
                         )
                     ]
                 },
             )
 
         if choice == 1:
-            owner.propose(
-                AVGEPacket([
-                    TransferCardCreator(
-                        lambda: deck.peek(),
+            def draw_top() -> PacketType:
+                if len(deck) == 0:
+                    return []
+                return [
+                    TransferCard(
+                        deck.peek(),
                         deck,
                         owner.player.cardholders[Pile.HAND],
                         ActionTypes.PASSIVE,
                         owner,
                     )
+                ]
+
+            owner.propose(
+                AVGEPacket([
+                    draw_top
                 ], AVGEEngineID(owner, ActionTypes.PASSIVE, MatthewWang))
             )
 
@@ -115,18 +116,26 @@ class MatthewWang(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if not isinstance(active, AVGECharacterCard):
+                return []
+            return [
+                AVGECardHPChange(
+                    active,
                     60,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
                     card,
                 )
+            ]
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
             ], AVGEEngineID(card, ActionTypes.ATK_1, MatthewWang))
         )
 

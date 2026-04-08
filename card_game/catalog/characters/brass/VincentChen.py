@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import InputEvent, AVGECardHPChange, AVGECardHPChangeCreator
+from card_game.internal_events import InputEvent, AVGECardHPChange
 class _VincentHealReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
         super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.ATK_2, VincentChen), group=EngineGroup.EXTERNAL_REACTORS)
@@ -40,8 +39,6 @@ class _VincentHealReactor(AVGEReactor):
 
         # collect benched friendly characters
         bench_chars = self.owner_card.player.cardholders[Pile.BENCH]
-        if len(bench_chars) == 0:
-            return self.generate_response()
         # ask player to choose
         chosen = self.owner_card.env.cache.get(self.owner_card, VincentChen._HEAL_PICK_KEY, None, True)
         if chosen is None:
@@ -57,8 +54,9 @@ class _VincentHealReactor(AVGEReactor):
                             lambda r : True,
                             ActionTypes.ATK_2,
                             self.owner_card,
-                            {"query_label": "vincent_heal_pick", 
-                             "targets": bench_chars},
+                            {"query_label": "vincent_chen_heal_pick", 
+                             "targets": bench_chars,
+                             "display": bench_chars},
                         )
                     ]
                 },
@@ -88,15 +86,17 @@ class VincentChen(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        card.propose(
-            AVGEPacket([AVGECardHPChangeCreator(
-                lambda : card.player.opponent.get_active_card(),
+        def generate_packet()-> PacketType:
+            return [AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.ALL,
                 ActionTypes.ATK_1,
                 card,
-            )], AVGEEngineID(card, ActionTypes.ATK_1, VincentChen))
+            )]
+        card.propose(
+            AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, VincentChen))
         )
 
         return card.generate_response()
@@ -106,15 +106,16 @@ class VincentChen(AVGECharacterCard):
         from card_game.internal_events import AVGECardHPChange
         # attach reactor to heal one benched character for the same amount dealt
         card.add_listener(_VincentHealReactor(card))
-
-        card.propose(
-            AVGEPacket([AVGECardHPChangeCreator(
-                lambda : card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            return [AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 40,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.BRASS,
-                ActionTypes.ATK_2,
+                CardType.ALL,
+                ActionTypes.ATK_1,
                 card,
-            )], AVGEEngineID(card, ActionTypes.ATK_2, VincentChen))
+            )]
+        card.propose(
+            AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, VincentChen))
         )
         return card.generate_response()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -33,13 +33,14 @@ class OtomatoneEnergy(AVGEReactor):
 		from card_game.internal_events import AVGEEnergyTransfer, AtkPhase, TurnEnd
 
 		event = self.attached_event
-		boosted_character = self.owner_card.env.cache.get(self.owner_card, Otomatone._BOOSTED_CHARACTER_KEY, self.owner_card.player.get_active_card())
+		boosted_character = self.owner_card.env.cache.get(self.owner_card, Otomatone._BOOSTED_CHARACTER_KEY, None)
 
-		if(isinstance(event, AtkPhase) and boosted_character is not None and len(self.owner_card.player.energy) > 0):
-			self.owner_card.env.cache.set(self.owner_card, Otomatone._BOOSTED_CHARACTER_KEY, boosted_character)
+		if(isinstance(event, AtkPhase) and boosted_character is None and len(self.owner_card.player.energy) > 0):
+			self.owner_card.env.cache.get(self.owner_card, Otomatone._BOOSTED_CHARACTER_KEY, self.owner_card.player.get_active_card())
+			
 			self.owner_card.env.cache.set(self.owner_card, Otomatone._TOKEN_KEY, self.owner_card.player.energy[0])
 			self.propose(AVGEPacket([
-				AVGEEnergyTransfer(self.owner_card.player.energy[0], self.owner_card.player, boosted_character, ActionTypes.NONCHAR, self.owner_card)
+				AVGEEnergyTransfer(self.owner_card.player.energy[0], self.owner_card.player, self.owner_card.player.get_active_card(), ActionTypes.NONCHAR, self.owner_card)
 			], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, Otomatone)))
 		elif(isinstance(event, TurnEnd) and boosted_character is not None):
 			token = self.owner_card.env.cache.get(self.owner_card, Otomatone._TOKEN_KEY, None, True)
@@ -48,8 +49,6 @@ class OtomatoneEnergy(AVGEReactor):
 					AVGEEnergyTransfer(token, boosted_character, self.owner_card.player, ActionTypes.NONCHAR, self.owner_card)
 				], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, Otomatone)))
 			self.invalidate()
-		else:
-			raise Exception("Something went very badly.")
 		return self.generate_response()
 
 
@@ -64,9 +63,7 @@ class Otomatone(AVGEItemCard):
 	def play_card(card) -> Response:
 
 		if(card.env.round_id == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "Cannot play Otomatone on the first turn of round one."})
-
-		card.env.cache.set(card, Otomatone._BOOSTED_CHARACTER_KEY, card.player.get_active_card())
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot play Otomatone on the first turn of round one."})
 
 		card.add_listener(OtomatoneEnergy(card, card.env.round_id))
 		return card.generate_response()

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -13,7 +13,7 @@ class ArrangerStatusReactor(AVGEReactor):
 
 	def __init__(self):
 		super().__init__(
-			identifier=(None, ActionTypes.ENV),
+			identifier=AVGEEngineID(None, ActionTypes.ENV, None),
 			group=EngineGroup.EXTERNAL_REACTORS,
 		)
 
@@ -99,14 +99,15 @@ class ArrangerStatusReactor(AVGEReactor):
 			return self.generate_response()
 
 		random_discard_card = random.choice(list(discard))
-		self.propose(
-			TransferCard(
+		p : PacketType = [TransferCard(
 				random_discard_card,
 				discard,
 				deck,
 				ActionTypes.PASSIVE,
 				affected_character,
 				random.randint(0, len(deck)),
-			)
+			)]
+		self.propose(
+			AVGEPacket(p, AVGEEngineID(None, ActionTypes.ENV, None))
 		)
 		return self.generate_response()

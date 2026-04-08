@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
+from card_game.constants import ActionTypes
 
 
 class KeiWatanabe(AVGECharacterCard):
@@ -38,8 +39,9 @@ class KeiWatanabe(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "kei-watanabe-rudiments",
+                                "query_label": "kei_watanabe_rudiments",
                                 "targets": list(candidates),
+                                "display": list(candidates)
                             },
                         )
                     ]
@@ -70,7 +72,7 @@ class KeiWatanabe(AVGECharacterCard):
             if c.card_type == CardType.PERCUSSION
         ]
         if len(candidates) == 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "No percussion on bench"})
 
         missing = object()
         chosen = card.env.cache.get(card, KeiWatanabe._ATK2_COPY_KEY, missing, True)
@@ -103,8 +105,9 @@ class KeiWatanabe(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "kei-watanabe-drumkidworkshop",
+                                "query_label": "kei_watanabe_drumkidworkshop",
                                 "targets": list(candidates),
+                                "display": list(candidates),
                                 "actions": [ActionTypes.ATK_1, ActionTypes.ATK_2],
                             },
                         )
@@ -113,21 +116,20 @@ class KeiWatanabe(AVGECharacterCard):
             )
         assert isinstance(chosen, AVGECharacterCard)
         assert isinstance(action_type, ActionTypes)
-        def generate_packet():
-            packet = []
-            packet += [PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card)]
+        
+        def generate_packet() -> PacketType:
+            packet : PacketType = []
             if len(card.energy) == 0:
                 packet.append(
                     EmptyEvent(
-                        "KeiWatanabe copied attack with no energy to transfer.",
                         ActionTypes.ATK_2,
                         card,
+                        response_data={MESSAGE_KEY: "KeiWatanabe copied attack, but has no energy to transfer"},
                     )
                 )
                 return packet
             for token in list(card.energy):
                 packet.append(AVGEEnergyTransfer(token, card, chosen, ActionTypes.ATK_2, card))
             return packet
-
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
+        card.propose(AVGEPacket([PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card), generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
         return card.generate_response()

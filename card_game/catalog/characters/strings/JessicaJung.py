@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from random import randint
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class JessicaJung(AVGECharacterCard):
     _ACTIVE_USED_KEY = "jessicajung_active_used"
@@ -26,14 +26,11 @@ class JessicaJung(AVGECharacterCard):
 
     @staticmethod
     def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCardCreator
+        from card_game.internal_events import InputEvent, TransferCard
 
         card.env.cache.set(card, JessicaJung._ACTIVE_USED_KEY, card.env.round_id)
         discard = card.player.cardholders[Pile.DISCARD]
         supporter_cards = [c for c in list(discard) if isinstance(c, AVGESupporterCard)]
-        if len(supporter_cards) == 0:
-            return card.generate_response()
-
         flip = card.env.cache.get(card, JessicaJung._COIN_KEY, None, True)
         if flip is None:
             return card.generate_response(
@@ -72,6 +69,7 @@ class JessicaJung(AVGECharacterCard):
                             {
                                 "query_label": "jessica_jung_supporter",
                                 "targets": supporter_cards,
+                                "display": list(discard)
                             },
                         )
                     ]
@@ -79,28 +77,42 @@ class JessicaJung(AVGECharacterCard):
             )
 
         deck = card.player.cardholders[Pile.DECK]
-        card.propose(
-            AVGEPacket([
-                TransferCardCreator(chosen, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, lambda: randint(0, len(deck)))
-            ], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JessicaJung))
-        )
+        def generate_packet() -> PacketType:
+            if not isinstance(chosen, AVGESupporterCard):
+                return []
+            return [
+                TransferCard(
+                    chosen,
+                    discard,
+                    deck,
+                    ActionTypes.ACTIVATE_ABILITY,
+                    card,
+                    randint(0, len(deck)),
+                )
+            ]
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JessicaJung)))
         return card.generate_response()
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if not isinstance(active, AVGECharacterCard):
+                return []
+            return [
+                AVGECardHPChange(
+                    active,
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
                     ActionTypes.ATK_1,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, JessicaJung))
-        )
+            ]
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JessicaJung)))
 
         return card.generate_response()

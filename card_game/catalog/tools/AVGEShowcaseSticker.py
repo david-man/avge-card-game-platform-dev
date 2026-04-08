@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -57,7 +57,7 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 							ActionTypes.NONCHAR,
 							self.owner_card,
 							{
-								"querying_card": "sticker-coin-flip"},
+								"query_label": "sticker-coin-flip"},
 						)
 					]
 				},

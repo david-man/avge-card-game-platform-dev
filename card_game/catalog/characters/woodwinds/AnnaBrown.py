@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -46,11 +45,6 @@ class AnnaBrown(AVGECharacterCard):
                 if owner_card.env is None:
                     self.invalidate()
 
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "AnnaBrown Bench Damage Reducer"
 
             def modify(self, args=None):
                 if args is None:

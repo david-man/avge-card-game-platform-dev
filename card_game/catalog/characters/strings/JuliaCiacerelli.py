@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class JuliaCiacerelli(AVGECharacterCard):
     _ATK1_ITEM_KEY = "julia_atk1_item"
@@ -19,12 +19,10 @@ class JuliaCiacerelli(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, PlayNonCharacterCard
+        from card_game.internal_events import InputEvent, PlayNonCharacterCard, EmptyEvent
 
         opp_hand = card.player.opponent.cardholders[Pile.HAND]
         items = [c for c in opp_hand if isinstance(c, AVGEItemCard)]
-        if len(items) == 0:
-            return card.generate_response()
 
         chosen = card.env.cache.get(card, JuliaCiacerelli._ATK1_ITEM_KEY, None, True)
         if chosen is None:
@@ -42,6 +40,7 @@ class JuliaCiacerelli(AVGECharacterCard):
                             {
                                 "query_label": "julia_ciacerelli_atk1",
                                 "targets": items,
+                                "display": list(opp_hand)
                             },
                         )
                     ]
@@ -77,13 +76,14 @@ class JuliaCiacerelli(AVGECharacterCard):
                             {
                                 "query_label": "julia_ciacerelli_snap_pizz",
                                 "targets": opponent.get_cards_in_play(),
+                                "display": opponent.get_cards_in_play()
                             },
                         )
                     ]
                 },
             )
 
-        packet = [] + [
+        packet : PacketType = [
             AVGECardHPChange(
                 opponent.get_active_card(),
                 20,
@@ -94,11 +94,14 @@ class JuliaCiacerelli(AVGECharacterCard):
             )
         ]
         assert isinstance(chosen_target, AVGECharacterCard)
-        if len(chosen_target.energy) < 2:
-            packet.append(EmptyEvent("JuliaCiacerelli ATK2 target lacked enough energy.", ActionTypes.ATK_2, card))
-        else:
-            for token in list(chosen_target.energy)[:2]:
-                packet.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
-
+        def gen() -> PacketType:
+            k : PacketType = []
+            if len(chosen_target.energy) == 0:
+                k.append(EmptyEvent(ActionTypes.ATK_2, card, response_data = {MESSAGE_KEY:"Failed to discard any energy"}))
+            else:
+                for token in list(chosen_target.energy)[:2]:
+                    k.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.env, ActionTypes.ATK_2, card))
+            return k
+        packet.append(gen)
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, JuliaCiacerelli)))
         return card.generate_response()

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class LucaChen(AVGECharacterCard):
     def __init__(self, unique_id):
@@ -17,9 +17,8 @@ class LucaChen(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-
-        card.propose(
-            AVGEPacket([
+        def gen() -> PacketType:
+            return [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     30,
@@ -36,7 +35,9 @@ class LucaChen(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, LucaChen))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, LucaChen))
         )
         return card.generate_response()
 
@@ -52,8 +53,8 @@ class LucaChen(AVGECharacterCard):
         )
 
         if other_ww_count == 0:
-            card.propose(
-                AVGEPacket([
+            def gen() -> PacketType:
+                return [
                     AVGECardHPChange(
                         card.player.opponent.get_active_card(),
                         70,
@@ -62,7 +63,9 @@ class LucaChen(AVGECharacterCard):
                         ActionTypes.ATK_2,
                         card,
                     )
-                ], AVGEEngineID(card, ActionTypes.ATK_2, LucaChen))
+                ]
+            card.propose(
+                AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, LucaChen))
             )
 
         return card.generate_response()

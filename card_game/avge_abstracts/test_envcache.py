@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from card_game.abstract.card import Card
+from card_game.avge_abstracts.AVGECards import AVGECard
 from card_game.avge_abstracts.envcache import EnvironmentCache
 
 
 class EnvironmentCacheTests(unittest.TestCase):
     def _make_cards_and_cache(self):
-        card_a = Card("card_a")
-        card_b = Card("card_b")
+        card_a = AVGECard("card_a")
+        card_b = AVGECard("card_b")
         cache = EnvironmentCache([card_a.unique_id, card_b.unique_id])
         return card_a, card_b, cache
 
@@ -154,7 +154,7 @@ class EnvironmentCacheTests(unittest.TestCase):
 
         self.assertEqual(cache.get(card_a, "x"), 10)
 
-    def test_insert_alter_delete_sequence_rewinds_to_absent_key(self):
+    def test_insert_alter_delete_list_rewinds_to_absent_key(self):
         card_a, _, cache = self._make_cards_and_cache()
 
         cache.capture()

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class CathyRong(AVGECharacterCard):
     _ENERGY_TARGET_KEY = "cathy_energy_target"
@@ -22,20 +22,6 @@ class CathyRong(AVGECharacterCard):
 
         opponent = card.player.opponent
         bench_candidates = [c for c in opponent.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and len(c.energy) >= 1]
-        if len(bench_candidates) == 0:
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChange(
-                        opponent.get_active_card(),
-                        20,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.PIANO,
-                        ActionTypes.ATK_1,
-                        card,
-                    )
-                ], AVGEEngineID(card, ActionTypes.ATK_1, CathyRong))
-            )
-            return card.generate_response()
 
         chosen = card.env.cache.get(card, CathyRong._ENERGY_TARGET_KEY, None, True)
         if chosen is None:
@@ -51,9 +37,10 @@ class CathyRong(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "cathy_energy_target",
+                                "query_label": "cathy_rong_energy_target",
                                 "targets": bench_candidates,
-                                "allow_none": True,
+                                "display": list(opponent.cardholders[Pile.BENCH]),
+                                "allow_none": True
                             },
                         )
                     ]
@@ -82,23 +69,25 @@ class CathyRong(AVGECharacterCard):
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        dmg = 50
-        bench = [c for c in card.player.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and c != card and c.card_type == CardType.PIANO]
-        if len(bench) > 0:
-            dmg = 80
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        
+        def gen() -> PacketType:
+            dmg = 50
+            bench = [c for c in card.player.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and c != card and c.card_type == CardType.PIANO]
+            if len(bench) > 0:
+                dmg = 80
+            return[AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     dmg,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_2,
                     card,
-                )
+                )]
+        card.propose(
+            AVGEPacket([
+                gen
             ], AVGEEngineID(card, ActionTypes.ATK_2, CathyRong))
         )
 

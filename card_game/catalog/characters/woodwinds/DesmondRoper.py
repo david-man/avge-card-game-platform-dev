@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-
+from card_game.constants import ActionTypes
 
 class DesmondRoper(AVGECharacterCard):
     _PLAYED_ROUND_KEY = "desmond_played_round"
@@ -40,12 +40,6 @@ class DesmondRoper(AVGECharacterCard):
 
             def update_status(self):
                 return
-
-            def make_announcement(self) -> bool:
-                return False
-
-            def package(self):
-                return "DesmondRoper Play Tracker"
 
             def react(self, args=None):
                 if args is None:
@@ -84,23 +78,27 @@ class DesmondRoper(AVGECharacterCard):
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         damage = 40
         played_round = card.env.cache.get(card, DesmondRoper._PLAYED_ROUND_KEY, None, True)
         if played_round == card.env.round_id:
             damage = 100
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, DesmondRoper))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_2,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, DesmondRoper)))
         return card.generate_response()

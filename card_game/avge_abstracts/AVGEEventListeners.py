@@ -23,7 +23,7 @@ class AVGEAbstractEventListener(AbstractEventListener[AVGEEvent]):
                  identifier : AVGEEngineID,
                  group : EngineGroup, 
                  internal : bool = False,
-                 requires_runtime_info : bool = True):
+                 requires_runtime_info : bool = False):
         super().__init__(group,internal,requires_runtime_info)
         self.identifier= identifier
 
@@ -34,7 +34,9 @@ class AVGEPostcheck(AVGEAbstractEventListener, PostCheckEventListener[AVGEEvent]
     pass
 
 class AVGEAssessor(AVGEAbstractEventListener, AssessorEventListener[AVGEEvent]):
-    pass
+    def propose(self, e : AVGEPacket, priority : int = 0):#type: ignore
+        assert self.engine is not None
+        self.engine._propose(e, priority)
 
 class AVGEReactor(AVGEAbstractEventListener, ReactorEventListener[AVGEEvent]):
     def propose(self, e : AVGEPacket, priority : int = 0):#type: ignore

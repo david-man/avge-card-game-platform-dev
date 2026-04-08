@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import AVGEEnergyTransfer
@@ -18,8 +17,6 @@ class _BarronEnergyCapPostcheck(AVGEPostcheck):
             return False
         if event.target.player == self.owner_card.player:
             return False
-        return True
-    def event_effect(self) -> bool:
         return True
 
     def update_status(self):
@@ -39,7 +36,7 @@ class _BarronEnergyCapPostcheck(AVGEPostcheck):
         new_amt = len(target.energy)
 
         if new_amt > 3:
-            return self.generate_response(ResponseType.SKIP, {"msg": "Cannot attach more than 3 energy to opposing characters (BarronLee passive)."})
+            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot attach more than 3 energy to opposing characters (BarronLee passive)."})
         return self.generate_response()
 
 class BarronLee(AVGECharacterCard):
@@ -78,25 +75,27 @@ class BarronLee(AVGECharacterCard):
                         )
 
             return packet
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.PASSIVE, BarronLee)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.PASSIVE, BarronLee)))
         return card.generate_response()
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
+        from card_game.internal_events import InputEvent, AVGECardHPChange
         opponent = card.player.opponent
         # deal 20 damage to opponent active
-        packet = []
-        packet.append(
-            AVGECardHPChangeCreator(
-                lambda : opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.BRASS,
-                ActionTypes.ATK_1,
-                card,
+        def generate_packet():
+            packet = []
+            packet.append(
+                AVGECardHPChange(
+                    opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.BRASS,
+                    ActionTypes.ATK_1,
+                    card,
+                )
             )
-        )
+            return packet
 
         # total energy across player's active & bench
         chars = card.player.get_cards_in_play()
@@ -104,23 +103,14 @@ class BarronLee(AVGECharacterCard):
         energy_tokens = [token for c in chars for token in c.energy]
 
         if total_energy <= 0:
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
-            return card.generate_response()
+            card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
+            return card.generate_response(data={MESSAGE_KEY: "Total energy is none!"})
 
         # prompt player for allocation per character; keys per character
-        keys = [BarronLee._EMBOUCHURE_KEY+str(i) for i in range(len(chars))]
+        keys = [BarronLee._EMBOUCHURE_KEY+str(i) for i in range(total_energy)]
         vals = [card.env.cache.get(card, key, None, True) for key in keys]
         if vals[0] is None:
             # ask player for deterministic integer allocations
-            def _valid(result) -> bool:
-                if not isinstance(result, list) or len(result) != len(chars):
-                    return False
-                s = 0
-                for v in result:
-                    if(int(v) < 0):
-                        return False
-                    s += int(v)
-                return s == total_energy
 
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -129,31 +119,32 @@ class BarronLee(AVGECharacterCard):
                         InputEvent(
                             card.player,
                             keys,
-                            InputType.DETERMINISTIC,
-                            _valid,
+                            InputType.SELECTION,
+                            lambda res : True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "barron_energy_alloc", 
-                            "character_cards_in_order": chars},
+                            {"query_label": "barron_lee_energy_alloc", 
+                            "targets": chars,
+                            "allow_repeat": True,
+                            "display": chars},
                         )
                     ]
                 },
             )
 
-        # read allocations and set each character's energy accordingly
-
-        for idx, c in enumerate(chars):
-            tokens = energy_tokens[:vals[idx]]
-            for token in tokens:
-                assert token.holder is not None and not isinstance(token.holder, AVGEEnvironment)
-                packet.append(AVGEEnergyTransfer(
-                    token,
-                    token.holder,
-                    c,
-                    ActionTypes.ATK_1,
-                    card
-                ))
-            energy_tokens = energy_tokens[vals[idx]:]
+        packet : PacketType= [] + [generate_packet]
+        # transfer accordingly
+        for i, token_to in enumerate(vals):
+            assert isinstance(token_to, AVGECharacterCard)
+            cur_holder = energy_tokens[i].holder
+            assert cur_holder is not None and not isinstance(cur_holder, AVGEEnvironment)
+            packet.append(AVGEEnergyTransfer(
+                energy_tokens[i],
+                cur_holder,
+                token_to,
+                ActionTypes.ATK_1,
+                card
+            ))
 
         if len(packet) > 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))

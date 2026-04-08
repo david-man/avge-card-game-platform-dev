@@ -47,7 +47,7 @@ class AVGECard():
             constrainer.invalidate()#invalidates all owned constrainers, since this card has left play
     def reactivate_card(self):
         return#engine will revalidate all constrainers and listeners, so can do nothing. However, need to override if you override deactivate_card
-    def generate_response(self, response_type : ResponseType = ResponseType.CORE, data = None, announce = False):
+    def generate_response(self, response_type : ResponseType = ResponseType.CORE, data = None):
         #helper function to generate a response 
         return Response(self, response_type, data)
     def generate_interrupt(self, events : list[AVGEEvent]) -> Response:
@@ -145,7 +145,7 @@ class AVGEToolCard(AVGECard):
 class AVGEStadiumCard(AVGECard):
     def __init__(self ,unique_id):
         super().__init__(unique_id)
-        self.original_owner : AVGEPlayer | None = None#original owner of the card before it became the stadium.
+        self.original_owner : AVGEPlayer = None#type: ignore ,last owner of the card before it became the stadium.
     def attach_to_cardholder(self, cardholder):
         if(cardholder.player is not None):
             self.original_owner = cardholder.player

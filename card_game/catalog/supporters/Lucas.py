@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class Lucas(AVGESupporterCard):
 	_CARD_DECK_KEY = "lucas_selected_top_deck"
@@ -38,40 +38,54 @@ class Lucas(AVGESupporterCard):
 			if isinstance(card, AVGECharacterCard)
 			and card.card_type not in board_types
 		]
-
-		if(len(eligible_deck_characters) < 1):
-			return card.generate_response(ResponseType.CORE)
-
-
-		def _input_valid(result) -> bool:
-			if(len(result) != 2):
-				return False
-			top_deck = result[0]
-			hand_pick = result[1]
-			if(top_deck is not None and top_deck not in eligible_deck_characters):
-				return False
-			if(hand_pick is not None and hand_pick not in eligible_deck_characters):
-				return False
-			if(top_deck is not None and hand_pick is not None and top_deck == hand_pick):
-				return False
-			return True
-
+		if(len(deck) == 0):
+			return card.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: "No cards in deck!"})
 		missing = object()
-		top_deck_card = card.env.cache.get(card, Lucas._CARD_DECK_KEY, missing, True)
+		top_deck_card = card.env.cache.get(card, Lucas._CARD_DECK_KEY, missing)
 		hand_card = card.env.cache.get(card, Lucas._CARD_HAND_KEY, missing, True)
 		if(top_deck_card is missing):
-			return card.generate_interrupt([
-				InputEvent(
-					card.player,
-					[Lucas._CARD_DECK_KEY, Lucas._CARD_HAND_KEY],
-					InputType.DETERMINISTIC,
-					_input_valid,
-					ActionTypes.NONCHAR,
-					card,
-					{"query_label": "lucas-choice",
-	  				"targets": eligible_deck_characters}
+			return card.generate_response(ResponseType.INTERRUPT,
+								 {
+									 INTERRUPT_KEY:[
+										 InputEvent(
+											card.player,
+											[Lucas._CARD_DECK_KEY],
+											InputType.SELECTION,
+											lambda res : True,
+											ActionTypes.NONCHAR,
+											card,
+											{"query_label": "lucas_choice_top",
+											"targets": eligible_deck_characters,
+											"display": deck}
+										)
+									]
+								 }
 				)
-			])
+		if(top_deck_card is not None):
+			assert isinstance(top_deck_card, AVGECard)
+			eligible_deck_characters = [
+				card
+				for card in eligible_deck_characters
+				if not isinstance(card, type(top_deck_card))
+			]
+		if(hand_card is missing):
+			return card.generate_response(ResponseType.INTERRUPT,
+								 {
+									 INTERRUPT_KEY:[
+										 InputEvent(
+											card.player,
+											[Lucas._CARD_HAND_KEY],
+											InputType.SELECTION,
+											lambda res : True,
+											ActionTypes.NONCHAR,
+											card,
+											{"query_label": "lucas_choice_hand",
+											"targets": eligible_deck_characters,
+											"display": deck}
+										)
+									]
+								 }
+				)
 
 		packet = []
 		if top_deck_card is not None:

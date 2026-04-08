@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class RachaelYuan(AVGECharacterCard):
     _LAST_ATK1_ROUND_KEY = "rachael_last_atk1_round"
@@ -22,7 +22,7 @@ class RachaelYuan(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         last_round = card.env.cache.get(card, RachaelYuan._LAST_ATK1_ROUND_KEY, None, True)
         atks_before = card.env.cache.get(card, RachaelYuan._CONSECUTIVE_USES, 0, True)
@@ -33,29 +33,34 @@ class RachaelYuan(AVGECharacterCard):
         card.env.cache.set(card, RachaelYuan._LAST_ATK1_ROUND_KEY, card.env.round_id)
         card.env.cache.set(card, RachaelYuan._CONSECUTIVE_USES, atks_before + 1)
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    total_damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, RachaelYuan))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        total_damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, RachaelYuan)))
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCardCreator
+        from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
 
         opponent = card.player.opponent
         opponent_bench = opponent.cardholders[Pile.BENCH]
         opponent_deck = opponent.cardholders[Pile.DECK]
 
-        packet = [] + [
+        def gen() -> PacketType:
+            return [
             AVGECardHPChange(
                 opponent.get_active_card(),
                 30,
@@ -65,6 +70,7 @@ class RachaelYuan(AVGECharacterCard):
                 card,
             )
         ]
+        packet : PacketType =  [gen]
 
         if len(opponent_bench) >= 2:
             chosen_card = card.env.cache.get(card, RachaelYuan._BENCH_SHUFFLE_KEY, None, True)
@@ -83,22 +89,23 @@ class RachaelYuan(AVGECharacterCard):
                                 {
                                     "query_label": "rachael_yuan_bench_shuffle",
                                     "targets": list(opponent_bench),
+                                    "display": list(opponent_bench)
                                 },
                             )
                         ]
                     },
                 )
-            if chosen_card is not None:
-                packet.append(
-                    TransferCardCreator(
-                        chosen_card,
-                        opponent_bench,
-                        opponent_deck,
-                        ActionTypes.ATK_2,
-                        card,
-                        lambda: random.randint(0, len(opponent_deck)),
-                    )
+            assert chosen_card is not None
+            packet.append(
+                TransferCard(
+                    chosen_card,
+                    opponent_bench,
+                    opponent_deck,
+                    ActionTypes.ATK_2,
+                    card,
+                    random.randint(0, len(opponent_deck)),
                 )
+            )
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, RachaelYuan)))
         return card.generate_response()

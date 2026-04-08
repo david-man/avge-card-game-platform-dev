@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier, AVGEAssessor, AVGEReactor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -87,7 +86,7 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
     def assess(self, args=None) -> Response:
         if args is None:
             args = {}
-        return self.generate_response(ResponseType.SKIP, {"msg": "Cannot attack this round due to MeyaGao passive"})
+        return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot attack this round due to MeyaGao passive"})
 
 
 class _MeyaDamageReactor(AVGEReactor):
@@ -148,19 +147,20 @@ class MeyaGao(AVGECharacterCard):
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        from card_game.internal_events import AVGECardHPChange
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_2,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, MeyaGao))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, MeyaGao))
         )
         card.add_listener(_MeyaGuitarBoost(card, card.player.get_next_turn()))
 

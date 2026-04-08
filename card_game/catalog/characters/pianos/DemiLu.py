@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEConstrainer import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor, AVGEAbstractEventListener
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -93,23 +91,26 @@ class DemiLu(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        bench_cards = [c for c in card.player.cardholders[Pile.BENCH] if c != card]
-        found_piano = any(c.card_type == CardType.PIANO for c in bench_cards if isinstance(c, AVGECharacterCard))
-        dmg = 80 if found_piano else 50
+        def gen() -> PacketType:
+            bench_cards = [c for c in card.player.cardholders[Pile.BENCH] if c != card]
+            found_piano = any(c.card_type == CardType.PIANO for c in bench_cards if isinstance(c, AVGECharacterCard))
+            dmg = 80 if found_piano else 50
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     dmg,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, DemiLu))
+            ]
+
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, DemiLu))
         )
 
         return card.generate_response()

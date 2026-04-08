@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class AVGETShirt(AVGEToolCard):
 
@@ -17,7 +17,7 @@ class AVGETShirt(AVGEToolCard):
 			AVGEPacket([
 				AVGECardStatusChange(
 				StatusEffect.GOON,
-				StatusChangeType.REMOVE,
+				StatusChangeType.ERASE,
 				self.card_attached,
 				ActionTypes.ENV,
 				self,

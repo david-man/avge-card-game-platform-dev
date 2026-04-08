@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class MasonYu(AVGECharacterCard):
     _ATK1_TARGET = "mason_atk1_target"
@@ -25,11 +25,11 @@ class MasonYu(AVGECharacterCard):
 
         player = card.player
         if len(player.energy) <= 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "No energy to give!"})
 
         bench = player.cardholders[Pile.BENCH]
         if len(bench) == 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "No benched characters!"})
 
         chosen = card.env.cache.get(card, MasonYu._ATK1_TARGET, None, True)
         if chosen is None:
@@ -47,6 +47,7 @@ class MasonYu(AVGECharacterCard):
                             {
                                 "query_label": "mason_yu_atk1",
                                 "targets": bench,
+                                "display": bench
                             },
                         )
                     ]
@@ -103,33 +104,11 @@ class MasonYu(AVGECharacterCard):
             return card.generate_response()
 
         opp_cards = player.opponent.get_cards_in_play()
-        if len(opp_cards) == 1:
-            packet.append(
-                AVGECardHPChange(
-                    player.opponent.get_active_card(),
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            )
-            packet.append(
-                AVGECardHPChange(
-                    player.opponent.get_active_card(),
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            )
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
-            return card.generate_response()
 
-        chosen_1 = card.env.cache.get(card, MasonYu._ATK2_TARGET_1, None, True)
-        chosen_2 = card.env.cache.get(card, MasonYu._ATK2_TARGET_2, None, True)
-        if chosen_1 is None:
+        missing = object()
+        chosen_1 = card.env.cache.get(card, MasonYu._ATK2_TARGET_1, missing, True)
+        chosen_2 = card.env.cache.get(card, MasonYu._ATK2_TARGET_2, missing, True)
+        if chosen_1 is missing:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -144,32 +123,35 @@ class MasonYu(AVGECharacterCard):
                             {
                                 "query_label": "mason_yu_atk_2_choice",
                                 "targets": opp_cards,
+                                "display": opp_cards,
+                                "allow_none": True
                             },
                         )
                     ]
                 },
             )
-        packet.append(
-            AVGECardHPChange(
-                chosen_1,
-                50,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
+        if(chosen_1 is not None):
+            packet.append(
+                AVGECardHPChange(
+                    chosen_1,
+                    50,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_2,
+                    card,
+                )
             )
-        )
-        assert chosen_2 is not None
-        packet.append(
-            AVGECardHPChange(
-                chosen_2,
-                50,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
+        if(chosen_2 is not None):
+            packet.append(
+                AVGECardHPChange(
+                    chosen_2,
+                    50,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_2,
+                    card,
+                )
             )
-        )
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
 
         return card.generate_response()

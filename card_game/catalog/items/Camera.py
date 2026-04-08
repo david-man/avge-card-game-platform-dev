@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class Camera(AVGEItemCard):
 	_DISCARD_PICK_KEY = "camera_discard_supporter_or_stadium_pick"
@@ -16,7 +16,7 @@ class Camera(AVGEItemCard):
 	
 	@staticmethod
 	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCardCreator
+		from card_game.internal_events import InputEvent, TransferCard
 
 		player = card.player
 		target_discard = player.cardholders[Pile.DISCARD]
@@ -31,12 +31,6 @@ class Camera(AVGEItemCard):
 		if(len(eligible_cards) == 0):
 			return card.generate_response()
 
-		def _input_valid(result) -> bool:
-			if(len(result) != 1):
-				return False
-			chosen = result[0]
-			return chosen in eligible_cards
-
 		chosen = card.env.cache.get(card, Camera._DISCARD_PICK_KEY, None, one_look=True)
 		if(chosen is None):
 			return card.generate_response(
@@ -46,29 +40,31 @@ class Camera(AVGEItemCard):
 						InputEvent(
 							player,
 							[Camera._DISCARD_PICK_KEY],
-							InputType.DETERMINISTIC,
-							_input_valid,
+							InputType.SELECTION,
+							lambda res : True,
 							ActionTypes.NONCHAR,
 							card,
 							{
 								"query_label": "camera_discard_pick",
 								"targets":eligible_cards,
+								"display": list(target_discard)
 							},
 						)
 					]
 				},
 			)
-
-		card.propose(
-			AVGEPacket([
-				TransferCardCreator(
+		def gen() -> PacketType:
+			return [TransferCard(
 					chosen,
 					target_discard,
 					deck,
 					ActionTypes.NONCHAR,
 					card,
-					lambda: random.randint(0, len(deck)),
-				)
+					random.randint(0, len(deck)),
+				)]
+		card.propose(
+			AVGEPacket([
+				gen
 			], AVGEEngineID(card, ActionTypes.NONCHAR, Camera))
 		)
 

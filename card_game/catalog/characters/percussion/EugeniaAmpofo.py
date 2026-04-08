@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardHPChangeCreator, TransferCard, AVGEEnergyTransfer, EmptyEvent
+from card_game.internal_events import InputEvent, TransferCard, AVGEEnergyTransfer, EmptyEvent, AVGECardHPChange
 
 
 class EugeniaAmpofo(AVGECharacterCard):
@@ -46,8 +46,9 @@ class EugeniaAmpofo(AVGECharacterCard):
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
                             {
-                                "query_label": "eugenia-active-ability",
+                                "query_label": "eugenia_ampofo_active_ability",
                                 "targets": list(bench_chars),
+                                "display": list(bench_chars)
                             },
                         )
                     ]
@@ -56,13 +57,13 @@ class EugeniaAmpofo(AVGECharacterCard):
 
         target_card = choice
 
-        def generate_packet():
+        def generate_packet() -> PacketType:
             if len(card.player.energy) <= 0:
                 return [
                     EmptyEvent(
-                        "Tried to play Eugenia active, but no player energy was available.",
                         ActionTypes.ACTIVATE_ABILITY,
                         card,
+                        response_data = {MESSAGE_KEY: "Tried to play Eugenia active, but no player energy was available."}
                     )
                 ]
             return [
@@ -76,32 +77,34 @@ class EugeniaAmpofo(AVGECharacterCard):
             ]
 
         card.env.cache.set(card, EugeniaAmpofo._ATTACH_USED_ROUND_KEY, card.env.round_id)
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)))
         return card.generate_response()
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        packet = []
-        packet.append([
-            AVGECardHPChangeCreator(
-                lambda: card.player.opponent.get_active_card(),
+        packet : PacketType = []
+        def generate() -> PacketType:
+            return [
+            AVGECardHPChange(
+                card.player.opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.PERCUSSION,
                 ActionTypes.ATK_1,
                 card,
             )
-        ])
+        ]
+        packet.append(generate)
 
         bench_holder = card.player.cardholders[Pile.BENCH]
         active_holder = card.player.cardholders[Pile.ACTIVE]
         perc_candidates = [c for c in bench_holder if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION]
-        if len(perc_candidates) == 0:
+        if len(bench_holder) == 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EugeniaAmpofo)))
-            return card.generate_response()
-
+            return card.generate_response(data = {MESSAGE_KEY: "No bench characters to swap with! Skipping past bench swap."})
+        missing = object()
         pick = card.env.cache.get(card, EugeniaAmpofo._BENCH_SWAP_KEY, None, True)
-        if pick is None:
+        if pick is missing:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -114,8 +117,9 @@ class EugeniaAmpofo(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "EugeniaAmpofo-benched-percussion-swap",
+                                "query_label": "eugenia_ampofo_benched_percussion_swap",
                                 "targets": perc_candidates,
+                                "display": list(bench_holder),
                                 "allow_none": True,
                             },
                         )

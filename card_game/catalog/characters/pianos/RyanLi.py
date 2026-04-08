@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -29,12 +28,6 @@ class RyanLiMaidDamageModifier(AVGEModifier):
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "RyanLi Maid Damage Modifier"
 
     def modify(self, args=None):
         if args is None:
@@ -65,20 +58,28 @@ class RyanLi(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         last_round = card.env.cache.get(card, RyanLi._LAST_ATK1_ROUND_KEY, None, True)
-        if last_round is None or last_round < card.env.round_id - 1:
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChangeCreator(
-                        lambda: card.player.opponent.get_active_card(),
+        if last_round is not None and last_round > card.env.round_id - 2:
+            def generate_packet() -> PacketType:
+                active = card.player.opponent.get_active_card()
+                if not isinstance(active, AVGECharacterCard):
+                    return []
+                return [
+                    AVGECardHPChange(
+                        active,
                         40,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PIANO,
                         ActionTypes.ATK_1,
                         card,
                     )
+                ]
+
+            card.propose(
+                AVGEPacket([
+                    generate_packet
                 ], AVGEEngineID(card, ActionTypes.ATK_1, RyanLi))
             )
 

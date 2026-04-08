@@ -8,7 +8,7 @@ class EngineQueue(Generic[T]):
     def __init__(self):
         self.main_queue : list[tuple[int, int, T]]= []
         self.buffered_queue : list[tuple[int, T]] = []
-        self.queue_status : QueueStatus = QueueStatus.OPEN
+        self.queue_status = QueueStatus.OPEN
         self.event_counter : int = 0
     
     def propose(self, item : T, priority : int = 0):

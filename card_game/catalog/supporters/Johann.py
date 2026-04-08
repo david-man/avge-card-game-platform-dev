@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class Johann(AVGESupporterCard):
 	_SUPPORTER_PICK_KEY = "johann_discard_supporter_pick"
@@ -29,83 +29,105 @@ class Johann(AVGESupporterCard):
 		stadiums_in_discard = [c for c in discard if isinstance(c, AVGEStadiumCard)]
 
 		packet = []
-		if(len(supporters_in_discard) > 0 or len(items_or_tools_in_discard) > 0 or len(stadiums_in_discard) > 0):
-			
-			def _input_valid(result) -> bool:
-				if(len(result) != 3):
-					return False
-
-				supporter_pick = result[0]
-				item_or_tool_pick = result[1]
-				stadium_pick = result[2]
-
-				if(supporter_pick is not None and supporter_pick not in supporters_in_discard):
-					return False
-				if(item_or_tool_pick is not None and item_or_tool_pick not in items_or_tools_in_discard):
-					return False
-				if(stadium_pick is not None and stadium_pick not in stadiums_in_discard):
-					return False
-
-				return True
-
-			missing = object()
-			supporter_pick = card.env.cache.get(card, Johann._SUPPORTER_PICK_KEY, missing, one_look=True)
-			item_or_tool_pick = card.env.cache.get(card, Johann._ITEM_OR_TOOL_PICK_KEY, missing, one_look=True)
-			stadium_pick = card.env.cache.get(card, Johann._STADIUM_PICK_KEY, missing, one_look=True)
-
-			if(supporter_pick is missing):
-				return card.generate_interrupt([
-							InputEvent(
-								player,
-								[
-									Johann._SUPPORTER_PICK_KEY,
-									Johann._ITEM_OR_TOOL_PICK_KEY,
-									Johann._STADIUM_PICK_KEY,
-								],
-								InputType.DETERMINISTIC,
-								_input_valid,
-								ActionTypes.NONCHAR,
-								card,
-								{
-									"query_label": "johann_3card_query",
-									"supporters": supporters_in_discard,
-									"items": items_or_tools_in_discard,
-									"stadiums": stadiums_in_discard,
-								},
-							)
-						])
-
-			if(supporter_pick is not None):
-				packet.append(
-					TransferCard(
-						supporter_pick,
-						discard,
-						hand,
+		missing = object()
+		supporter_pick = card.env.cache.get(card, Johann._SUPPORTER_PICK_KEY, missing)
+		item_or_tool_pick = card.env.cache.get(card, Johann._ITEM_OR_TOOL_PICK_KEY, missing)
+		stadium_pick = card.env.cache.get(card, Johann._STADIUM_PICK_KEY, missing, one_look=True)
+		if(supporter_pick is missing):
+			return card.generate_response(ResponseType.INTERRUPT,
+					{INTERRUPT_KEY:[
+						[
+					InputEvent(
+						player,
+						[Johann._SUPPORTER_PICK_KEY],
+						InputType.SELECTION,
+						lambda res : True,
 						ActionTypes.NONCHAR,
 						card,
+						{
+							"query_label": "johann_3card_query_supporter",
+							"target": supporters_in_discard,
+							"display": list(discard),
+							"allow_none": True,
+						},
 					)
-				)
-			if(item_or_tool_pick is not None):
-				packet.append(
-					TransferCard(
-						item_or_tool_pick,
-						discard,
-						hand,
+						]
+					]})
+		if(item_or_tool_pick is missing):
+			return card.generate_response(ResponseType.INTERRUPT,
+					{INTERRUPT_KEY:[
+						[
+					InputEvent(
+						player,
+						[Johann._ITEM_OR_TOOL_PICK_KEY],
+						InputType.SELECTION,
+						lambda res : True,
 						ActionTypes.NONCHAR,
 						card,
+						{
+							"query_label": "johann_3card_query_item",
+							"target": items_or_tools_in_discard,
+							"display": list(discard),
+							"allow_none": True,
+						},
 					)
-				)
-			if(stadium_pick is not None):
-				packet.append(
-					TransferCard(
-						stadium_pick,
-						discard,
-						hand,
+						]
+					]})
+		
+		if(stadium_pick is missing):
+			return card.generate_response(ResponseType.INTERRUPT,
+					{INTERRUPT_KEY:[
+						[
+					InputEvent(
+						player,
+						[Johann._STADIUM_PICK_KEY],
+						InputType.SELECTION,
+						lambda res : True,
 						ActionTypes.NONCHAR,
 						card,
+						{
+							"query_label": "johann_3card_query_stadium",
+							"target": stadiums_in_discard,
+							"display": list(discard),
+							"allow_none": True,
+						},
 					)
+						]
+					]})
+
+		if(supporter_pick is not None):
+			packet.append(
+				TransferCard(
+					supporter_pick,
+					discard,
+					hand,
+					ActionTypes.NONCHAR,
+					card,
 				)
+			)
+		if(item_or_tool_pick is not None):
+			packet.append(
+				TransferCard(
+					item_or_tool_pick,
+					discard,
+					hand,
+					ActionTypes.NONCHAR,
+					card,
+				)
+			)
+		if(stadium_pick is not None):
+			packet.append(
+				TransferCard(
+					stadium_pick,
+					discard,
+					hand,
+					ActionTypes.NONCHAR,
+					card,
+				)
+			)
 
 		packet.append(TurnEnd(card.env, ActionTypes.NONCHAR, card))
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Johann)))
+		card.env.cache.delete(card, Johann._ITEM_OR_TOOL_PICK_KEY)
+		card.env.cache.delete(card, Johann._SUPPORTER_PICK_KEY)
 		return card.generate_response(ResponseType.CORE)

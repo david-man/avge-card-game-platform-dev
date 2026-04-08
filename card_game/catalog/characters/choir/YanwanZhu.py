@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -40,7 +39,7 @@ class _YanwanStartReactor(AVGEReactor):
         return "YanwanZhu Start Reactor"
 
     def react(self, args=None):
-        from card_game.internal_events import InputEvent, TransferCardCreator
+        from card_game.internal_events import InputEvent, TransferCard
 
         owner = self.owner_card
         env = owner.env
@@ -67,9 +66,11 @@ class _YanwanStartReactor(AVGEReactor):
             )
 
         if yn:
+            def generate() -> PacketType:
+                return [TransferCard(deck.peek(), deck, hand, ActionTypes.PASSIVE, owner)]
             self.propose(
                 AVGEPacket(
-                    [TransferCardCreator(lambda: deck.peek(), deck, hand, ActionTypes.PASSIVE, owner)],
+                    [generate],
                     AVGEEngineID(owner, ActionTypes.PASSIVE, YanwanZhu),
                 )
             )
@@ -95,10 +96,9 @@ class YanwanZhu(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-
-        card.propose(
-            AVGEPacket(
-                lambda: [
+        def gen() -> PacketType:
+            p : PacketType = []
+            p += [
                     AVGECardHPChange(
                         cast(AVGECharacterCard, c),
                         10,
@@ -116,7 +116,11 @@ class YanwanZhu(AVGECharacterCard):
                         ActionTypes.ATK_1,
                         card,
                     )
-                ],
+                ]
+            return p
+        card.propose(
+            AVGEPacket(
+                [gen],
                 AVGEEngineID(card, ActionTypes.ATK_1, YanwanZhu),
             )
         )

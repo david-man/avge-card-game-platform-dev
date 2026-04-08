@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -9,7 +9,7 @@ from card_game.engine.engine_constants import EngineGroup
 class MaidStatusDamageShieldModifier(AVGEModifier):
 	def __init__(self):
 		super().__init__(
-			identifier=(None, ActionTypes.ENV),
+			identifier=AVGEEngineID(None, ActionTypes.ENV, None),
 			group=EngineGroup.INTERNAL_1,
 			internal = True
 		)
@@ -45,6 +45,8 @@ class MaidStatusDamageShieldModifier(AVGEModifier):
 		return "Maid Status Damage Shield"
 
 	def modify(self, args={}):
+		from card_game.internal_events import AVGECardHPChange
 		event = self.attached_event
+		assert(isinstance(event, AVGECardHPChange))
 		event.modify_magnitude(-10)
 		return self.generate_response()

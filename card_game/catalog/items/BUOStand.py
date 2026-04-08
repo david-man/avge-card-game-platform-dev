@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -45,7 +44,10 @@ class BUOStandNextAttackModifier(AVGEModifier):
 	def modify(self, args=None):
 		event = self.attached_event
 		assert isinstance(event, AVGECardHPChange)
-		event.modify_magnitude(20)
+		dmg = 20
+		if(isinstance(event.caller_card, AVGECharacterCard) and len(event.caller_card.statuses_attached[StatusEffect.GOON]) > 0):
+			dmg = 30
+		event.modify_magnitude(dmg)
 		return self.generate_response()
 
 class BUOStand(AVGEItemCard):
@@ -60,7 +62,7 @@ class BUOStand(AVGEItemCard):
 
 		active = card.player.get_active_card()
 		if(len(active.energy) == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "no energy on active character -- cannot play BUOStand"})
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "no energy on active character -- cannot play BUOStand"})
 		card.add_listener(BUOStandNextAttackModifier(card, card.env.round_id))
 		card.propose(
 			AVGEPacket([

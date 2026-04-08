@@ -1,6 +1,6 @@
 from __future__ import annotations
 from . import event_listener
-from typing import TYPE_CHECKING, Callable, Sequence, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar, cast
 from card_game.constants import *
 from . import engine_constants
 
@@ -9,43 +9,26 @@ if TYPE_CHECKING:
     from . import constrainer
 
 EV = TypeVar("EV", bound="Event")
+
 class Packet(Generic[EV]):
-    def __init__(self, element : Sequence[EV] | Sequence[DeferredEvent[EV]] | Sequence[EV|DeferredEvent[EV]] | Callable[[], Sequence[EV|DeferredEvent[EV]]]):
-        self.element : Sequence[EV | DeferredEvent[EV]] | Callable[[], Sequence[EV|DeferredEvent[EV]]]
-        if(not isinstance(element, Sequence) and not isinstance(element, Callable)):
-            self.element = [element]
-        elif(isinstance(element, Callable)):
-            self.element = element
-        else:
-            self.element = cast(list[EV | DeferredEvent[EV]], element)
-    def insert(self, i : int, e : EV | DeferredEvent[EV] | list[DeferredEvent[EV] | EV]):
+    type Generator = Callable[[], list[EV | Generator]]
+    def __init__(self, element : list[EV | Generator]):
+        self.element : list[EV | Packet.Generator] = element
+    def insert(self, i : int, e : list[EV | Generator]):
         if(isinstance(self.element, list)):
-            if(not isinstance(e, list)):
-                self.element.insert(i, e)
-            else:
-                self.element[i:i] = e
+            self.element[i:i] = e
         else:
             raise Exception("Cannot insert into packet when packet not assembled")
-    def append(self, e : EV | DeferredEvent[EV] | list[EV | DeferredEvent[EV]]):
+    def append(self, e : list[EV | Generator]):
         if(isinstance(self.element ,list)):
-            if(isinstance(e, list)):
-                self.element += e
-            else:
-                self.element.append(e)
+            self.element += e
         else:
             raise Exception("Cannot insert into packet when packet not assembled")
     def extend(self, p : Packet[EV]):
-        if(isinstance(self.element,list) and isinstance(p.element, list)):
-            self.element.extend(cast(list[DeferredEvent[EV] | EV], p.element))
+        if(isinstance(self.element,list)):
+            self.element.extend(p.element)
         else:
             raise Exception("Cannot extend non-assembled packet assemblers")
-    def assemble(self):
-        #Assembles the packet into a list of events
-        if(callable(self.element)):
-            called = self.element()
-            if(not isinstance(called, list)):
-                raise Exception("Packet assembler returned a non-assembled packet")
-            self.element = called
     def __len__(self):
         if(not isinstance(self.element, list)):
             raise Exception("Tried to get length when packet not assembled yet")
@@ -57,21 +40,14 @@ class Packet(Generic[EV]):
             if(len(self.element) == 0):
                 return None
             else:
-                next_item = self.element.pop(0)
-                if(isinstance(next_item, DeferredEvent)):
-                    return cast(EV, next_item._assemble())
-                return cast(EV, next_item)
+                x = self.element.pop(0)
+                if(isinstance(x, Callable)):
+                    next_seq = x()
+                    self.element = next_seq + self.element
+                    return self.get_next_event()
+                else:
+                    return x
 
-class DeferredEvent(Generic[EV]):
-    def __init__(self, cls : type[EV], **kwargs):
-        self.kwargs = kwargs
-        self.cls = cls
-    def _assemble(self) -> EV:
-        resolved_kwargs = {
-            k: (v() if isinstance(v, Callable) else v)
-            for k, v in self.kwargs.items()
-        }
-        return self.cls(**resolved_kwargs)
 class Event():
     def __init__(self, **kwargs):
         self.engine : engine.Engine | None = None
@@ -89,9 +65,8 @@ class Event():
         self._external_listeners_attached = False
 
         self._kwargs = kwargs
-    def package(self):
-        #function that actually packages the event into an announcement
-        raise NotImplementedError()
+        self.fast_forward = False
+        self.skip_forward = False
     def _constrain_internal(self, constraint : constrainer.Constraint):
         #checks the internal event listeners with a constrainer
         for group in self.event_listener_groups.values():
@@ -160,9 +135,17 @@ class Event():
     def propose(self, p : Packet, priority : int = 0):
         assert self.engine is not None
         self.engine._propose(p, priority)
+    def _ff(self):#forces this event to fast forward on the next forward call
+        self.fast_forward = True
+    def _skip(self):#forces this event to return a skip on the next call
+        self.skip_forward = True
     def forward(self, constraints : list[constrainer.Constraint], args :Data | None = None) ->Response:
         if(args is None):
             args = {}
+        if(self.fast_forward):
+            return Response(self, ResponseType.FAST_FORWARD, {})
+        if(self.skip_forward):
+            return Response(self, ResponseType.SKIP, {})
         if(self.group_on.value == engine_constants.MAX_GROUP
            and len(self.event_listener_groups[self.group_on]) == 0):
             #case 1: there's nothing left to run

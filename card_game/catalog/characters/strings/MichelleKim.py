@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
@@ -22,7 +22,7 @@ class MichelleKim(AVGECharacterCard):
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, PlayNonCharacterCard, TransferCard
 
-        packet = [] + [
+        packet : PacketType = [] + [
             AVGECardHPChange(
                 card.player.opponent.get_active_card(),
                 10,
@@ -73,13 +73,7 @@ class MichelleKim(AVGECharacterCard):
 
             def update_status(self):
                 return
-
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "MichelleKim Miku Play Reactor"
-
+            
             def react(self, args=None):
                 if args is None:
                     args = {}
@@ -92,21 +86,29 @@ class MichelleKim(AVGECharacterCard):
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         last_miku_round = card.env.cache.get(card, MichelleKim._MIKU_PLAYED_ROUND_KEY, None, True)
         dmg = 80 if (last_miku_round == card.env.round_id) else 30
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if not isinstance(active, AVGECharacterCard):
+                return []
+            return [
+                AVGECardHPChange(
+                    active,
                     dmg,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
                     ActionTypes.ATK_2,
                     card,
                 )
+            ]
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
             ], AVGEEngineID(card, ActionTypes.ATK_2, MichelleKim))
         )
 

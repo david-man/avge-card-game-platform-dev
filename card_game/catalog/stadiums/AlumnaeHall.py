@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-
 
 class AlumnaeHallDrawPunishReactor(AVGEReactor):
 	def __init__(self, owner_card: AVGEStadiumCard):
@@ -30,12 +29,6 @@ class AlumnaeHallDrawPunishReactor(AVGEReactor):
 	def update_status(self):
 		if(not self.owner_card._is_active_stadium()):
 			self.invalidate()
-
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "AlumnaeHall Reactor"
 
 	def react(self, args=None):
 		from card_game.internal_events import AVGECardHPChange, TransferCard

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
+from card_game.constants import ActionTypes
 
 class GabrielChen(AVGECharacterCard):
     _COIN_KEY_0 = "gabrielchen_coin_0"
@@ -22,7 +23,7 @@ class GabrielChen(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
+        from card_game.internal_events import InputEvent, AVGECardHPChange
 
         if card.hp != 60:
             return card.generate_response()
@@ -43,15 +44,18 @@ class GabrielChen(AVGECharacterCard):
                             {
                                 "query_label": "gabe_chen_ykwis",
                                 "targets": card.player.opponent.get_cards_in_play(),
+                                "display": card.player.opponent.get_cards_in_play()
                             },
                         )
                     ]
                 },
             )
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
+        def generate_packet() -> PacketType:
+            if not isinstance(chosen, AVGECharacterCard):
+                return []
+            return [
+                AVGECardHPChange(
                     chosen,
                     70,
                     AVGEAttributeModifier.SUBSTRACTIVE,
@@ -59,14 +63,15 @@ class GabrielChen(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, GabrielChen))
-        )
+            ]
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, GabrielChen)))
 
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
+        from card_game.internal_events import InputEvent, AVGECardHPChange
 
         r0 = card.env.cache.get(card, GabrielChen._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, GabrielChen._COIN_KEY_1, None, True)
@@ -94,9 +99,6 @@ class GabrielChen(AVGECharacterCard):
 
         mode = card.env.cache.get(card, GabrielChen._ATK2_MODE_KEY, None, True)
         if mode is None:
-            def _mode_valid(res) -> bool:
-                return len(res) == 1 and res[0] in ("three60", "two70")
-
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -104,8 +106,8 @@ class GabrielChen(AVGECharacterCard):
                         InputEvent(
                             card.player,
                             [GabrielChen._ATK2_MODE_KEY],
-                            InputType.DETERMINISTIC,
-                            _mode_valid,
+                            InputType.BINARY,
+                            lambda r : True,
                             ActionTypes.ATK_2,
                             card,
                             {"query_label": "gabe_harmonics_mode_choice"},
@@ -114,7 +116,7 @@ class GabrielChen(AVGECharacterCard):
                 },
             )
 
-        req_count = 3 if mode == "three60" else 2
+        req_count = 3 if mode else 2
         count = min(req_count, len(card.player.opponent.get_cards_in_play()))
         keys = [GabrielChen._ATK2_SELECTION_BASE_KEY + str(i) for i in range(count)]
         chosen = [card.env.cache.get(card, key, None, True) for key in keys]
@@ -133,19 +135,19 @@ class GabrielChen(AVGECharacterCard):
                             {
                                 "query_label": "gabe_harmonics",
                                 "targets": card.player.opponent.get_cards_in_play(),
-                                "allow_repeats": False,
+                                "display": card.player.opponent.get_cards_in_play()
                             },
                         )
                     ]
                 },
             )
 
-        dmg_amt = 60 if mode == "three60" else 70
+        dmg_amt = 60 if mode else 70
         packet = []
         for tgt in chosen:
             assert isinstance(tgt, AVGECharacterCard)
             packet.append(
-                AVGECardHPChangeCreator(
+                AVGECardHPChange(
                     tgt,
                     dmg_amt,
                     AVGEAttributeModifier.SUBSTRACTIVE,

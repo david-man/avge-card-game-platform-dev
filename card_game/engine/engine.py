@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Generic, TypeVar, cast
 from .engine_queue import EngineQueue
-from .event import Event, DeferredEvent, Packet
+from .event import Event, Packet
 from .engine_constants import *
 from card_game.constants import Data, Response, ResponseType, INTERRUPT_KEY
 
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 EV = TypeVar("EV", bound=Event)
 class Engine(Generic[EV]):
+    type Gen = Callable[[], list[EV | Gen]]
     def __init__(self):
         self._constraints : list[constrainer.Constraint[EV]] = []#list of active constraints
         self._constraints_backup : list[constrainer.Constraint[EV]] = []
@@ -67,6 +68,10 @@ class Engine(Generic[EV]):
         #proposes an addition in the standard fashion
         self._queue.propose(new_packet, priority)
     
+    def _ff(self) -> None:#marks the current event to be FF'd on the next forward call
+        if(not self.event_running is None):
+            self.event_running._ff()
+        
     def forward(self, args : Data | None = None) -> Response:
         if(args is None):
             args = {}
@@ -75,7 +80,6 @@ class Engine(Generic[EV]):
         elif(self.event_running is None and len(self.packet_running) == 0 and self._queue.queue_len() > 0):
             #prepares a new packet from the current queue to run
             self.packet_running = self._queue.pop()
-            self.packet_running.assemble()
             #backup all constraints
             self._constraints_backup = []
             for c in self._constraints:
@@ -113,14 +117,11 @@ class Engine(Generic[EV]):
                 return response
             elif(response.response_type == ResponseType.INTERRUPT):
                 #place the interrupted event back into the packet
-                self.packet_running.insert(0, self.event_running)
+                self.packet_running.insert(0, [self.event_running])
                 #put the requested events in front of the existing packet
-                updated_packet = Packet([])
-                requested_addition : list[Event | DeferredEvent] = response.data.get(INTERRUPT_KEY, [])
-                for e in requested_addition:
-                    if(not isinstance(e, Event) or isinstance(e, DeferredEvent)):
-                        raise Exception("Attempted to update packet with a non-event")
-                    updated_packet.append(e)
+                
+                requested_addition : list[EV | Engine.Gen] = response.data.get(INTERRUPT_KEY, [])
+                updated_packet = Packet(requested_addition)
                 updated_packet.extend(self.packet_running)
                 self.packet_running = updated_packet
                 self.event_running = None
@@ -132,8 +133,8 @@ class Engine(Generic[EV]):
                     #if the entire packet is done
                     #actualize ALL proposed events that happened during the packet
                     self._queue.flush_buffer()
-                    #open the queue
-                    self._queue.set_status(QueueStatus.OPEN)
+                    #rebuffer the queue immediately
+                    self._queue.set_status(QueueStatus.BUFFERED)
                     #probe all constraints to ensure that the only ones left are the ones still active
                     self._probe_constraints()
                     #probe all listeners to ensure that the only ones left are the ones still active

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import *
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import TransferCard
@@ -62,11 +62,9 @@ class HappyRuthJara(AVGECharacterCard):
                 choir_count += 1
 
         if choir_count <= 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "No choir in play!"})
 
         # build list of opponent character targets (can be chosen multiple times)
-
-        # if only one opponent target, apply damage choir_count times to that target
         packet = []
  
         # multiple opponent choices: ask player to pick `choir_count` targets (allow repeats)
@@ -86,6 +84,7 @@ class HappyRuthJara(AVGECharacterCard):
                             card,
                             {"query_label": "happy_atk1_targets",
                             "targets": opponent.get_cards_in_play(),
+                            "display": opponent.get_cards_in_play(),
                             "allow_repeats": True},
                         )
                     ]

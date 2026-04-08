@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 
@@ -28,12 +28,6 @@ class FionaLi(AVGECharacterCard):
             def update_status(self):
                 return
 
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "FionaLi bench MAID reactor"
-
             def event_match(self, event):
                 if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.BENCH:
                     return False
@@ -55,7 +49,7 @@ class FionaLi(AVGECharacterCard):
                     if isinstance(event.card, AVGECharacterCard):
                         self.owner_card.propose(
                             AVGEPacket([
-                                AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.REMOVE, event.card, ActionTypes.NONCHAR, self.owner_card)
+                                AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.ERASE, event.card, ActionTypes.NONCHAR, self.owner_card)
                             ], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FionaLi))
                         )
                         return self.generate_response()
@@ -85,19 +79,23 @@ class FionaLi(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if not isinstance(active, AVGECharacterCard):
+                return []
+            return [
+                AVGECardHPChange(
+                    active,
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
                     ActionTypes.ATK_1,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, FionaLi))
-        )
+            ]
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, FionaLi)))
 
         return card.generate_response()

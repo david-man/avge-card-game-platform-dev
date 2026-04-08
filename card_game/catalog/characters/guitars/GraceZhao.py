@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.catalog.tools import AVGEShowcaseSticker, AVGETShirt
@@ -55,7 +54,6 @@ class _GraceTurnEndReactor(AVGEReactor):
                 if isinstance(t, (AVGEShowcaseSticker, AVGETShirt)):
                     candidates.append(c)
                     break
-
         selected_card = self.owner_card.env.cache.get(self.owner_card, GraceZhao._TARGET_KEY, None, True)
         if selected_card is None:
             return self.owner_card.generate_response(
@@ -70,8 +68,9 @@ class _GraceTurnEndReactor(AVGEReactor):
                             ActionTypes.PASSIVE,
                             self.owner_card,
                             {
-                                "query_label": "grace-choice",
+                                "query_label": "grace_zhao_choice",
                                 "targets": candidates,
+                                "display": opponent.get_cards_in_play()
                             },
                         )
                     ]
@@ -111,19 +110,20 @@ class GraceZhao(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, AVGECardHPChange
-
-        packet = []
-        packet.append([
-            AVGECardHPChangeCreator(
-                lambda: card.player.opponent.get_active_card(),
-                50,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.GUITAR,
-                ActionTypes.ATK_1,
-                card,
-            )
-        ])
+        from card_game.internal_events import AVGECardHPChange, AVGECardHPChange
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    50,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.GUITAR,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ]
+        packet : PacketType = []
+        packet.append(gen)
 
         for c in card.player.cardholders[Pile.BENCH]:
             if isinstance(c, AVGECharacterCard) and c.card_type == CardType.GUITAR:

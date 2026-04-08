@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from typing import cast
 
@@ -19,22 +19,17 @@ class AndreaCR(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, ReorderCardholder
+        from card_game.internal_events import InputEvent, ReorderCardholder, EmptyEvent
 
         opponent_deck = card.player.opponent.cardholders[Pile.DECK]
         if len(opponent_deck) == 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "Opponent deck has nothing in it!"})
 
         consider_count = min(3, len(opponent_deck))
         top_cards = list(opponent_deck.peek_n(consider_count))
         keys = [AndreaCR._REORDER_BASE_KEY + str(i) for i in range(consider_count)]
         chosen_order = [card.env.cache.get(card, key, None, True) for key in keys]
         if chosen_order[0] is None:
-            def _reorder_valid(result) -> bool:
-                if len(result) != consider_count:
-                    return False
-                return len(set(result)) == consider_count and all(c in top_cards for c in result)
-
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -42,13 +37,14 @@ class AndreaCR(AVGECharacterCard):
                         InputEvent(
                             card.player,
                             keys,
-                            InputType.DETERMINISTIC,
-                            _reorder_valid,
+                            InputType.SELECTION,
+                            lambda res : True,
                             ActionTypes.ATK_1,
                             card,
                             {
                                 "query_label": "andrea_c_r_atk1_reorder",
-                                "top_cards": top_cards,
+                                "target": top_cards,
+                                "display": top_cards
                             },
                         )
                     ]
@@ -85,25 +81,26 @@ class AndreaCR(AVGECharacterCard):
                             {
                                 "query_label": "andrea_c_r_snap_pizz",
                                 "targets": opponent.get_cards_in_play(),
+                                "display": opponent.get_cards_in_play()
                             },
                         )
                     ]
                 },
             )
-
-        packet = [] + [
-            AVGECardHPChange(
-                opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
-            )
-        ]
-        assert isinstance(chosen_target, AVGECharacterCard)
-        for token in list(chosen_target.energy)[:min(2, len(chosen_target.energy))]:
-            packet.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card))
-
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ]
+        assert isinstance(chosen_target, AVGECharacterCard) 
+        def gen_2() -> PacketType:
+            return [AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card) for token in list(chosen_target.energy)[:min(2, len(chosen_target.energy))]]
+        packet : PacketType = [gen, gen_2]
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, AndreaCR)))
         return card.generate_response()

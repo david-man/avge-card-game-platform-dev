@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEConstrainer import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAbstractEventListener, AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import *
 import math
@@ -29,9 +27,6 @@ class LukeXuPassiveConstraint(AVGEConstraint):
     def make_announcement(self) -> bool:
         return True
 
-    def package(self):
-        return "LukeXu Passive Constraint"
-
 
 class LukeNextAttackHalvedModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
@@ -56,13 +51,7 @@ class LukeNextAttackHalvedModifier(AVGEModifier):
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "LukeXu Next Attack Halved Modifier"
-
+    
     def on_packet_completion(self):
         self.invalidate()
 
@@ -93,18 +82,25 @@ class LukeXu(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+
+            return [
+                AVGECardHPChange(
+                    active,
                     20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
                     card,
                 )
+            ]
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
             ], AVGEEngineID(card, ActionTypes.ATK_1, LukeXu))
         )
 

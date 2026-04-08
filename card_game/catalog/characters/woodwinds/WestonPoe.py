@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -52,12 +52,6 @@ class WestonPoe(AVGECharacterCard):
                 if owner_card.env is None:
                     self.invalidate()
 
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "WestonPoe Passive Reactor"
-
             def react(self, args=None):
                 if args is None:
                     args = {}
@@ -87,8 +81,8 @@ class WestonPoe(AVGECharacterCard):
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
+        def gen() -> PacketType:
+            return [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
@@ -105,6 +99,8 @@ class WestonPoe(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, WestonPoe))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, WestonPoe))
         )
         return card.generate_response()

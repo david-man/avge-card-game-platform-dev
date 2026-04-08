@@ -3,8 +3,7 @@ from typing import Tuple, TYPE_CHECKING, TypeVar, Generic
 
 if TYPE_CHECKING:
     from .event_listener import AbstractEventListener
-    from .engine import Engine
-    from .event import Event, DeferredEvent
+    from .event import Event
 EV = TypeVar('EV', bound='Event')
 class Constraint(Generic[EV]):
     def __init__(self):
@@ -30,7 +29,5 @@ class Constraint(Generic[EV]):
         self._invalidated = True
     def _should_attach(self, obj : AbstractEventListener[EV] | Constraint[EV]):
         return (not self._invalidated) and (self.match(obj))
-    def make_announcement(self) -> bool:
-        raise NotImplementedError()
     def package(self):
         raise NotImplementedError()

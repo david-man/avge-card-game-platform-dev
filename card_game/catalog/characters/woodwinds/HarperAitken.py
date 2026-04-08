@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class HarperAitken(AVGECharacterCard):
     _TARGET_1_SELECTION_KEY = "harperaitken_target_1_selection"
@@ -20,9 +20,7 @@ class HarperAitken(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-
-        card.propose(
-            AVGEPacket([
+        packet : PacketType = [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
@@ -39,7 +37,9 @@ class HarperAitken(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, HarperAitken))
+            ]
+        card.propose(
+            AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HarperAitken))
         )
         return card.generate_response()
 
@@ -49,21 +49,6 @@ class HarperAitken(AVGECharacterCard):
 
         opponent = card.player.opponent
         chars_in_play = opponent.get_cards_in_play()
-
-        if len(chars_in_play) <= 2:
-            packet = [
-                AVGECardHPChange(
-                    target,
-                    80,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-                for target in chars_in_play + [card]
-            ]
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, HarperAitken)))
-            return card.generate_response()
 
         target_1 = card.env.cache.get(card, HarperAitken._TARGET_1_SELECTION_KEY, None, True)
         target_2 = card.env.cache.get(card, HarperAitken._TARGET_2_SELECTION_KEY, None, True)
@@ -82,13 +67,15 @@ class HarperAitken(AVGECharacterCard):
                             {
                                 "query_label": "harperaitken_wipeout",
                                 "targets": chars_in_play,
+                                "display": chars_in_play,
+                                "allow_repeat": True
                             },
                         )
                     ]
                 },
             )
 
-        packet = [
+        packet : PacketType = [
             AVGECardHPChange(
                 target,
                 80,

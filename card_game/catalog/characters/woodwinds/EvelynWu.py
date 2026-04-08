@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class EvelynWu(AVGECharacterCard):
     _LAST_ATK1_ROUND_KEY = "evelyn_last_atk1_round"
@@ -19,7 +19,7 @@ class EvelynWu(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         last_round = card.env.cache.get(card, EvelynWu._LAST_ATK1_ROUND_KEY, None, True)
         atks_before = card.env.cache.get(card, EvelynWu._CONSECUTIVE_USES, 0, True)
@@ -33,39 +33,47 @@ class EvelynWu(AVGECharacterCard):
         card.env.cache.set(card, EvelynWu._LAST_ATK1_ROUND_KEY, card.env.round_id)
         card.env.cache.set(card, EvelynWu._CONSECUTIVE_USES, atks_before + 1)
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    total_damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, EvelynWu))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        total_damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EvelynWu)))
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
         opponent_bench = card.player.opponent.cardholders[Pile.BENCH]
         total_damage = sum(max(0, bench_card.max_hp - bench_card.hp) for bench_card in opponent_bench if isinstance(bench_card, AVGECharacterCard))
         if total_damage <= 0:
             return card.generate_response()
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
-                    total_damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, EvelynWu))
-        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                return [
+                    AVGECardHPChange(
+                        active,
+                        total_damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_2,
+                        card,
+                    )
+                ]
+            return []
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, EvelynWu)))
         return card.generate_response()

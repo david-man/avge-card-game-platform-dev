@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from typing import cast
@@ -104,5 +103,5 @@ class DanielYang(AVGECharacterCard):
                     )
             return packet
 
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, DanielYang)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, DanielYang)))
         return card.generate_response()

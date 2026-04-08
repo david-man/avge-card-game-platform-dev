@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
-
+from card_game.constants import ActionTypes
 class PrintedScore(AVGEItemCard):
 	_OPPONENT_HAND_DISCARD_KEY = "printedscore_opponent_hand_discard"
 
@@ -14,27 +13,21 @@ class PrintedScore(AVGEItemCard):
 	
 	@staticmethod
 	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCard
+		from card_game.internal_events import InputEvent, TransferCard, EmptyEvent
 		env = card.env
 		if(env.round_id == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "Cannot play PrintedScore on the first turn."})
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot play PrintedScore on the first turn."})
 
 		opponent = card.player.opponent
 		opponent_hand = opponent.cardholders[Pile.HAND]
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
 
 		if(len(opponent_hand) == 0):
-			return card.generate_response(ResponseType.SKIP, {"msg": "opponent has no cards in hand"})
-
-		def _input_valid(result) -> bool:
-			if(len(result) != 1):
-				return False
-			chosen = result[0]
-			return isinstance(chosen, AVGECard) and chosen in opponent_hand
-
-		missing = object()
-		chosen = env.cache.get(card, PrintedScore._OPPONENT_HAND_DISCARD_KEY, missing, one_look=True)
-		if(chosen is missing):
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "opponent has no cards in hand"})
+		
+		
+		chosen = env.cache.get(card, PrintedScore._OPPONENT_HAND_DISCARD_KEY, None, one_look=True)
+		if(chosen is None):
 			return card.generate_response(
 				ResponseType.INTERRUPT,
 				{
@@ -42,13 +35,14 @@ class PrintedScore(AVGEItemCard):
 						InputEvent(
 							opponent,
 							[PrintedScore._OPPONENT_HAND_DISCARD_KEY],
-							InputType.DETERMINISTIC,
-							_input_valid,
+							InputType.SELECTION,
+							lambda res : True,
 							ActionTypes.NONCHAR,
 							card,
 							{
 								"query_label": "printed_score_discard",
-								"targets": opponent_hand
+								"targets": opponent_hand,
+								"display": opponent_hand,
 							},
 						)
 					]
@@ -57,6 +51,14 @@ class PrintedScore(AVGEItemCard):
 		assert(isinstance(chosen, AVGECard))
 		card.propose(
 			AVGEPacket([
+				EmptyEvent(
+					ActionTypes.NONCHAR,
+					card,
+					response_data={
+						REVEAL_KEY: list(opponent_hand)
+					}
+				),
+
 				TransferCard(
 					chosen,
 					opponent_hand,

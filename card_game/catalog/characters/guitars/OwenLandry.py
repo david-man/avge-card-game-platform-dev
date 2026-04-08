@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.constants import *
+from card_game.avge_abstracts import *
+from card_game.constants import ActionTypes
 
 
 class OwenLandry(AVGECharacterCard):
@@ -18,7 +18,8 @@ class OwenLandry(AVGECharacterCard):
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
-        def generate_packet():
+        def generate_packet() -> PacketType:
+            packet : PacketType  = []
             packet = [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
@@ -44,14 +45,14 @@ class OwenLandry(AVGECharacterCard):
                     )
             return packet
 
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, OwenLandry)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, OwenLandry)))
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer
 
-        def generate_packet():
+        def generate_packet() -> PacketType:
             packet = []
             for token in list(card.energy):
                 packet.append(AVGEEnergyTransfer(token, card, card.player, ActionTypes.ATK_2, card))
@@ -70,5 +71,5 @@ class OwenLandry(AVGECharacterCard):
                 )
             return packet
 
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_2, OwenLandry)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, OwenLandry)))
         return card.generate_response()

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class Lio(AVGESupporterCard):
 	def __init__(self, unique_id):
@@ -12,40 +12,44 @@ class Lio(AVGESupporterCard):
 
 	@staticmethod
 	def play_card(card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
-		from card_game.internal_events import TransferCardCreator
+		from card_game.internal_events import TransferCard
 
 		player = card.player
-		hand = player.cardholders[Pile.HAND]
-		deck = player.cardholders[Pile.DECK]
-
-		hand_snapshot = list(hand)
-		packet = []
-
-		for c in hand_snapshot:
-			packet.append(
-				TransferCardCreator(
-					c,
-					hand,
-					deck,
-					ActionTypes.NONCHAR,
-					card,
-					lambda: random.randint(0, len(player.cardholders[Pile.DECK])),
+		def hand() -> PacketType:
+			packet : PacketType= []
+			for c in player.cardholders[Pile.HAND]:
+				def gen() -> PacketType:
+					return [TransferCard(
+						c,
+						player.cardholders[Pile.HAND],
+						player.cardholders[Pile.DECK],
+						ActionTypes.NONCHAR,
+						card,
+						random.randint(0, len(player.cardholders[Pile.DECK])),
+					)]
+				packet.append(
+					gen
 				)
-			)
+			return packet
 
-		draw_count = min(4, len(deck) + len(hand_snapshot))
-		for _ in range(draw_count):
-			packet.append(
-				TransferCardCreator(
-					lambda: player.cardholders[Pile.DECK].peek(),
-					deck,
-					hand,
-					ActionTypes.NONCHAR,
-					card,
+		def draw() -> PacketType:
+			packet : PacketType= []
+			deck = player.cardholders[Pile.HAND]
+			for _ in range(4):
+				def gen() -> PacketType:
+					if(len(deck) == 0):
+						return []
+					return [TransferCard(
+						deck.peek(),
+						player.cardholders[Pile.DECK],
+						player.cardholders[Pile.HAND],
+						ActionTypes.NONCHAR,
+						card)]
+				packet.append(
+					gen
 				)
-			)
+			return packet
 
-		if(len(packet) > 0):
-			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Lio)))
+		card.propose(AVGEPacket([hand, draw], AVGEEngineID(card, ActionTypes.NONCHAR, Lio)))
 
 		return card.generate_response(ResponseType.CORE)

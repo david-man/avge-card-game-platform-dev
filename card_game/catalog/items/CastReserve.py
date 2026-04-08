@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-
+from card_game.constants import ActionTypes
 
 class CastReserve(AVGEItemCard):
 	_PLAYER_ITEM_SELECTION_KEY = "castreserve_player_item_selection"
@@ -17,40 +17,21 @@ class CastReserve(AVGEItemCard):
 	
 	@staticmethod
 	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCardCreator, ReorderCardholder
+		from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder
 		player = card.player
 		opponent = player.opponent
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
 
 		deck_items = [c for c in deck if isinstance(c, AVGEItemCard)]
-		unique_item_types = {type(c) for c in deck_items}
-		if(len(unique_item_types) < 3):
-			return card.generate_response()
-
-		def _player_pick_valid(result) -> bool:
-			if(len(result) != 3):
-				return False
-			for c in result:
-				if(not isinstance(c, AVGEItemCard) or c not in deck):
-					return False
-			return len({type(c) for c in result}) == 3
-
-		
-
 		player_keys = [CastReserve._PLAYER_ITEM_SELECTION_KEY + str(i) for i in range(3)]
 		opp_keys = [CastReserve._OPPONENT_SHUFFLE_SELECTION_KEY + str(i) for i in range(2)]
-		def _opponent_shuffle_pick_valid(result) -> bool:
-			if len(result) != 2:
-				return False
-			selected_three = [card.env.cache.get(card, key, None) for key in player_keys]
-			if selected_three[0] is None:
-				return False
-			for c in result:
-				if(c not in selected_three):
-					return False
-			return True
 		selected_three = [card.env.cache.get(card, key, None) for key in player_keys]
+
+		def _check_player_choice(result):
+			if(len(result) != 3):
+				return False
+			return len({type(s) for s in result}) == 3
 		if(selected_three[0] is None):
 			return card.generate_response(
 				ResponseType.INTERRUPT,
@@ -60,12 +41,13 @@ class CastReserve(AVGEItemCard):
 							player,
 							player_keys,
 							InputType.DETERMINISTIC,
-							_player_pick_valid,
+							_check_player_choice,
 							ActionTypes.NONCHAR,
 							card,
 							{
 								"query_label": "cast_reserve_player_item_pick",
-								"deck-items": deck_items,
+								"targets": deck_items,
+								"display": deck_items
 							},
 						)
 					]
@@ -81,13 +63,14 @@ class CastReserve(AVGEItemCard):
 						InputEvent(
 							opponent,
 							opp_keys,
-							InputType.DETERMINISTIC,
-							_opponent_shuffle_pick_valid,
+							InputType.SELECTION,
+							lambda b : True,
 							ActionTypes.NONCHAR,
 							card,
 							{
 								"query_label": "cast_reserve_opponent_shuffle_choice",
-								"targets": selected_three
+								"targets": selected_three,
+								"display": selected_three
 							},
 						)
 					]
@@ -100,31 +83,34 @@ class CastReserve(AVGEItemCard):
 				card_to_hand = c
 				break
 		if(card_to_hand is None or chosen_for_shuffle[1] is None):
-			return card.generate_response(ResponseType.SKIP, {"msg": "CastReserve selection resolution failed."})
-
-		packet = [TransferCardCreator(
-				card_to_hand,
-				deck,
-				hand,
-				ActionTypes.NONCHAR,
-				card,
-			),
-			TransferCardCreator(
+			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "CastReserve selection resolution failed."})
+		def gen_1() -> PacketType:
+			assert isinstance(chosen_for_shuffle[0], AVGECard)
+			return [TransferCard(
 				chosen_for_shuffle[0],
 				deck,
 				deck,
 				ActionTypes.NONCHAR,
 				card,
-				lambda : random.randint(0, len(deck))
-			),
-			TransferCardCreator(
+				random.randint(0, len(deck))
+			)]
+		def gen_2() -> PacketType:
+			assert isinstance(chosen_for_shuffle[1], AVGECard)
+			return [TransferCard(
 				chosen_for_shuffle[1],
 				deck,
 				deck,
 				ActionTypes.NONCHAR,
 				card,
-				lambda : random.randint(0, len(deck))
-			),
+				random.randint(0, len(deck))
+			)]
+		packet = [TransferCard(
+				card_to_hand,
+				deck,
+				hand,
+				ActionTypes.NONCHAR,
+				card,
+			),gen_1, gen_2
 			]
 
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, CastReserve)))

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -35,7 +34,7 @@ class BAIEmailStadiumPlayLockAssessor(AVGEAssessor):
 		return "BAIEmail Stadium Lock Assessor"
 
 	def assess(self, args=None):
-		return self.generate_response(ResponseType.SKIP, {"msg": "BAIEmail: stadium cards cannot be played right now."})
+		return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "BAIEmail: stadium cards cannot be played right now."})
 
 
 class BAIEmail(AVGEItemCard):
@@ -55,7 +54,7 @@ class BAIEmail(AVGEItemCard):
 		lock_assessor = BAIEmailStadiumPlayLockAssessor(card)
 		card.add_listener(lock_assessor)
 
-		packet = []
+		packet : PacketType = []
 		if(len(card.env.stadium_cardholder) > 0):
 			x = card.env.stadium_cardholder.peek()
 			assert isinstance(x, AVGEStadiumCard)
@@ -73,33 +72,31 @@ class BAIEmail(AVGEItemCard):
 		deck = card.player.cardholders[Pile.DECK]
 		hand = card.player.cardholders[Pile.HAND]
 		stadiums_in_deck = [c for c in deck if isinstance(c, AVGEStadiumCard)]
-
-		if(len(stadiums_in_deck) > 0):
-			def _input_valid(result) -> bool:
-				return len(result) == 1 and isinstance(result[0], AVGEStadiumCard) and result[0] in stadiums_in_deck
-
-			picked_stadium = card.env.cache.get(card, BAIEmail._STADIUM_PICK_KEY, None, one_look=True)
-			if(picked_stadium is None):
-				return card.generate_response(
-					ResponseType.INTERRUPT,
-					{
-						INTERRUPT_KEY: [
-							InputEvent(
-								card.player,
-								[BAIEmail._STADIUM_PICK_KEY],
-								InputType.DETERMINISTIC,
-								_input_valid,
-								ActionTypes.NONCHAR,
-								card,
-								{
-									"query_label": "baiemail_stadium_pick",
-									"stadiums": stadiums_in_deck,
-								},
-							)
-						]
-					},
-				)
-
+		missing = object()
+		picked_stadium = card.env.cache.get(card, BAIEmail._STADIUM_PICK_KEY, missing, one_look=True)
+		if(picked_stadium is missing):
+			return card.generate_response(
+				ResponseType.INTERRUPT,
+				{
+					INTERRUPT_KEY: [
+						InputEvent(
+							card.player,
+							[BAIEmail._STADIUM_PICK_KEY],
+							InputType.SELECTION,
+							lambda res : True,
+							ActionTypes.NONCHAR,
+							card,
+							{
+								"query_label": "baiemail_stadium_pick",
+								"targets": stadiums_in_deck,
+								"display": list(deck),
+								"allow_none": True
+							},
+						)
+					]
+				},
+			)
+		if picked_stadium is not None:
 			packet.append(
 				TransferCard(
 					picked_stadium,

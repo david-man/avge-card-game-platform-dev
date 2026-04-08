@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -30,18 +29,9 @@ class SalomonDECIAttackBoostModifier(AVGEModifier):
 	def event_match(self, event):
 		return self._is_supported_attack_event(event)
 
-	def event_effect(self) -> bool:
-		return True
-
 	def update_status(self):
 		if(not self.owner_card._is_active_stadium()):
 			self.invalidate()
-
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "SalomonDECI Modifier"
 
 	def modify(self, args=None):
 		from card_game.internal_events import InputEvent, AVGECardHPChange

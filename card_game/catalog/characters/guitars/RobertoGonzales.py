@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -65,51 +64,49 @@ class RobertoGonzales(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, TransferCardCreator, AVGEEnergyTransfer
+        from card_game.internal_events import AVGECardHPChange, TransferCard, AVGEEnergyTransfer
 
         opponent = card.player.opponent
-
-        def generate_packet():
-            packet = []
-            packet.append(
-                AVGECardHPChange(
+        def gen() -> PacketType:
+            packet : PacketType= []
+            packet += [AVGECardHPChange(
                     opponent.get_active_card(),
                     30,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_1,
                     card,
-                )
-            )
-
+                )]
             current_energy = len(card.energy)
             for token in list(card.energy):
-                packet.append(AVGEEnergyTransfer(token, card, card.player, ActionTypes.ATK_1, card))
-
+                packet.append(AVGEEnergyTransfer(token, card, card.env, ActionTypes.ATK_1, card))
             deck = opponent.cardholders[Pile.DECK]
             discard = opponent.cardholders[Pile.DISCARD]
+            def transfer_gen() -> PacketType:
+                return [TransferCard(deck.peek(), deck, discard, ActionTypes.ATK_1, card)]
             for _ in range(min(current_energy, len(deck))):
-                packet.append(TransferCardCreator(lambda: deck.peek(), deck, discard, ActionTypes.ATK_1, card))
+                packet.append(transfer_gen)
             return packet
 
-        card.propose(AVGEPacket(generate_packet, AVGEEngineID(card, ActionTypes.ATK_1, RobertoGonzales)))
+        card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, RobertoGonzales)))
         return card.generate_response()
 
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        from card_game.internal_events import AVGECardHPChange
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_2,
                     card,
                 )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, RobertoGonzales))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, RobertoGonzales))
         )
         card.add_listener(_RobertoGuitarBoost(card, card.player.get_next_turn()))
 

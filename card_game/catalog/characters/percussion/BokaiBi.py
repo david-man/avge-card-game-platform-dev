@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -80,7 +80,7 @@ class BokaiBi(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChangeCreator
+        from card_game.internal_events import InputEvent, AVGECardHPChange
 
         roll = card.env.cache.get(card, BokaiBi._D6_KEY, None, True)
         if roll is None:
@@ -103,16 +103,18 @@ class BokaiBi(AVGECharacterCard):
 
         val = int(roll)
         if val <= 4:
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChangeCreator(
-                        lambda: card.player.opponent.get_active_card(),
+            def generate() -> PacketType:
+                return [AVGECardHPChange(
+                        card.player.opponent.get_active_card(),
                         70,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PERCUSSION,
                         ActionTypes.ATK_1,
                         card,
-                    )
+                    )]
+            card.propose(
+                AVGEPacket([
+                    generate
                 ], AVGEEngineID(card, ActionTypes.ATK_1, BokaiBi))
             )
 

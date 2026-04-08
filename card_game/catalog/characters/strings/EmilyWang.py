@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
+from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.avge_abstracts.AVGEEnvironment import GamePhase
-
+from card_game.constants import ActionTypes
 
 class EmilyWang(AVGECharacterCard):
     _ACTIVE_DISCARD_KEY = "emilywang_active_discard_tool"
@@ -32,7 +31,7 @@ class EmilyWang(AVGECharacterCard):
 
     @staticmethod
     def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import TransferCardCreator, InputEvent
+        from card_game.internal_events import TransferCard, InputEvent
 
         tool = card.tools_attached.peek()
         chosen = card.env.cache.get(card, EmilyWang._ACTIVE_DISCARD_KEY, None, True)
@@ -55,19 +54,25 @@ class EmilyWang(AVGECharacterCard):
             )
 
         discard = card.player.cardholders[Pile.DISCARD]
-        packet = [TransferCardCreator(tool, tool.cardholder, discard, ActionTypes.ACTIVATE_ABILITY, card)]
+        packet: PacketType = [TransferCard(tool, tool.cardholder, discard, ActionTypes.ACTIVATE_ABILITY, card)]
 
         deck = card.player.cardholders[Pile.DECK]
         hand = card.player.cardholders[Pile.HAND]
+        def draw_top() -> PacketType:
+            if len(deck) == 0:
+                return []
+            return [
+                TransferCard(deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card)
+            ]
         for _ in range(min(2, len(deck))):
-            packet.append(TransferCardCreator(lambda: deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card))
+            packet.append(draw_top)
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EmilyWang)))
         return card.generate_response()
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator, InputEvent
+        from card_game.internal_events import AVGECardHPChange, InputEvent
 
         r0 = card.env.cache.get(card, EmilyWang._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, EmilyWang._COIN_KEY_1, None, True)
@@ -92,17 +97,21 @@ class EmilyWang(AVGECharacterCard):
 
         heads = int(r0) + int(r1) + int(r2)
         if heads > 0:
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChangeCreator(
-                        lambda: card.player.opponent.get_active_card(),
+            def generate_packet() -> PacketType:
+                active = card.player.opponent.get_active_card()
+                if not isinstance(active, AVGECharacterCard):
+                    return []
+                return [
+                    AVGECardHPChange(
+                        active,
                         40 * heads,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.STRING,
                         ActionTypes.ATK_1,
                         card,
                     )
-                ], AVGEEngineID(card, ActionTypes.ATK_1, EmilyWang))
-            )
+                ]
+
+            card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EmilyWang)))
 
         return card.generate_response()

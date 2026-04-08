@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -10,7 +9,6 @@ class AshleyToby(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.STRING, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -44,12 +42,6 @@ class AshleyToby(AVGECharacterCard):
             def update_status(self):
                 return
 
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "AshleyToby Double Damage Modifier"
-
             def modify(self, args=None):
                 if args is None:
                     args = {}
@@ -65,18 +57,26 @@ class AshleyToby(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            if not isinstance(active, AVGECharacterCard):
+                return []
+            return [
+                AVGECardHPChange(
+                    active,
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
                     ActionTypes.ATK_1,
                     card,
                 )
+            ]
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
             ], AVGEEngineID(card, ActionTypes.ATK_1, AshleyToby))
         )
         return card.generate_response()

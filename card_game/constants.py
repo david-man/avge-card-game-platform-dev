@@ -5,8 +5,8 @@ from dataclasses import dataclass
 if TYPE_CHECKING:
     from card_game.engine.event import Event
     from card_game.engine.event_listener import AbstractEventListener
+    from card_game.avge_abstracts.AVGECards import AVGECard, AVGECharacterCard
     from card_game.avge_abstracts.AVGEPlayer import AVGEPlayer
-    from card_game.avge_abstracts.AVGECards import AVGECharacterCard, AVGECard
     from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
 type Data = dict[str, Any]
 
@@ -21,8 +21,10 @@ per_turn_supporter = 1
 per_turn_swaps = 1
 per_turn_atks = 1
 INTERRUPT_KEY = "INTERRUPT_KEY"
+REVEAL_KEY = "REVEAL"#key for list of cards that should be "revealed" -- both players can see
+MESSAGE_KEY = "MSG"#key for response data that encodes a simple string message
 class ResponseType(StrEnum):
-    SKIP = "SKIP"#something in the sequence went awry/was rejected, undo the whole packet
+    SKIP = "SKIP"#something in the list went awry/was rejected, undo the whole packet
     ACCEPT = 'ACCEPT'#accept and move to the next step
     REQUIRES_QUERY = "REQUIRES_QUERY"#requires query, try again
     INTERRUPT = "INTERRUPT"#packet interrupted: events at INTERRUPT_KEY need to be finished first before this packet can continue
@@ -85,8 +87,10 @@ class EnergyToken():
         return isinstance(other, EnergyToken) and self.unique_id == other.unique_id
 
 class StatusChangeType(StrEnum):
-    ADD = "ADD"
-    REMOVE = "REMOVE"
+    ADD = "ADD"#adds 1 status thing
+    ERASE = "ERASE"#removes 1 status thing
+    REMOVE = "REMOVE"#completely wipes the status
+
 class PlayerID(StrEnum):
     P1 = 'player1'
     P2 = 'player2'
@@ -132,7 +136,7 @@ class InputType(StrEnum):
     BINARY = "BINARY"#yes/no question
     SELECTION = "SELECTION"#selection btwn "targets" array.
     #should be structured like {'query_label':___, 'allow_repeats': True(default False), 'allow_none': True(default False), 'targets': either a list of targets for all keys or each individual key gets a list}
-    DETERMINISTIC = "DETERMINISTIC"#one-off character-specific deterministic/non-rng player choices 
+    DETERMINISTIC = "DETERMINISTIC"#one-off character-specific deterministic/non-rng player choices. validation function should take in all results AT ONCE(list of results, with one slot per key)
 type_weaknesses = {
     CardType.STRING: CardType.GUITAR,
     CardType.GUITAR: CardType.WOODWIND,

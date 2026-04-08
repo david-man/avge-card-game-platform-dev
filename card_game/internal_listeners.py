@@ -2,10 +2,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from .engine.engine_constants import *
 from .constants import *
-from .avge_abstracts.AVGEEventListeners import *
-from .avge_abstracts.AVGECards import *
-from .avge_abstracts.AVGEEnvironment import *
-from .avge_abstracts.AVGECardholder import *
+from .avge_abstracts import *
+from .constants import ActionTypes
 
 if TYPE_CHECKING:
     from .avge_abstracts.AVGEPlayer import AVGEPlayer
@@ -267,7 +265,7 @@ class AVGETransferEnergyRequirementReactor(AVGEReactor):
         event : TransferCard = self.attached_event
         assert(isinstance(event.card, AVGECharacterCard))
         card : AVGECharacterCard = event.card
-        packet : Packet[AVGEEvent] = AVGEPacket([], AVGEEngineID(None, ActionTypes.ENV, None))
+        packet : PacketType = []
         if(event.energy_requirement > 0):
             for token_idx in range(event.energy_requirement):
                 token = card.energy[token_idx]
@@ -278,86 +276,7 @@ class AVGETransferEnergyRequirementReactor(AVGEReactor):
                     ActionTypes.ENV,
                     None
                 ))
-        self.propose(packet)
-        return self.generate_response()
-class AVGEDiscardReactor(AVGEReactor):
-    def __init__(self):
-        super().__init__(group = EngineGroup.INTERNAL_3,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
-                          requires_runtime_info=False)
-    def update_status(self):
-        return
-    def event_match(self, event):
-        from .internal_events import TransferCard
-        return isinstance(event, TransferCard) and event.pile_to.pile_type == Pile.DISCARD
-
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
-    def react(self, args = None) -> Response:
-        from .internal_events import TransferCard, AVGEEnergyTransfer, AVGECardHPChange, AVGECardMaxHPChange, AVGECardStatusChange
-        assert isinstance(self.attached_event, TransferCard)
-        event : TransferCard = self.attached_event
-        if(isinstance(event.card, AVGECharacterCard) and event.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH]
-           and event.pile_to.pile_type not in [Pile.BENCH, Pile.ACTIVE]):#character card getting discarded
-            card : AVGECharacterCard= event.card
-            #discard tools
-            def packet_1():
-                packet : list[AVGEEvent | DeferredEvent[AVGEEvent]] = [TransferCard(tool,
-                                            card.tools_attached,
-                                            event.pile_to,
-                                            ActionTypes.ENV,
-                                            None) for tool in card.tools_attached]
-                return packet
-            #drop the energy
-            def packet_2():
-                packet : list[AVGEEvent | DeferredEvent[AVGEEvent]] = [AVGEEnergyTransfer(token,
-                                            card,
-                                            card.env,
-                                            ActionTypes.ENV,
-                                            None) for token in card.energy]
-                return packet
-            #drop the statuses
-            def packet_3():
-                packet : list[AVGEEvent | DeferredEvent[AVGEEvent]] = []
-                #drop all statuses
-                for status_effect, cards in card.statuses_attached.items():
-                    for c in cards:
-                        packet.append(AVGECardStatusChange(
-                            status_effect,
-                            StatusChangeType.REMOVE,
-                            card,
-                            ActionTypes.ENV,
-                            c
-                        ))
-                return packet
-            def packet_4():
-                packet : list[AVGEEvent | DeferredEvent[AVGEEvent]] = []
-                #reset MAXHP
-                packet.append(AVGECardMaxHPChange(
-                    card,
-                    card.default_max_hp,
-                    AVGEAttributeModifier.SET_STATE,
-                    ActionTypes.ENV,
-                    None
-                ))
-                #reset HP
-                packet.append(AVGECardHPChange(
-                    card,
-                    card.default_max_hp,
-                    AVGEAttributeModifier.SET_STATE,
-                    CardType.ALL,
-                    ActionTypes.ENV,
-                    None
-                ))
-                return packet
-            self.propose(AVGEPacket(packet_1, AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-            self.propose(AVGEPacket(packet_2, AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-            self.propose(AVGEPacket(packet_3, AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-            self.propose(AVGEPacket(packet_4, AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-        event.card.env.cache.wipe(event.card)
+        self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
         return self.generate_response()
 
 class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):

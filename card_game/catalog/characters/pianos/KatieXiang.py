@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEReactor
+from card_game.avge_abstracts import *
+
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -35,8 +35,8 @@ class KatieTurnEndReactor(AVGEReactor):
 
         owner = self.owner_card
 
-        def generate_packet():
-            packet = []
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
             for player in owner.env.players.values():
                 for c in player.get_cards_in_play():
                     if c != owner:
@@ -52,7 +52,7 @@ class KatieTurnEndReactor(AVGEReactor):
                         )
             return packet
 
-        self.propose(AVGEPacket(generate_packet(), AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)))
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)))
         return self.generate_response()
 
 
@@ -72,7 +72,7 @@ class KatieXiang(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
         from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
         from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
         from card_game.catalog.stadiums.RileyHall import RileyHall
@@ -84,16 +84,23 @@ class KatieXiang(AVGECharacterCard):
             if isinstance(stadium, (AlumnaeHall, FriedmanHall, RileyHall, MainHall)):
                 dmg = 80
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+
+            return [
+                AVGECardHPChange(
+                    active,
                     dmg,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
                     card,
                 )
+            ]
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
             ], AVGEEngineID(card, ActionTypes.ATK_1, KatieXiang))
         )
 

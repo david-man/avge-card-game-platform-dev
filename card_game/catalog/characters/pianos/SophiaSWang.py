@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEModifier, AVGEReactor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 import math
@@ -30,12 +29,6 @@ class SophiaNextAttackHalvedModifier(AVGEModifier):
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "SophiaSWang Next Attack Halved Modifier"
 
     def on_packet_completion(self):
         self.invalidate()
@@ -77,16 +70,11 @@ class _SophiaEnergyReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "SophiaSWang energy attach reactor"
 
     def react(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import TransferCardCreator
+        from card_game.internal_events import TransferCard, EmptyEvent
 
         owner = self.owner_card
         env = owner.env
@@ -97,17 +85,24 @@ class _SophiaEnergyReactor(AVGEReactor):
         deck = opp.cardholders[Pile.DECK]
         discard = opp.cardholders[Pile.DISCARD]
         if len(deck) == 0:
-            return self.generate_response()
+            return self.generate_response(data={MESSAGE_KEY: "Opponent has nothing in their deck!"})
 
-        owner.propose(
-            AVGEPacket([
-                TransferCardCreator(
-                    lambda: deck.peek(),
+        def mill_top() -> PacketType:
+            if len(deck) == 0:
+                return []
+            return [
+                TransferCard(
+                    deck.peek(),
                     deck,
                     discard,
                     ActionTypes.PASSIVE,
                     owner,
                 )
+            ]
+
+        owner.propose(
+            AVGEPacket([
+                mill_top
             ], AVGEEngineID(owner, ActionTypes.PASSIVE, SophiaSWang))
         )
         return self.generate_response()
@@ -129,18 +124,24 @@ class SophiaSWang(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChangeCreator
+        from card_game.internal_events import AVGECardHPChange
 
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChangeCreator(
-                    lambda: card.player.opponent.get_active_card(),
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            return [
+                AVGECardHPChange(
+                    active,
                     20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
                     card,
                 )
+            ]
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
             ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaSWang))
         )
 

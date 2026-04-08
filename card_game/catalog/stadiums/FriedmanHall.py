@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import random
 
-from card_game.avge_abstracts.AVGECards import *
-from card_game.avge_abstracts.AVGEEventListeners import AVGEAssessor
+from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
@@ -23,13 +22,7 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 	def update_status(self):
 		if(not self.owner_card._is_active_stadium()):
 			self.invalidate()
-
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "FriedmanHall Assessor"
-
+		
 	def assess(self, args=None):
 		from card_game.internal_events import InputEvent, Phase2, TransferCard, PhasePickCard
 
@@ -48,37 +41,31 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 
 		top_two_cards = list(deck.peek_n(2))
 		opponent = active_player.opponent
-
-		def _pick_valid(result) -> bool:
-			return len(result) == 1 and isinstance(result[0], AVGECard) and result[0] in top_two_cards
-
-		missing = object()
-		chosen = self.owner_card.env.cache.get(self.owner_card, FriedmanHall._TURNBEGIN_PICK_KEY, missing, one_look=True)
-		if(chosen is missing):
+		chosen = self.owner_card.env.cache.get(self.owner_card, FriedmanHall._TURNBEGIN_PICK_KEY, None, one_look=True)
+		if(chosen is None):
 			return self.generate_response(
 				ResponseType.INTERRUPT,
 				{INTERRUPT_KEY: 
 	 					[InputEvent(opponent, 
 				   					[FriedmanHall._TURNBEGIN_PICK_KEY], 
-									InputType.DETERMINISTIC, 
-									_pick_valid, 
+									InputType.SELECTION, 
+									lambda res: True, 
 									ActionTypes.ENV, 
 									self.owner_card, 
 									{"query_label": "friedmanhall_turnbegin_pick", 
-		  							"targets": top_two_cards})]},
+		  							"targets": top_two_cards,
+									  "display": top_two_cards,
+									"bidirectional": True})]},
 			)
 
 		other = top_two_cards[1] if chosen == top_two_cards[0] else top_two_cards[0]
 		event.temp_cache[FriedmanHall._TURNBEGIN_OVERRIDE_FLAG] = True
-		assert chosen is not None
-		return self.generate_response(
-			ResponseType.INTERRUPT,
-			{INTERRUPT_KEY: [
+		self.propose(AVGEPacket([
 				TransferCard(chosen, deck, hand, ActionTypes.ENV, self.owner_card),
 				TransferCard(other, deck, deck, ActionTypes.ENV, self.owner_card, random.randint(0, len(deck))),
 				Phase2(active_player, ActionTypes.ENV, None),
-			]},
-		)
+			], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FriedmanHall)))
+		return self.generate_response(ResponseType.FAST_FORWARD)
 
 
 class FriedmanHall(AVGEStadiumCard):
