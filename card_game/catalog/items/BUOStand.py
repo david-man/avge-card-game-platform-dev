@@ -30,12 +30,6 @@ class BUOStandNextAttackModifier(AVGEModifier):
 	def update_status(self):
 		if(self.owner_card.env.round_id != self.round_played):
 			self.invalidate()
-
-	def make_announcement(self) -> bool:
-		return True
-
-	def package(self):
-		return "BUOStand Modifier"
 	
 	def on_packet_completion(self):
 		self.invalidate()

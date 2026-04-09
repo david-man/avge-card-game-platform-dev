@@ -9,9 +9,7 @@ class JordanRoosevelt(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.WOODWIND, 1, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = False
         self.has_active = False
 
@@ -120,7 +118,7 @@ class JordanRoosevelt(AVGECharacterCard):
                     card,
                     20,
                     AVGEAttributeModifier.ADDITIVE,
-                    card.card_type,
+                    CardType.WOODWIND,
                     ActionTypes.ATK_2,
                     card,
                 ),

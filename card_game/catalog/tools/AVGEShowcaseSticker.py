@@ -76,7 +76,7 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 							ActionTypes.NONCHAR,
 							self.owner_card,
 						)
-					], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, AVGEShowcaseSticker))
+					], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, AVGEShowcaseSticker)), 1
 				)
 
 		return self.generate_response()

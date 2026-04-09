@@ -10,9 +10,7 @@ class ChristmasKim(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.GUITAR, 2, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = False
         self.has_active = False
 
@@ -66,47 +64,45 @@ class ChristmasKim(AVGECharacterCard):
             packet.append(
                 gen
             )
-        keys = [ChristmasKim._ORDER_KEY + str(i) for i in range(len(nonchars))]
-        order_choice = [card.env.cache.get(card, key, None, True) for key in keys]
-        if order_choice[0] is None:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            player,
-                            keys,
-                            InputType.SELECTION,
-                            lambda r: True,
-                            ActionTypes.ATK_2,
-                            card,
-                            {
-                                "query_label": "christmas_kim_reorder_top",
-                                "targets": nonchars,
-                                "display": char_cards + nonchars
-                            },
-                        )
-                    ]
-                },
-            )
-
-        new_order = list(deck.get_order())
-        for c in top_cards:
-            cid = c.unique_id
-            if cid in new_order:
-                new_order.remove(cid)
-        chosen_order = [choice for choice in order_choice if choice is not None]
-        if len(chosen_order) != len(nonchars):
-            return card.generate_response()
-        new_order = [choice.unique_id for choice in chosen_order] + new_order
-        packet.append(EmptyEvent(
-            ActionTypes.ATK_2,
-            card,
-            response_data={
-                REVEAL_KEY: char_cards
-            }
-        ))
-        packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card))
-
+        if(len(nonchars) > 0):
+            keys = [ChristmasKim._ORDER_KEY + str(i) for i in range(len(nonchars))]
+            order_choice = [card.env.cache.get(card, key, None, True) for key in keys]
+            if order_choice[0] is None:
+                return card.generate_response(
+                    ResponseType.INTERRUPT,
+                    {
+                        INTERRUPT_KEY: [
+                            InputEvent(
+                                player,
+                                keys,
+                                InputType.SELECTION,
+                                lambda r: True,
+                                ActionTypes.ATK_2,
+                                card,
+                                {
+                                    "query_label": "christmas_kim_reorder_top",
+                                    "targets": nonchars,
+                                    "display": char_cards + nonchars,
+                                },
+                            )
+                        ]
+                    },
+                )
+            
+            new_order = list(deck.get_order())
+            for c in top_cards:
+                cid = c.unique_id
+                if cid in new_order:
+                    new_order.remove(cid)
+            chosen_order = [choice for choice in order_choice if choice is not None]
+            new_order = [choice.unique_id for choice in chosen_order] + new_order
+            packet.append(EmptyEvent(
+                ActionTypes.ATK_2,
+                card,
+                response_data={
+                    REVEAL_KEY: char_cards
+                }
+            ))
+            packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card))
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, ChristmasKim)))
         return card.generate_response()

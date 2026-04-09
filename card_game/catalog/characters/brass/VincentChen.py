@@ -15,8 +15,6 @@ class _VincentHealReactor(AVGEReactor):
         # only react to HP damage caused by this owner's ATK_2
         if event.catalyst_action != ActionTypes.ATK_2:
             return False
-        if(not isinstance(event.caller_card, AVGECharacterCard)):
-            return False
         if event.caller_card != self.owner_card:
             return False
         return True
@@ -27,18 +25,14 @@ class _VincentHealReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "VincentChen Heal Reactor"
-
     def react(self, args=None) -> Response:
         assert(isinstance(self.attached_event, AVGECardHPChange))
         heal_amt = self.attached_event.magnitude
 
         # collect benched friendly characters
         bench_chars = self.owner_card.player.cardholders[Pile.BENCH]
+        if(len(bench_chars) == 0):
+            return self.generate_response(data={MESSAGE_KEY: "No cards on bench to heal!"})
         # ask player to choose
         chosen = self.owner_card.env.cache.get(self.owner_card, VincentChen._HEAL_PICK_KEY, None, True)
         if chosen is None:

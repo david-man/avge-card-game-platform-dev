@@ -40,11 +40,6 @@ class CavinMaidBoostModifier(AVGEModifier):
         if self.owner_card.cardholder.pile_type != Pile.ACTIVE:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "CavinXue Maid Boost Modifier"
 
     def modify(self, args=None):
         if args is None:
@@ -69,7 +64,6 @@ class CavinXue(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.PERCUSSION, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

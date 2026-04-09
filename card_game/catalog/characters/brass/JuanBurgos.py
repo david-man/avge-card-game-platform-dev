@@ -19,11 +19,9 @@ class _JuanBenchAttackBoost(AVGEModifier):
             return False
         if not isinstance(event.caller_card, AVGECharacterCard):
             return False
-        if event.caller_card.player != self.owner_card.player:
+        if event.caller_card != self.owner_card.player.get_active_card():
             return False
         if self.owner_card.cardholder.pile_type != Pile.BENCH:
-            return False
-        if event.caller_card.cardholder.pile_type != Pile.ACTIVE:
             return False
         if event.caller_card.card_type != CardType.BRASS:
             return False
@@ -34,12 +32,6 @@ class _JuanBenchAttackBoost(AVGEModifier):
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "JuanBurgos Bench Attack Boost"
 
     def modify(self, args=None):
         assert isinstance(self.attached_event, AVGECardHPChange)

@@ -5,7 +5,7 @@ from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import *
 
-_LAST_ROUND_USED_KEY = "carolyn-last-round-atkd"
+_BUFF_ROUND_KEY = "carolyn-zheng-buff"
 class _CarolynAttackTracker(AVGEAssessor):
     def __init__(self, owner_card : AVGECharacterCard):
         super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, CarolynZheng), group=EngineGroup.EXTERNAL_PRECHECK_1)
@@ -16,14 +16,13 @@ class _CarolynAttackTracker(AVGEAssessor):
         return True
     def update_status(self):
         return
-    def make_announcement(self):
-        return False
-    def package(self):
-        return ""
     def on_packet_completion(self):
         return
     def assess(self, args=None):
-        self.owner_card.env.cache.set(self.owner_card, _LAST_ROUND_USED_KEY, self.owner_card.env.round_id)
+        round = self.owner_card.env.cache.get(self.owner_card, _BUFF_ROUND_KEY, None)
+        if(round is None or round < self.owner_card.player.get_last_turn()):
+            self.owner_card.env.cache.set(self.owner_card, _BUFF_ROUND_KEY, self.owner_card.env.round_id)
+        
         return self.generate_response()
 
 class _CarolynAttackModifier(AVGEModifier):
@@ -38,26 +37,20 @@ class _CarolynAttackModifier(AVGEModifier):
             return False
         if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
             return False
-        if(not isinstance(event.caller_card, AVGECharacterCard)):
-            return False
         if event.caller_card != self.owner_card:
             return False
         if event.target_card.player != self.owner_card.player.opponent:
             return False
-        last_round_played = self.owner_card.env.cache.get(self.owner_card, _LAST_ROUND_USED_KEY, None)
-        return last_round_played is None or (last_round_played < self.owner_card.player.get_last_turn())
+        if(event.magnitude == 0):
+            return False
+        buff_round = self.owner_card.env.cache.get(self.owner_card, _BUFF_ROUND_KEY, None)
+        return buff_round is not None and buff_round == self.owner_card.env.round_id
 
     def event_effect(self) -> bool:
         return True
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "CarolynZheng Next Attack Modifier"
 
     def on_packet_completion(self):
         return
@@ -72,9 +65,8 @@ class _CarolynAttackModifier(AVGEModifier):
 
 class CarolynZheng(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.BRASS, 1)
+        super().__init__(unique_id, 90, CardType.BRASS, 1, 0)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -92,7 +84,7 @@ class CarolynZheng(AVGECharacterCard):
         def generate_packet() -> PacketType:
             return [AVGECardHPChange(
                 card.player.opponent.get_active_card(),
-                70,
+                1000,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.BRASS,
                 ActionTypes.ATK_1,

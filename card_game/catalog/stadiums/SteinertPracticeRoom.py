@@ -43,7 +43,7 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 
 class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertPracticeRoom), group=EngineGroup.EXTERNAL_PRECHECK_1)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertPracticeRoom), group=EngineGroup.EXTERNAL_MODIFIERS_1)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
@@ -104,21 +104,6 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 				self.env.cache.delete(self, base_key)
 				return self.generate_response(ResponseType.CORE)
 
-			def _input_valid(result) -> bool:
-				if(len(result) != 1 or not isinstance(result[0], list)):
-					return False
-				chosen = result[0]
-				if(len(chosen) != extra):
-					return False
-				seen = set()
-				for card in chosen:
-					if(card not in target_player.cardholders[Pile.BENCH]):
-						return False
-					if(card in seen):
-						return False
-					seen.add(card)
-				return True
-
 			keys = [base_key + str(i) for i in range(extra)]
 			chosen = [self.env.cache.get(self, key, None, True) for key in keys]
 			if(chosen[0] is None):
@@ -129,13 +114,14 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 							InputEvent(
 								target_player,
 								keys,
-								InputType.DETERMINISTIC,
-								_input_valid,
+								InputType.SELECTION,
+								lambda res: True,
 								ActionTypes.NONCHAR,
 								self,
 								{
 									"query_label": "Steinert-practice-room-bench",
-									"bench": list(target_player.cardholders[Pile.BENCH])
+									"targets": list(target_player.cardholders[Pile.BENCH]),
+									"display": list(target_player.cardholders[Pile.BENCH])
 								},
 							)
 						]

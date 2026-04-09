@@ -15,9 +15,7 @@ class SophiaYWang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -79,57 +77,52 @@ class SophiaYWang(AVGECharacterCard):
                             card,
                             card.max_hp,
                             AVGEAttributeModifier.SET_STATE,
-                            card.card_type,
+                            CardType.STRING,
                             ActionTypes.ATK_1,
                             card,
                         )
                     ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang))
                 )
+                env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, [])
+            else:
                 card.propose(
                     AVGEPacket([
-                        TransferCard(next_card, deck, card.player.cardholders[Pile.HAND], ActionTypes.ATK_1, card)
+                        AVGECardHPChange(
+                            card,
+                            20,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.STRING,
+                            ActionTypes.ATK_1,
+                            card,
+                        )
                     ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang))
                 )
-                env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, [])
-                return card.generate_response()
-            env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, current_cards + [next_card])
+                env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, current_cards + [next_card])
             card.propose(
                 AVGEPacket([
                     TransferCard(next_card, deck, card.player.cardholders[Pile.HAND], ActionTypes.ATK_1, card)
                 ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang))
             )
-            card.propose(
-                AVGEPacket([
-                    AVGECardHPChange(
-                        card,
-                        20,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        card.card_type,
-                        ActionTypes.ATK_1,
-                        card,
-                    )
-                ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang))
-            )
             return card.generate_response()
-
-        for transferred_card in current_cards:
-            assert isinstance(transferred_card, AVGECard)
-            def put_back(c=transferred_card) -> PacketType:
-                return [
-                    TransferCard(
-                        c,
-                        c.cardholder,
-                        card.player.cardholders[Pile.DECK],
-                        ActionTypes.ATK_1,
-                        card,
-                        randint(0, len(deck)),
-                    )
-                ]
-            card.propose(
-                AVGEPacket([
-                    put_back
-                ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang))
-            )
+        else:
+            for transferred_card in current_cards:
+                assert isinstance(transferred_card, AVGECard)
+                def put_back(c=transferred_card) -> PacketType:
+                    return [
+                        TransferCard(
+                            c,
+                            c.cardholder,
+                            card.player.cardholders[Pile.DECK],
+                            ActionTypes.ATK_1,
+                            card,
+                            randint(0, len(deck)),
+                        )
+                    ]
+                card.propose(
+                    AVGEPacket([
+                        put_back
+                    ], AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang))
+                )
         env.cache.set(card, SophiaYWang._GACHA_GAMING_DRAWN_CARDS, [])
         return card.generate_response()
 
@@ -161,29 +154,24 @@ class SophiaYWang(AVGECharacterCard):
                     ]
                 },
             )
-
-        packet = [] + [
-            AVGECardHPChange(
-                opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
-            )
-        ]
-        assert isinstance(chosen_target, AVGECharacterCard)
-        if len(chosen_target.energy) == 0:
-            packet.append(
-                EmptyEvent(
+        def atk() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
                     ActionTypes.ATK_2,
                     card,
-                    response_data={MESSAGE_KEY: "SophiaYWang ATK2 target has no energy to discard."},
                 )
-            )
-        else:
-            for token in list(chosen_target.energy)[:2]:
-                packet.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.env, ActionTypes.ATK_2, card))
-
+            ]
+        packet : PacketType = [atk]
+        assert isinstance(chosen_target, AVGECharacterCard)
+        def mill_energy() -> PacketType:
+            if(len(chosen_target.energy) == 0):
+                return []
+            return [AVGEEnergyTransfer(chosen_target.energy[0], chosen_target, chosen_target.env, ActionTypes.ATK_2, card)]
+        packet.append(mill_energy)
+        packet.append(mill_energy)
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, SophiaYWang)))
         return card.generate_response()

@@ -10,7 +10,6 @@ class FionaLi(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.STRING, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

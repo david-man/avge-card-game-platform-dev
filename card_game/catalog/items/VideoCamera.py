@@ -29,7 +29,7 @@ class VideoCamera(AVGEItemCard):
 						InputEvent(
 							player,
 							[VideoCamera._DISCARD_ITEM_PICK_KEY],
-							InputType.DETERMINISTIC,
+							InputType.SELECTION,
 							lambda res : True,
 							ActionTypes.NONCHAR,
 							card,

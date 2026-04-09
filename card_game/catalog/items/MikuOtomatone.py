@@ -6,15 +6,28 @@ from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.constants import ActionTypes
 
-class MikuOtomatoneEnergy(AVGEReactor):
+class MikuOtomatoneEnergy(AVGEModifier):
 	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, round_played):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, MikuOtomatone), group=EngineGroup.EXTERNAL_REACTORS)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, MikuOtomatone), group=EngineGroup.EXTERNAL_MODIFIERS_1)
 		self.owner_card = owner_card
 		self.round_played = round_played
 
 	def event_match(self, event):
-		from card_game.internal_events import AtkPhase, TurnEnd
-		return isinstance(event, AtkPhase) or isinstance(event, TurnEnd)
+		from card_game.internal_events import PlayCharacterCard
+
+		if(not isinstance(event, PlayCharacterCard)):
+			return False
+		if(event.catalyst_action != ActionTypes.PLAYER_CHOICE):
+			return False
+		if(event.card_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]):
+			return False
+		if(event.card.player != self.owner_card.player):
+			return False
+		if(event.card != self.owner_card.player.get_active_card()):
+			return False
+		if(event.energy_requirement <= 0):
+			return False
+		return True
 
 	def event_effect(self) -> bool:
 		return True
@@ -23,78 +36,16 @@ class MikuOtomatoneEnergy(AVGEReactor):
 		if(self.owner_card.env.round_id > self.round_played):
 			self.invalidate()
 
-	def react(self, args=None):
-		from card_game.internal_events import AVGEEnergyTransfer, AtkPhase, TurnEnd
+	def modify(self, args=None):
+		from card_game.internal_events import PlayCharacterCard
 
-		event = self.attached_event
-		assert isinstance(event, AtkPhase | TurnEnd)
-		boosted_character = self.owner_card.env.cache.get(self.owner_card, MikuOtomatone._BOOSTED_CHARACTER_KEY, None)
-		if(isinstance(event, AtkPhase) and boosted_character is None):
-			self.owner_card.env.cache.set(self.owner_card, MikuOtomatone._BOOSTED_CHARACTER_KEY, self.owner_card.player.get_active_card())
-			if(len(self.owner_card.player.energy) >= 2):
-				packet : PacketType = [
-						AVGEEnergyTransfer(
-							self.owner_card.player.energy[0],
-							self.owner_card.player,
-							self.owner_card.player.get_active_card(),
-							ActionTypes.NONCHAR,
-							self.owner_card,
-						),
-						AVGEEnergyTransfer(
-							self.owner_card.player.energy[1],
-							self.owner_card.player,
-							self.owner_card.player.get_active_card(),
-							ActionTypes.NONCHAR,
-							self.owner_card,
-						),
-					]
-				self.propose(
-					AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, MikuOtomatone))
-				)
-				self.owner_card.env.cache.set(self.owner_card, MikuOtomatone._FIRST_TOKEN, self.owner_card.player.energy[0])
-				self.owner_card.env.cache.set(self.owner_card, MikuOtomatone._SECOND_TOKEN, self.owner_card.player.energy[1])
-			elif(len(self.owner_card.player.energy) == 1):
-				packet : PacketType = [
-						AVGEEnergyTransfer(
-							self.owner_card.player.energy[0],
-							self.owner_card.player,
-							self.owner_card.player.get_active_card(),
-							ActionTypes.NONCHAR,
-							self.owner_card,
-						)
-					]
-				self.propose(
-					AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, MikuOtomatone))
-				)
-				self.owner_card.env.cache.set(self.owner_card, MikuOtomatone._FIRST_TOKEN, self.owner_card.player.energy[0])
-		elif(isinstance(event, TurnEnd) and boosted_character is not None):
-			self.owner_card.env.cache.delete(self.owner_card, MikuOtomatone._BOOSTED_CHARACTER_KEY)
-			token_1 = self.owner_card.env.cache.get(self.owner_card, MikuOtomatone._FIRST_TOKEN, None, True)
-			token_2  = self.owner_card.env.cache.get(self.owner_card, MikuOtomatone._SECOND_TOKEN, None, True)
-			
-			packet = []
-			for token in [token_1, token_2]:
-				if(token is not None and isinstance(token ,EnergyToken) and token.holder is not None):
-					packet.append(
-						AVGEEnergyTransfer(
-							token,
-							token.holder,
-							self.owner_card.player,
-							ActionTypes.PASSIVE,
-							None
-						)
-					)
-			if(len(packet) > 0):
-				self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, MikuOtomatone)))
-			self.invalidate()
+		assert isinstance(self.attached_event, PlayCharacterCard)
+		event : PlayCharacterCard = self.attached_event
+		event.energy_requirement = max(0, event.energy_requirement - 2)
 		return self.generate_response()
 
 
 class MikuOtomatone(AVGEItemCard):
-	_BOOSTED_CHARACTER_KEY = "miku_otomatone_boosted_character"
-	_FIRST_TOKEN = "miku_otomatone_first_token"
-	_SECOND_TOKEN = "miku_otomatone_second_token"
-
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 

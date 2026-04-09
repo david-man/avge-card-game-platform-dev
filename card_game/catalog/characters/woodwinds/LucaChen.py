@@ -8,9 +8,7 @@ class LucaChen(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.WOODWIND, 1, 2, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = False
         self.has_active = False
 
@@ -31,7 +29,7 @@ class LucaChen(AVGECharacterCard):
                     card,
                     20,
                     AVGEAttributeModifier.ADDITIVE,
-                    card.card_type,
+                    CardType.WOODWIND,
                     ActionTypes.ATK_1,
                     card,
                 ),

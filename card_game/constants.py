@@ -20,9 +20,13 @@ per_turn_token_add = 1
 per_turn_supporter = 1
 per_turn_swaps = 1
 per_turn_atks = 1
+
+ACTIVE_FLAG = "ACTIVE_FLAG"#will be set to a character card in args if that card's active ability is activated. if card can use active ability, the PlayCharacterCard will be put to the front
 INTERRUPT_KEY = "INTERRUPT_KEY"
 REVEAL_KEY = "REVEAL"#key for list of cards that should be "revealed" -- both players can see
 MESSAGE_KEY = "MSG"#key for response data that encodes a simple string message
+SKIP_KEY = "SKIP_KEY"#if an input event gives this key, the receiver should fast forward itself. all users of input events must deal with this. it is guaranteed that if one value is SKIP_KEY in env_cache, all values are SKIP_KEY
+
 class ResponseType(StrEnum):
     SKIP = "SKIP"#something in the list went awry/was rejected, undo the whole packet
     ACCEPT = 'ACCEPT'#accept and move to the next step

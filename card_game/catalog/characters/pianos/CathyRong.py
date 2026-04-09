@@ -10,9 +10,7 @@ class CathyRong(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PIANO, 2, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -46,24 +44,23 @@ class CathyRong(AVGECharacterCard):
                     ]
                 },
             )
-
-        base_damage = AVGECardHPChange(
-            opponent.get_active_card(),
-            20,
-            AVGEAttributeModifier.SUBSTRACTIVE,
-            CardType.PIANO,
-            ActionTypes.ATK_1,
-            card,
-        )
+        def gen() -> PacketType:
+            return [AVGECardHPChange(
+                opponent.get_active_card(),
+                20,
+                AVGEAttributeModifier.SUBSTRACTIVE,
+                CardType.PIANO,
+                ActionTypes.ATK_1,
+                card,
+            )]
+        base_damage : PacketType = [gen]
         if chosen is None:
-            card.propose(AVGEPacket([base_damage], AVGEEngineID(card, ActionTypes.ATK_1, CathyRong)))
+            card.propose(AVGEPacket(base_damage, AVGEEngineID(card, ActionTypes.ATK_1, CathyRong)))
             return card.generate_response()
         assert isinstance(chosen, AVGECharacterCard)
+        base_damage.append(AVGEEnergyTransfer(chosen.energy[0], chosen, chosen.player, ActionTypes.ATK_1, card))
         card.propose(
-            AVGEPacket([
-                base_damage,
-                AVGEEnergyTransfer(chosen.energy[0], chosen, chosen.player, ActionTypes.ATK_1, card),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, CathyRong))
+            AVGEPacket(base_damage, AVGEEngineID(card, ActionTypes.ATK_1, CathyRong))
         )
         return card.generate_response()
 

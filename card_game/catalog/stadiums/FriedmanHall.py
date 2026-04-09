@@ -24,7 +24,7 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 			self.invalidate()
 		
 	def assess(self, args=None):
-		from card_game.internal_events import InputEvent, Phase2, TransferCard, PhasePickCard
+		from card_game.internal_events import InputEvent, Phase2, TransferCard, PhasePickCard, EmptyEvent
 
 		event = self.attached_event
 		assert isinstance(event, PhasePickCard)
@@ -54,13 +54,15 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 									self.owner_card, 
 									{"query_label": "friedmanhall_turnbegin_pick", 
 		  							"targets": top_two_cards,
-									  "display": top_two_cards,
-									"bidirectional": True})]},
+									  "display": top_two_cards})]},
 			)
 
 		other = top_two_cards[1] if chosen == top_two_cards[0] else top_two_cards[0]
 		event.temp_cache[FriedmanHall._TURNBEGIN_OVERRIDE_FLAG] = True
 		self.propose(AVGEPacket([
+				EmptyEvent(ActionTypes.NONCHAR, self.owner_card, response_data={
+					REVEAL_KEY: top_two_cards
+				}),
 				TransferCard(chosen, deck, hand, ActionTypes.ENV, self.owner_card),
 				TransferCard(other, deck, deck, ActionTypes.ENV, self.owner_card, random.randint(0, len(deck))),
 				Phase2(active_player, ActionTypes.ENV, None),

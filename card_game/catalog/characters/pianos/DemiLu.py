@@ -35,13 +35,7 @@ class DemiLuDamageBlockModifier(AVGEAssessor):
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "DemiLu Damage Immunity Modifier"
-
+    
     def assess(self, args=None):
         if args is None:
             args = {}
@@ -67,18 +61,11 @@ class DemiLuConstraint(AVGEConstraint):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "DemiLu Constraint"
-
 
 class DemiLu(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PIANO, 1, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

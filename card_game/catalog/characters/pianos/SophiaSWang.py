@@ -112,7 +112,6 @@ class SophiaSWang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PIANO, 2, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

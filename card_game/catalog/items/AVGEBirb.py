@@ -6,9 +6,10 @@ from card_game.engine.engine_constants import EngineGroup
 
 
 class AVGEBirbNextTurnDamageModifier(AVGEModifier):
-	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard):
+	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, round_active : int = 0):
 		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, AVGEBirb), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 		self.owner_card = owner_card
+		self.round_active = round_active
 
 	def event_match(self, event):
 		from card_game.internal_events import AVGECardHPChange
@@ -29,9 +30,7 @@ class AVGEBirbNextTurnDamageModifier(AVGEModifier):
 		return True
 
 	def update_status(self):
-		round_used = self.owner_card.env.cache.get(self.owner_card, AVGEBirb._ROUND_USED_KEY, 0)
-		assert isinstance(round_used, int)
-		if(self.owner_card.env.round_id > round_used):
+		if(self.owner_card.env.round_id > self.round_active):
 			self.invalidate()
 
 	def make_announcement(self) -> bool:
@@ -49,12 +48,9 @@ class AVGEBirbNextTurnDamageModifier(AVGEModifier):
 		return self.generate_response()
 
 class AVGEBirb(AVGEItemCard):
-	_ROUND_USED_KEY = "avgebirb_round_used"
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
-
-	
 	
 	@staticmethod
 	def play_card(card) -> Response:
@@ -62,9 +58,7 @@ class AVGEBirb(AVGEItemCard):
 
 		opponent = card.player.opponent
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
-		card.env.cache.set(card, AVGEBirb._ROUND_USED_KEY, card.env.round_id)
-
-		damage_modifier = AVGEBirbNextTurnDamageModifier(card)
+		damage_modifier = AVGEBirbNextTurnDamageModifier(card, card.env.round_id)
 		card.add_listener(damage_modifier)
 		def generate_packet():
 			packet = []

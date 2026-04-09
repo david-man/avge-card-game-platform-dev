@@ -14,7 +14,6 @@ class IzzyChen(AVGECharacterCard):
         super().__init__(unique_id, 110, CardType.WOODWIND, 2, 0, 3)
         self.has_atk_1 = False
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = True
 
@@ -94,17 +93,18 @@ class IzzyChen(AVGECharacterCard):
             damage = 100
         else:
             return card.generate_response()
-
-        packet : PacketType = [
-            AVGECardHPChange(
-                bench_target,
-                damage,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_2,
-                card,
-            )
-            for bench_target in opponent_bench if isinstance(bench_target, AVGECharacterCard)
-        ]
+        def gen() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    bench_target,
+                    damage,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+                for bench_target in opponent_bench if isinstance(bench_target, AVGECharacterCard)
+            ]
+        packet : PacketType = [gen]
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, IzzyChen)))
         return card.generate_response()

@@ -36,7 +36,7 @@ class RyanLiMaidDamageModifier(AVGEModifier):
 
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
-        event.modify_magnitude(-10)
+        event.modify_magnitude(10)
         return self.generate_response()
 
 
@@ -46,7 +46,6 @@ class RyanLi(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PIANO, 1, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

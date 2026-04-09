@@ -24,21 +24,22 @@ class ConcertTicket(AVGEItemCard):
 
 		if(current_hand_size >= 4):
 			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "ConcertTicket cannot be played when hand size is already 3 or more."})
-
-		draw_needed = 4 - current_hand_size
-		draw_count = min(draw_needed, len(deck))
-		def gen() -> PacketType:
-			packet = []
-			if(len(deck) == 3):
-				return []
-			else:
-				return [TransferCard(
-						deck.peek(),
-						deck,
-						hand,
-						ActionTypes.NONCHAR,
-						card,
-					)]
-		packet : PacketType = [gen] * draw_count
-		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, ConcertTicket)))
+		def gen_all() -> PacketType:
+			draw_needed = 4 - current_hand_size
+			draw_count = min(draw_needed, len(deck))
+			def gen() -> PacketType:
+				packet = []
+				if(len(deck) == 3):
+					return []
+				else:
+					return [TransferCard(
+							deck.peek(),
+							deck,
+							hand,
+							ActionTypes.NONCHAR,
+							card,
+						)]
+			return [gen] * draw_count
+		
+		card.propose(AVGEPacket([gen_all], AVGEEngineID(card, ActionTypes.NONCHAR, ConcertTicket)))
 		return card.generate_response()

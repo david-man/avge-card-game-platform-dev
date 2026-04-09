@@ -18,7 +18,6 @@ class Angel(AVGESupporterCard):
 			opponent = player.opponent
 
 			packet = []
-
 			for character in player.get_cards_in_play():
 				packet.append(
 						AVGECardStatusChange(
@@ -44,7 +43,7 @@ class Angel(AVGESupporterCard):
 						card,
 					)
 				)
-			return packet
-		card.propose(AVGEPacket(generate_packet(), AVGEEngineID(card, ActionTypes.NONCHAR, Angel)))
+			return packet	
+		card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.NONCHAR, Angel)))
 
 		return card.generate_response(ResponseType.CORE)

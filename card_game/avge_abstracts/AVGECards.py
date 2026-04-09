@@ -21,7 +21,8 @@ class AVGECard():
     
     def __eq__(self, other : object):
         return isinstance(other, AVGECard) and self.unique_id == other.unique_id
-    
+    def __str__(self):
+        return type(self).__name__
     def attach_to_cardholder(self, cardholder : AVGECardholder):
         self.cardholder = cardholder
         self.player = cardholder.player
@@ -68,6 +69,7 @@ class AVGECharacterCard(AVGECard):
         super().__init__(unique_id)
         self.tools_attached : AVGEToolCardholder = AVGEToolCardholder(self)
         self.statuses_attached : dict[StatusEffect, list[AVGECard | None]] = {effect: [] for effect in StatusEffect}
+        self.statuses_responsible : dict[StatusEffect, list[AVGECard]] = {effect: [] for effect in StatusEffect}
         #up to you to redefine all of the following!
         self.hp : int = hp
         self.max_hp : int = hp
@@ -147,6 +149,7 @@ class AVGEStadiumCard(AVGECard):
         super().__init__(unique_id)
         self.original_owner : AVGEPlayer = None#type: ignore ,last owner of the card before it became the stadium.
     def attach_to_cardholder(self, cardholder):
+        super().attach_to_cardholder(cardholder)
         if(cardholder.player is not None):
             self.original_owner = cardholder.player
     def play_card(self) -> Response:#type: ignore

@@ -4,8 +4,6 @@ from card_game.avge_abstracts import *
 from card_game.avge_abstracts.AVGECards import AVGEStadiumCard
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.catalog.items.MatchaLatte import MatchaLatte
-from card_game.catalog.items.StrawberryMatchaLatte import StrawberryMatchaLatte
 
 from card_game.internal_events import AVGECardHPChange, TransferCard
 
@@ -49,7 +47,7 @@ class PetterutiMaidTransfer(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
 		super().__init__(
 			identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, PetterutiLounge),
-			group=EngineGroup.EXTERNAL_MODIFIERS_2,
+			group=EngineGroup.EXTERNAL_MODIFIERS_1,
 		)
 		self.owner_card = owner_card
 

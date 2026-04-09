@@ -11,7 +11,6 @@ class KanaTakizawa(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.WOODWIND, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -24,7 +23,7 @@ class KanaTakizawa(AVGECharacterCard):
             def __init__(self):
                 super().__init__(
                     identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, KanaTakizawa),
-                    group=EngineGroup.EXTERNAL_MODIFIERS_2,
+                    group=EngineGroup.EXTERNAL_MODIFIERS_3,
                 )
 
             def event_match(self, event):

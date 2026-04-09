@@ -23,7 +23,7 @@ class StrawberryMatchaLatte(AVGEItemCard):
 						InputEvent(
 							card.player,
 							[StrawberryMatchaLatte._HEAL_TARGET_KEY],
-							InputType.DETERMINISTIC,
+							InputType.SELECTION,
 							lambda res: True,
 							ActionTypes.NONCHAR,
 							card,

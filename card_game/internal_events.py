@@ -113,6 +113,8 @@ class AVGECardMaxHPChange(AVGEEvent):
         self.target_card.max_hp = self.old_max
 
     def generate_internal_listeners(self):
+        from .internal_listeners import AVGEMaxHPChangeAssessment
+        self.attach_listener(AVGEMaxHPChangeAssessment())
         return
     
     def package(self):
@@ -164,15 +166,22 @@ class AVGECardStatusChange(AVGEEvent):
         if(self.change_type == StatusChangeType.ADD):
             if(self.caller_card not in self.target.statuses_attached[self.status_effect]):
                 self.target.statuses_attached[self.status_effect].append(self.caller_card)
+                if(isinstance(self.caller_card, AVGECharacterCard)):
+                    self.caller_card.statuses_responsible[self.status_effect].append(self.target)
             else:
                 self.made_change = False
         elif(self.change_type == StatusChangeType.ERASE):
             if(self.caller_card in self.target.statuses_attached[self.status_effect]):
                 self.target.statuses_attached[self.status_effect].remove(self.caller_card)
+                if(isinstance(self.caller_card, AVGECharacterCard)):
+                    self.caller_card.statuses_responsible[self.status_effect].remove(self.target)
             else:
                 self.made_change = False
         elif(self.change_type == StatusChangeType.REMOVE):
             self._old = self.target.statuses_attached[self.status_effect]
+            for card in self.target.statuses_attached[self.status_effect]:
+                if(isinstance(card, AVGECharacterCard)):
+                    card.statuses_responsible[self.status_effect].remove(self.target)
             self.target.statuses_attached[self.status_effect] = []
         return self.generate_core_response()
     def invert_core(self, args = None):
@@ -180,10 +189,17 @@ class AVGECardStatusChange(AVGEEvent):
             return
         if(self.change_type == StatusChangeType.ADD):
             self.target.statuses_attached[self.status_effect].remove(self.caller_card)
+            if(isinstance(self.caller_card, AVGECharacterCard)):
+                self.caller_card.statuses_responsible[self.status_effect].remove(self.target)
         elif(self.change_type == StatusChangeType.ERASE):
             self.target.statuses_attached[self.status_effect].append(self.caller_card)
+            if(isinstance(self.caller_card, AVGECharacterCard)):
+                self.caller_card.statuses_responsible[self.status_effect].append(self.target)
         elif(self.change_type == StatusChangeType.REMOVE):
             self.target.statuses_attached[self.status_effect] = self._old
+            for card in self.target.statuses_attached[self.status_effect]:
+                if(isinstance(card, AVGECharacterCard)):
+                    card.statuses_responsible[self.status_effect].append(self.target)
     def generate_internal_listeners(self):
         return
     def package(self):
@@ -290,18 +306,56 @@ class TransferCard(AVGEEvent):
     
     def core(self, args :Data | None = None) -> Response:
         self.old_idx = self.pile_from.get_posn(self.card)
+
         if(isinstance(self.card, AVGEToolCard)):
-            if(self.card.card_attached is not None):
-                self._previous_card = self.card.card_attached
+            self._previous_card = self.card.card_attached
             self.card.card_attached = self.pile_to.parent_card if isinstance(self.pile_to, AVGEToolCardholder) else None
+
+        
         self.card.env.transfer_card(self.card, self.pile_from, self.pile_to, self.new_idx)
+
+        if(self.pile_to.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard) and self.pile_from.pile_type != Pile.TOOL):
+            #on tool attachment
+            packet : PacketType = [PlayNonCharacterCard(
+                self.card,
+                ActionTypes.ENV,
+                self.card,
+            )]
+            self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
+
+        if(self.pile_to.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard) and self.pile_from.pile_type != Pile.STADIUM):
+            #on stadium attachment
+            packet : PacketType = [PlayNonCharacterCard(
+                self.card,
+                ActionTypes.ENV,
+                self.card,
+            )]
+            self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
+
+        if(self.pile_to.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_from.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
+            #on card activation
+            if(self.card.has_passive):
+                packet : PacketType = [PlayCharacterCard(
+                    self.card,
+                    ActionTypes.PASSIVE,
+                    ActionTypes.ENV,
+                    self.card,
+                )]
+                self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
+
+        if(self.pile_to.pile_type in [Pile.HAND, Pile.DECK, Pile.DISCARD]):
+            #wipes cache when its convenient
+            self.card.env.cache.wipe(self.card)
+
         if(self.pile_to.pile_type == Pile.DISCARD):
+            #on tool/stadium discard
             if(self.pile_from.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard)):
                 self.card.deactivate_card()
             if(self.pile_from.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard)):
                 self.card.deactivate_card()
-            self.card.env.cache.wipe(self.card)
-        if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and not self.pile_to in [Pile.ACTIVE, Pile.BENCH]):
+
+        if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
+            #on card discard
             #discard tools
             def packet_1():
                 assert isinstance(self.card, AVGECharacterCard)
@@ -356,26 +410,39 @@ class TransferCard(AVGEEvent):
                     None
                 ))
                 return packet
-            self.propose(AVGEPacket([packet_1], AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-            self.propose(AVGEPacket([packet_2], AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-            self.propose(AVGEPacket([packet_3], AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
-            self.propose(AVGEPacket([packet_4], AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)), 1)
+            def packet_5():
+                assert isinstance(self.card, AVGECharacterCard)
+                packet : PacketType= []
+                for status in self.card.statuses_responsible:
+                    for card in self.card.statuses_responsible[status]:
+                        assert isinstance(card, AVGECharacterCard)
+                        packet.append(AVGECardStatusChange(
+                            status,
+                            StatusChangeType.ERASE,
+                            card,
+                            ActionTypes.ENV,
+                            self.card
+                        ))
+                return packet
+            self.propose(AVGEPacket([packet_1, packet_2, packet_3, packet_4, packet_5], AVGEEngineID(None, ActionTypes.ENV, None)), 1)
             self.card.deactivate_card()
             self.card.env.cache.wipe(self.card)
         return self.generate_core_response()
     
     def invert_core(self, args : Data | None = None):
-        if(isinstance(self.card, AVGEToolCard) and isinstance(self.pile_from, AVGEToolCardholder)):
+        if(isinstance(self.card, AVGEToolCard)):
             self.card.card_attached = self._previous_card
+
         self.card.env.transfer_card(self.card, self.pile_to, self.pile_from, self.old_idx)
+
         if(self.pile_to.pile_type == Pile.DISCARD):
             if(self.pile_from.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard)):
                 self.card.reactivate_card()
             if(self.pile_from.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard)):
                 self.card.reactivate_card()
-        if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and not self.pile_to in [Pile.ACTIVE, Pile.BENCH]):
-            if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard)):
-                self.card.reactivate_card()
+
+        if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
+            self.card.reactivate_card()
         
 
     def generate_internal_listeners(self):
@@ -486,7 +553,10 @@ class PhasePickCard(AVGEEvent):
                                       deck,
                                       hand,
                                       ActionTypes.ENV,
-                                      None)], 
+                                      None),
+                                      Phase2(top_card.player,
+                                             ActionTypes.ENV,
+                                             None)], 
                                       AVGEEngineID(None, ActionTypes.ENV, None))
             self.propose(packet)
             return self.generate_core_response()
@@ -542,10 +612,6 @@ class Phase2(AVGEEvent):
                                                self.player.cardholders[Pile.DISCARD],
                                                ActionTypes.PLAYER_CHOICE,
                                                None))
-                
-                packet.append(PlayNonCharacterCard(tool,
-                                               ActionTypes.PLAYER_CHOICE,
-                                               tool))
                 self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
                 return self.generate_core_response()
 
@@ -606,9 +672,6 @@ class Phase2(AVGEEvent):
                                                old_stadium.original_owner.cardholders[Pile.DISCARD],
                                                ActionTypes.PLAYER_CHOICE,
                                                None))
-                packet.append(PlayNonCharacterCard(stadium_card,
-                                                   ActionTypes.PLAYER_CHOICE,
-                                                   stadium_card))
                 self.propose(AVGEPacket(packet,AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
                 return self.generate_core_response()
 
@@ -648,9 +711,16 @@ class Phase2(AVGEEvent):
                                                attach_to,
                                                ActionTypes.PLAYER_CHOICE,
                                                None)
-                    self.propose(AVGEPacket([event],AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
+                    event_2 = AVGEPlayerAttributeChange(self.player,
+                                               AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN,
+                                               1,
+                                               AVGEAttributeModifier.SUBSTRACTIVE,
+                                               ActionTypes.ENV,
+                                               None)
+                    self.propose(AVGEPacket([event, event_2],AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
                 else:
-                    return self.generate_core_response(ResponseType.SKIP, {MESSAGE_KEY: "no more tokens for player to give to card!"})
+                    return self.generate_core_response(ResponseType.REQUIRES_QUERY,
+                                           {'query_type': 'phase2', 'player_involved': self.player, MESSAGE_KEY: "No energy left to give!"})
                 return self.generate_core_response()
 
         elif(next_action == 'hand2bench'):
@@ -663,11 +733,6 @@ class Phase2(AVGEEvent):
                                            self.player.cardholders[Pile.BENCH],
                                            ActionTypes.PLAYER_CHOICE,
                                            None))
-                if(hand2bench_card.has_passive):
-                    packet.append(PlayCharacterCard(hand2bench_card,
-                                                    ActionTypes.PASSIVE,
-                                                    ActionTypes.PLAYER_CHOICE,
-                                                    hand2bench_card))
                 self.propose(AVGEPacket(packet,AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
                 return self.generate_core_response()
 
@@ -702,23 +767,41 @@ class AtkPhase(AVGEEvent):
         env : AVGEEnvironment = self.player.env
         env.game_phase = GamePhase.ATK_PHASE
         active_card = env.get_active_card(self.player.unique_id)
+        assert isinstance(active_card, AVGECharacterCard)
         atk_type = args.get('type')
         if(atk_type == ActionTypes.ATK_1 or atk_type == ActionTypes.ATK_2):
+            if(atk_type == ActionTypes.ATK_1 and active_card.has_atk_1 or
+               atk_type == ActionTypes.ATK_2 and active_card.has_atk_2):
+                packet = []
+                packet.append(PlayCharacterCard(
+                    cast(AVGECharacterCard, active_card),
+                    atk_type,
+                    ActionTypes.PLAYER_CHOICE,
+                    cast(AVGECharacterCard, active_card),
+                    active_card.atk_1_cost if atk_type==ActionTypes.ATK_1 else active_card.atk_2_cost
+                ))
+                packet.append(AVGEPlayerAttributeChange(
+                    env.player_turn,
+                    AVGEPlayerAttribute.ATTACKS_LEFT,
+                    1,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    ActionTypes.ENV,
+                    None
+                ))# --> need a better way to figure out end of attack than this. this runs into the issue where the actual contents of the atk itself get SKIPPED, but the player still loses their attack
+                self.propose(AVGEPacket(packet,AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
+                return self.generate_core_response()
+            return self.generate_core_response(ResponseType.REQUIRES_QUERY, 
+                                               {'query_type': 'atk', 'player_involved': self.player})
+        elif(atk_type == ActionTypes.SKIP):
             packet = []
-            packet.append(PlayCharacterCard(
-                cast(AVGECharacterCard, active_card),
-                atk_type,
-                ActionTypes.PLAYER_CHOICE,
-                cast(AVGECharacterCard, active_card)
-            ))
-            # packet.append(AVGEPlayerAttributeChange(
-            #     env.player_turn,
-            #     AVGEPlayerAttribute.ATTACKS_LEFT,
-            #     -1,
-            #     AVGEAttributeModifier.ADDITIVE,
-            #     ActionTypes.ENV,
-            #     None
-            # )) --> need a better way to figure out end of attack than this. this runs into the issue where the actual contents of the atk itself get SKIPPED, but the player still loses their attack
+            packet.append(AVGEPlayerAttributeChange(
+                    env.player_turn,
+                    AVGEPlayerAttribute.ATTACKS_LEFT,
+                    0,
+                    AVGEAttributeModifier.SET_STATE,
+                    ActionTypes.ENV,
+                    None
+                ))
             self.propose(AVGEPacket(packet,AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
             return self.generate_core_response()
         else:
@@ -751,7 +834,7 @@ class InputEvent(AVGEEvent):
                  input_type : InputType | list[InputType],#type of input
                  input_validation : Callable[[list[Any]], bool],#function that validates all inputs
                  catalyst_action : ActionTypes,
-                 caller_card : AVGECard,#the caller card whose cache to use for inputs
+                 caller_card : AVGECard | None,#the caller card whose cache to use for inputs
                  query_data : Data | None = None):
         super().__init__(player_for=player_for,
                  input_keys=input_keys,
@@ -771,6 +854,13 @@ class InputEvent(AVGEEvent):
     def core(self, args : Data | None = None) -> Response:
         if(args is None):
             args = {}
+        self.query_data["player_for"] = self.player_for
+        if(self.input_type == InputType.SELECTION):
+            allow_none = self.query_data.get("allow_none", False)
+            allow_repeats = self.query_data.get("allow_repeats", False)
+            self.query_data["allow_none"] = allow_none
+            self.query_data["allow_repeats"] = allow_repeats
+
         if(not isinstance(args.get("input_result", []), list) 
            or len(args.get("input_result", [])) != len(self.input_keys)
            or not self.input_validation(args.get("input_result", []))):
@@ -783,30 +873,24 @@ class InputEvent(AVGEEvent):
             assert self.caller_card is not None
             env : AVGEEnvironment = self.caller_card.env
             input_result = args.get("input_result", [])
+            
+            if(input_result == None):
+                return self.generate_core_response(ResponseType.FAST_FORWARD)
             if(self.input_type == InputType.SELECTION):
                 valid = True
-                allow_none = self.query_data.get("allow_none", False)
-                allow_repeats = self.query_data.get("allow_repeats", False)
                 display = self.query_data.get("display", None)#all the items that should be displayed. this may or may not be equivalent to targets
-
-                instance_based = False
                 targets = self.query_data.get("targets", None)
                 assert isinstance(targets, list)
                 assert isinstance(display, list)
-                if(len(targets) > 0):
-                    if isinstance(targets[0], list):
-                        instance_based = True
-                        assert len(targets) == len(self.input_keys) and all(isinstance(x, list) for x in targets)
-                seen = set([])
+                seen = []
                 for i, res in enumerate(input_result):
+                    allow_none = self.query_data.get("allow_none", False)
+                    allow_repeats = self.query_data.get("allow_repeats", False)
                     if((res is None and not allow_none) or (res in seen and not allow_repeats)):
-                        if(not instance_based and res not in targets):
+                        if(res not in targets):
                             valid = False
                             break
-                        elif(instance_based and res not in targets[i]):
-                            valid = False
-                            break
-                    seen.add(res)
+                    seen.append(res)
                 if not valid:
                     return self.generate_core_response(ResponseType.REQUIRES_QUERY,
                                                {'query_type': 'card_query',
@@ -885,3 +969,56 @@ class TurnEnd(AVGEEvent):
         return
     def package(self):
         return f"Ending Turn! Resetting all to default"
+    
+class PlayerInitEvent(AVGEEvent):
+    _PLAYER_ACTIVE = "PLAYER_ACTIVE"
+    _BENCH_ACTIVE_BASE = "_BENCH_"
+    def __init__(self, player : AVGEPlayer):
+        super().__init__(player=player,
+                 catalyst_action=ActionTypes.ENV,
+                 caller_card=None)
+        self.player = player
+    def core(self, args : Data | None = None) -> Response:
+        active_key = PlayerInitEvent._PLAYER_ACTIVE
+        keys = [active_key] + [PlayerInitEvent._BENCH_ACTIVE_BASE + str(i) for i in range(max_bench_size)]
+        missing = object()
+        vals = [self.player.env.cache.get(None, key, missing, True) for key in keys]
+        chars = [card for card in self.player.cardholders[Pile.HAND] if isinstance(card, AVGECharacterCard)]
+        if(vals[0] == missing or vals[0] is None):#active must not be none; others can be none
+            return self.generate_core_response(ResponseType.INTERRUPT,{
+                INTERRUPT_KEY: [
+                    InputEvent(
+                        self.player,
+                        keys,
+                        InputType.SELECTION,
+                        lambda res : True,
+                        ActionTypes.ENV,
+                        None,
+                        {
+                            "query_label": "player_init",
+                            "targets": chars,
+                            "display": list(self.player.cardholders[Pile.HAND]),
+                            "allow_none": True
+                        }
+                    )
+                ]
+            })
+        assert isinstance(vals[0], AVGECharacterCard)
+        active_card = vals[0]
+        bench_cards = vals[1:]
+        p : PacketType = [
+            TransferCard(active_card,
+                         self.player.cardholders[Pile.HAND],
+                         self.player.cardholders[Pile.ACTIVE],
+                         ActionTypes.ENV,
+                         None),
+        ]
+        for card in bench_cards:
+            if(card is not None):
+                p.append(TransferCard(active_card,
+                         self.player.cardholders[Pile.HAND],
+                         self.player.cardholders[Pile.BENCH],
+                         ActionTypes.ENV,
+                         None))
+        self.propose(AVGEPacket(p, AVGEEngineID(None, ActionTypes.ENV, None)))
+        return self.generate_core_response()

@@ -55,7 +55,9 @@ class DressRehearsalRoster(AVGEItemCard):
 							{
 								"query_label": "dress_rehearsal_roster_energy_remove",
 								"targets": in_play_characters,
-								"display": in_play_characters
+								"display": in_play_characters,
+								"allow_repeats": True,
+								"allow_none": False
 							},
 						)
 					]
@@ -63,16 +65,15 @@ class DressRehearsalRoster(AVGEItemCard):
 			)
 		packet : PacketType = []
 		for selected in selected_chars:
-			assert isinstance(selected, AVGECharacterCard)
-			packet.append(
-				AVGEEnergyTransfer(
-					selected.energy[0],
-					selected,
-					selected.env,
-					ActionTypes.NONCHAR,
-					card,
-				)
-			)
+			def gen() -> PacketType:
+				assert isinstance(selected, AVGECharacterCard) 
+				return [AVGEEnergyTransfer(
+						selected.energy[0],
+						selected,
+						selected.env,
+						ActionTypes.NONCHAR,
+						card)]
+			packet.append(gen)
 
 		cards_to_shuffle = list(discard)
 		if(len(cards_to_shuffle) > 4):

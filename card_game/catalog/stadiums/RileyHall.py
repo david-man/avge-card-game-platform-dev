@@ -58,7 +58,7 @@ class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
             )
 
         if(len(packet) > 0):
-            self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RileyHall)))
+            self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RileyHall)), 1)
         return self.generate_response()
 
 

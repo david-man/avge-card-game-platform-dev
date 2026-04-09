@@ -10,7 +10,6 @@ class AnnaBrown(AVGECharacterCard):
         super().__init__(unique_id, 110, CardType.WOODWIND, 2, 0, 2)
         self.has_atk_1 = False
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = True
         self.has_active = False
 
@@ -62,9 +61,8 @@ class AnnaBrown(AVGECharacterCard):
     @staticmethod
     def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-
-        card.propose(
-            AVGEPacket([
+        def gen() -> PacketType:
+            return [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
@@ -81,6 +79,8 @@ class AnnaBrown(AVGECharacterCard):
                     ActionTypes.ATK_2,
                     card,
                 ),
-            ], AVGEEngineID(card, ActionTypes.ATK_2, AnnaBrown))
+            ]
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, AnnaBrown))
         )
         return card.generate_response()

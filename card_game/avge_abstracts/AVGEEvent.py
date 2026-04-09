@@ -21,11 +21,14 @@ class AVGEEvent(Event):
         self.catalyst_action = catalyst_action
         self.identifier = AVGEEngineID(caller_card, catalyst_action, None)
         self.temp_cache = {}
+    def __str__(self):
+        return type(self).__name__
     
 class AVGEPacket(Packet[AEV]):
     type AVGEGenerator = Callable[[], list[AEV | AVGEGenerator]]
     def __init__(self, element : list[AEV | AVGEGenerator], identifier : AVGEEngineID):
         super().__init__(element)
         self.identifier = identifier
+    
 
 type PacketType = list[AVGEEvent | DeferredAVGEPacket]

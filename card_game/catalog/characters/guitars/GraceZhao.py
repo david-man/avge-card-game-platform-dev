@@ -36,12 +36,6 @@ class _GraceTurnEndReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "GraceZhao TurnEnd Reactor"
-
     def react(self, args=None):
         if args is None:
             args = {}
@@ -54,8 +48,9 @@ class _GraceTurnEndReactor(AVGEReactor):
                 if isinstance(t, (AVGEShowcaseSticker, AVGETShirt)):
                     candidates.append(c)
                     break
-        selected_card = self.owner_card.env.cache.get(self.owner_card, GraceZhao._TARGET_KEY, None, True)
-        if selected_card is None:
+        missing = object()
+        selected_card = self.owner_card.env.cache.get(self.owner_card, GraceZhao._TARGET_KEY, missing, True)
+        if selected_card is missing:
             return self.owner_card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -76,19 +71,20 @@ class _GraceTurnEndReactor(AVGEReactor):
                     ]
                 },
             )
-
-        self.propose(
-            AVGEPacket([
-                AVGECardHPChange(
-                    selected_card,
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.GUITAR,
-                    ActionTypes.PASSIVE,
-                    self.owner_card,
-                )
-            ], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, GraceZhao))
-        )
+        if selected_card is not None:
+            self.propose(
+                AVGEPacket([
+                    AVGECardHPChange(
+                        selected_card,
+                        10,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.GUITAR,
+                        ActionTypes.PASSIVE,
+                        self.owner_card,
+                    )
+                ], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, GraceZhao)),
+                1
+            )
         return self.generate_response()
 
 
@@ -98,7 +94,6 @@ class GraceZhao(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.GUITAR, 2, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -111,7 +106,7 @@ class GraceZhao(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGECardHPChange
-        def gen() -> PacketType:
+        def gen_1() -> PacketType:
             return [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
@@ -122,21 +117,20 @@ class GraceZhao(AVGECharacterCard):
                     card,
                 )
             ]
-        packet : PacketType = []
-        packet.append(gen)
-
-        for c in card.player.cardholders[Pile.BENCH]:
-            if isinstance(c, AVGECharacterCard) and c.card_type == CardType.GUITAR:
-                packet.append(
-                    AVGECardHPChange(
-                        c,
-                        10,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.GUITAR,
-                        ActionTypes.ATK_1,
-                        card,
+        def gen_2() -> PacketType:
+            packet : PacketType = []
+            for c in card.player.cardholders[Pile.BENCH]:
+                if isinstance(c, AVGECharacterCard) and c.card_type == CardType.GUITAR:
+                    packet.append(
+                        AVGECardHPChange(
+                            c,
+                            10,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.GUITAR,
+                            ActionTypes.ATK_1,
+                            card,
+                        )
                     )
-                )
-
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, GraceZhao)))
+            return packet
+        card.propose(AVGEPacket([gen_1, gen_2], AVGEEngineID(card, ActionTypes.ATK_1, GraceZhao)))
         return card.generate_response()

@@ -32,12 +32,6 @@ class DavidNextAttackHalvedModifier(AVGEModifier):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "DavidMan Next Attack Halved Modifier"
-
     def on_packet_completion(self):
         self.invalidate()
 
@@ -60,7 +54,6 @@ class DavidMan(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PIANO, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = False
         self.has_active = True
@@ -79,11 +72,12 @@ class DavidMan(AVGECharacterCard):
 
         discard = card.player.cardholders[Pile.DISCARD]
         deck = card.player.cardholders[Pile.DECK]
-
+        if(len(discard) == 0):
+            return card.generate_response(data={MESSAGE_KEY: "No cards in discard to use!"})
         card.env.cache.set(card, DavidMan._ACTIVE_USED_KEY, card.env.round_id)
 
         if card.env.cache.get(card, DavidMan._RANDOM_PICK_KEY, None) is None:
-            topick = random.choice(list(discard.cards_by_id.values()))
+            topick = random.choice(list(discard))
             card.env.cache.set(card, DavidMan._RANDOM_PICK_KEY, topick)
 
         choice = card.env.cache.get(card, DavidMan._ACTIVE_CHOICE_KEY, None, True)

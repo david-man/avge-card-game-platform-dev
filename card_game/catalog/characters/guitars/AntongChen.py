@@ -11,9 +11,7 @@ class AntongChen(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.GUITAR, 2, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -23,7 +21,7 @@ class AntongChen(AVGECharacterCard):
 
         last_atk2 = card.env.cache.get(card, AntongChen._LAST_ATK2_ROUND_KEY, None)
         if last_atk2 is not None and card.env.round_id - last_atk2 <= 2:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "Cannot use this attack this turn!"})
 
         coin_keys = [AntongChen._ATK1_COIN_BASE + str(i) for i in range(5)]
         vals = [card.env.cache.get(card, key, None, True) for key in coin_keys]
@@ -44,7 +42,6 @@ class AntongChen(AVGECharacterCard):
                     ]
                 },
             )
-
         heads = sum(int(v) for v in vals if v is not None)
         if heads <= 0:
             return card.generate_response()
@@ -78,13 +75,12 @@ class AntongChen(AVGECharacterCard):
                         card,
                     )]
         def generate_2() -> PacketType:
-            if(len(card.energy) > 2):
-                packet = []
-                for token in list(card.energy)[:2]:
-                    packet.append(AVGEEnergyTransfer(token, card, card.player, ActionTypes.ATK_2, card))
-                return packet
-            else:
-                return[EmptyEvent(ActionTypes.ATK_2, card, response_data={MESSAGE_KEY:"Antong Chen doesn't have 2 energy to get rid of!"})]
+            def discard_top() -> PacketType:
+                if(len(card.energy) == 0):
+                    return []
+                else:
+                    return [AVGEEnergyTransfer(card.energy[0], card, card.env, ActionTypes.ATK_2, card)]
+            return [discard_top, discard_top]
 
         card.env.cache.set(card, AntongChen._LAST_ATK2_ROUND_KEY, card.env.round_id)
         card.propose(AVGEPacket([generate_1, generate_2], AVGEEngineID(card, ActionTypes.ATK_2, AntongChen)))

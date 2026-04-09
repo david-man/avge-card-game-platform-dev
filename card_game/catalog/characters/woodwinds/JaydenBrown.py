@@ -12,7 +12,6 @@ class JaydenBrown(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -59,11 +58,12 @@ class JaydenBrown(AVGECharacterCard):
                 env = owner_card.env
                 event = self.attached_event
                 assert isinstance(event, InputEvent)
-                cache_key_used = f"jayden_coin_flip_used_turn_{env.round_id}"
-                if env.cache.get(owner_card, cache_key_used, False, True):
+                cache_key_used = f"jayden_coin_flip_used"
+                last_round_used : int | None = env.cache.get(owner_card, cache_key_used, None)
+                if last_round_used is not None and last_round_used== env.round_id:
                     return self.generate_response()
 
-                env.cache.set(owner_card, cache_key_used, True)
+                env.cache.set(owner_card, cache_key_used, env.round_id)
                 choice = env.cache.get(owner_card, JaydenBrown._CHOICE, None, True)
                 if choice is None:
                     return self.generate_response(

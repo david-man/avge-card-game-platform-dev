@@ -24,11 +24,11 @@ class AVGEPlayer():
         self.add_cardholder(bench)
         self.add_cardholder(active)
         self.attributes : dict[AVGEPlayerAttribute, int] = {
-            AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN: 1,
+            AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN: per_turn_token_add,
             AVGEPlayerAttribute.KO_COUNT: 0,
-            AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN: 1,
-            AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN: 1,
-            AVGEPlayerAttribute.ATTACKS_LEFT: 1,
+            AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN: per_turn_supporter,
+            AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN: per_turn_swaps,
+            AVGEPlayerAttribute.ATTACKS_LEFT: per_turn_atks,
         }
 
         self.opponent : AVGEPlayer = self
@@ -64,3 +64,5 @@ class AVGEPlayer():
         cardholder.attach_to_player(self)
     def __eq__(self, player2 : object):
         return isinstance(player2, AVGEPlayer) and self.unique_id == player2.unique_id
+    def __str__(self):
+        return self.unique_id

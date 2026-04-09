@@ -26,6 +26,8 @@ class AVGEAbstractEventListener(AbstractEventListener[AVGEEvent]):
                  requires_runtime_info : bool = False):
         super().__init__(group,internal,requires_runtime_info)
         self.identifier= identifier
+    def __str__(self):
+        return type(self).__name__
 
 class AVGEModifier(AVGEAbstractEventListener, ModifierEventListener[AVGEEvent]):
     pass

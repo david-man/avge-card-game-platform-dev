@@ -24,6 +24,7 @@ class Engine(Generic[EV]):
         self.listeners_attached_during_packet : set[event_listener.AbstractEventListener] = set([])
         self.event_stack : list[EV] = []
         self._queue : EngineQueue[Packet[EV]] = EngineQueue()
+
     def add_constraint(self, constraint : 'constrainer.Constraint[EV]'):
         #first, check if this constrainer falls under other constrainers. if it does, drop it.
         for c in self._constraints:
@@ -63,6 +64,10 @@ class Engine(Generic[EV]):
             if(l._invalidated):
                 deactivated_listeners.append(l)
         self._external_listeners = [l for l in self._external_listeners if l not in deactivated_listeners]
+
+    def peek_n(self, n : int = 1):
+        #gets the main queue
+        return [self.packet_running] + self._queue.peek_n(n - 1)
     
     def _propose(self, new_packet : Packet[EV], priority : int = 0):
         #proposes an addition in the standard fashion
@@ -96,17 +101,19 @@ class Engine(Generic[EV]):
         elif(self.event_running is None and len(self.packet_running) > 0):
             #prepares a fresh event from the current packet to run
             self.event_running = self.packet_running.get_next_event()
-            assert self.event_running is not None
-            self.event_running.attach_to_engine(self)
-            
-            #attach all required external listeners
-            if(not self.event_running._external_listeners_attached):
-                for listener in self._external_listeners:
-                    attached = self.event_running.attach_listener(listener)
-                    if(attached):
-                        self.listeners_attached_during_packet.add(listener)
-                self.event_running._external_listeners_attached = True
-            return Response(None, response_type=ResponseType.NEXT_EVENT)
+            if(self.event_running is None):
+                return self.forward(args)
+            else:
+                self.event_running.attach_to_engine(self)
+                
+                #attach all required external listeners
+                if(not self.event_running._external_listeners_attached):
+                    for listener in self._external_listeners:
+                        attached = self.event_running.attach_listener(listener)
+                        if(attached):
+                            self.listeners_attached_during_packet.add(listener)
+                    self.event_running._external_listeners_attached = True
+                return Response(self.event_running, response_type=ResponseType.NEXT_EVENT)
         else:
             assert self.event_running is not None
             if(self.event_running.group_on == EngineGroup.CORE):

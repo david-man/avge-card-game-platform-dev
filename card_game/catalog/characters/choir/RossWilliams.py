@@ -24,12 +24,6 @@ class _RossPassiveAssessor(AVGEAssessor):
         if self.owner_card.env is None:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "RossWilliams Passive Assessor"
-
     def assess(self, args=None):
         if args is None:
             args = {}
@@ -61,7 +55,6 @@ class _RossPassiveAssessor(AVGEAssessor):
         packet = [
             PlayCharacterCard(self.owner_card, ActionTypes.ATK_1, ActionTypes.PASSIVE, active),
             AVGEPlayerAttributeChange(self.owner_card.player, AVGEPlayerAttribute.ATTACKS_LEFT, 1, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, None),
-            TurnEnd(self.owner_card.env, ActionTypes.ENV, None),
         ]
         self.owner_card.propose(
             AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RossWilliams))
@@ -76,7 +69,6 @@ class RossWilliams(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.CHOIR, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -103,13 +95,13 @@ class RossWilliams(AVGECharacterCard):
             deck = player.cardholders[Pile.DECK]
             hand = player.cardholders[Pile.HAND]
             def generate_packet() -> PacketType:
-                def gen() -> PacketType:
-                    return [TransferCard(deck.peek(), deck, hand, ActionTypes.ATK_1, card)]
-                return [gen for _ in range(min(2, len(deck)))]
+                if(len(deck) == 0):
+                    return []
+                return [TransferCard(deck.peek(), deck, hand, ActionTypes.ATK_1, card)]
 
             card.propose(
                 AVGEPacket(
-                    [generate_packet],
+                    [generate_packet] * 2,
                     AVGEEngineID(card, ActionTypes.ATK_1, RossWilliams),
                 )
             )

@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import Type, TYPE_CHECKING, Generic, TypeVar, Tuple
 from ..constants import Pile
+from .AVGECards import AVGECard
 if TYPE_CHECKING:
     from .AVGEPlayer import AVGEPlayer
     from .AVGEEnvironment import AVGEEnvironment
-    from .AVGECards import AVGECharacterCard, AVGECard
+    from .AVGECards import AVGECharacterCard
     from .AVGEEvent import AVGEEvent
 
 
@@ -97,6 +98,8 @@ class AVGECardholder():
         return to_ret
     def __len__ (self):
         return len(self.cards_by_id)
+    def __str__(self):
+        return self.player.unique_id + "_" + str(self.pile_type) + f", ({len(self)} total)"
     def __eq__(self, other : object):
         if not isinstance(other, AVGECardholder):
             return False
@@ -145,7 +148,7 @@ class AVGECardholder():
     def __contains__(self, item : AVGECard):
         return isinstance(item, AVGECard) and item.unique_id in self.cards_by_id
     def __iter__(self):
-        return (x for x in self.cards_by_id.values())
+        return (self.cards_by_id[x] for x in self.cards_by_id._order)
             
 class AVGEToolCardholder(AVGECardholder):
     def __init__(self, parent_card : AVGECharacterCard):

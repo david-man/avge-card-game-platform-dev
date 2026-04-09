@@ -15,9 +15,7 @@ class JennieWang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PIANO, 1, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -27,11 +25,11 @@ class JennieWang(AVGECharacterCard):
 
         count = 0
         for c in card.player.get_cards_in_play():
-            if isinstance(c, JennieWang.TARGET_CLASSES + (JennieWang,)):
+            if isinstance(c, JennieWang.TARGET_CLASSES):
                 count += 1
 
         if count <= 0:
-            return card.generate_response()
+            return card.generate_response(data={MESSAGE_KEY: "No other SE members in play!"})
 
         per_target = min(20 * count, 40)
 
@@ -50,6 +48,10 @@ class JennieWang(AVGECharacterCard):
                         card,
                     )
                 )
+            return packet
+        def generate_packet_bench() -> PacketType:
+            packet : PacketType = []
+            opp = card.player.opponent
             for bc in opp.cardholders[Pile.BENCH]:
                 assert isinstance(bc, AVGECharacterCard)
                 packet.append(

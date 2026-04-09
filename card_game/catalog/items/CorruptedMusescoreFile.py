@@ -20,41 +20,42 @@ class CorruptedMusescoreFile(AVGEItemCard):
         discard = player.cardholders[Pile.DISCARD]
 
         tool_targets = [c for c in player.get_cards_in_play() if len(c.tools_attached) > 0]
+        if(len(tool_targets) == 0):
+            return card.generate_response(data={MESSAGE_KEY: "No cards with tools!"})
         packet : PacketType = []
-        if(len(tool_targets) > 0):
-            chosen_tool_target = card.env.cache.get(card, CorruptedMusescoreFile._TOOL_DISCARD_TARGET_KEY, None)
-            if(chosen_tool_target is None):
-                return card.generate_response(
-                    ResponseType.INTERRUPT,
-                    {
-                        INTERRUPT_KEY: [
-                            InputEvent(
-                                player,
-                                [CorruptedMusescoreFile._TOOL_DISCARD_TARGET_KEY],
-                                InputType.SELECTION,
-                                lambda res : True,
-                                ActionTypes.NONCHAR,
-                                card,
-                                {
-                                    "query_label": "corrupted_musescore_file_tool_discard_target",
-                                    "targets": tool_targets,
-                                    "display": player.get_cards_in_play()
-                                },
-                            )
-                        ]
-                    },
-                )
-            assert isinstance(chosen_tool_target, AVGECharacterCard)
-            tool_to_discard = list(chosen_tool_target.tools_attached)[0]
-            packet.append(
-                TransferCard(
-                    tool_to_discard,
-                    chosen_tool_target.tools_attached,
-                    discard,
-                    ActionTypes.NONCHAR,
-                    card,
-                )
+        chosen_tool_target = card.env.cache.get(card, CorruptedMusescoreFile._TOOL_DISCARD_TARGET_KEY, None)
+        if(chosen_tool_target is None):
+            return card.generate_response(
+                ResponseType.INTERRUPT,
+                {
+                    INTERRUPT_KEY: [
+                        InputEvent(
+                            player,
+                            [CorruptedMusescoreFile._TOOL_DISCARD_TARGET_KEY],
+                            InputType.SELECTION,
+                            lambda res : True,
+                            ActionTypes.NONCHAR,
+                            card,
+                            {
+                                "query_label": "corrupted_musescore_file_tool_discard_target",
+                                "targets": tool_targets,
+                                "display": player.get_cards_in_play()
+                            },
+                        )
+                    ]
+                },
             )
+        assert isinstance(chosen_tool_target, AVGECharacterCard)
+        tool_to_discard = list(chosen_tool_target.tools_attached)[0]
+        packet.append(
+            TransferCard(
+                tool_to_discard,
+                chosen_tool_target.tools_attached,
+                discard,
+                ActionTypes.NONCHAR,
+                card,
+            )
+        )
 
         item_choices = [c for c in deck if isinstance(c, AVGEItemCard)]
         missing = object()

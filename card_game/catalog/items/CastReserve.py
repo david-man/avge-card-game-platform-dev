@@ -31,7 +31,7 @@ class CastReserve(AVGEItemCard):
 		def _check_player_choice(result):
 			if(len(result) != 3):
 				return False
-			return len({type(s) for s in result}) == 3
+			return result[0] is None or len({type(s) for s in result}) == 3
 		if(selected_three[0] is None):
 			return card.generate_response(
 				ResponseType.INTERRUPT,
@@ -47,7 +47,9 @@ class CastReserve(AVGEItemCard):
 							{
 								"query_label": "cast_reserve_player_item_pick",
 								"targets": deck_items,
-								"display": deck_items
+								"display": deck_items,
+								"allow_none": True,
+								"allow_repeats": False
 							},
 						)
 					]

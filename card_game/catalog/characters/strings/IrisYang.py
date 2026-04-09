@@ -7,9 +7,7 @@ class IrisYang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -17,16 +15,18 @@ class IrisYang(AVGECharacterCard):
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import TransferCard, PlayNonCharacterCard, AVGECardHPChange, EmptyEvent
 
-        packet : PacketType = [] + [
-            AVGECardHPChange(
-                card.player.opponent.get_active_card(),
-                10,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_1,
-                card,
-            )
-        ]
+        def atk_active() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ]
+        packet : PacketType = [atk_active]
 
         deck = card.player.cardholders[Pile.DECK]
         hand = card.player.cardholders[Pile.HAND]

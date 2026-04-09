@@ -32,12 +32,6 @@ class _YanwanStartReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "YanwanZhu Start Reactor"
-
     def react(self, args=None):
         from card_game.internal_events import InputEvent, TransferCard
 
@@ -45,7 +39,8 @@ class _YanwanStartReactor(AVGEReactor):
         env = owner.env
         deck = owner.player.cardholders[Pile.DECK]
         hand = owner.player.cardholders[Pile.HAND]
-
+        if(len(deck) == 0):
+            return self.generate_response()
         yn = env.cache.get(owner, YanwanZhu._DRAW_CHOICE_KEY, None, True)
         if yn is None:
             return owner.generate_response(
@@ -64,15 +59,16 @@ class _YanwanStartReactor(AVGEReactor):
                     ]
                 },
             )
-
         if yn:
             def generate() -> PacketType:
-                return [TransferCard(deck.peek(), deck, hand, ActionTypes.PASSIVE, owner)]
+                if(len(deck) > 0):
+                    return [TransferCard(deck.peek(), deck, hand, ActionTypes.PASSIVE, owner)]
+                return []
             self.propose(
                 AVGEPacket(
                     [generate],
                     AVGEEngineID(owner, ActionTypes.PASSIVE, YanwanZhu),
-                )
+                ), 1
             )
         return self.generate_response()
 
@@ -83,7 +79,6 @@ class YanwanZhu(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.CHOIR, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -96,18 +91,8 @@ class YanwanZhu(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-        def gen() -> PacketType:
-            p : PacketType = []
-            p += [
-                    AVGECardHPChange(
-                        cast(AVGECharacterCard, c),
-                        10,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.CHOIR,
-                        ActionTypes.ATK_1,
-                        card,
-                    ) for c in card.player.opponent.cardholders[Pile.BENCH]
-                ] + [
+        def gen_active() -> PacketType:
+            return [
                     AVGECardHPChange(
                         card.player.opponent.get_active_card(),
                         50,
@@ -117,10 +102,21 @@ class YanwanZhu(AVGECharacterCard):
                         card,
                     )
                 ]
+        def gen_bench() -> PacketType:
+            p : PacketType = [
+                    AVGECardHPChange(
+                        cast(AVGECharacterCard, c),
+                        10,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.CHOIR,
+                        ActionTypes.ATK_1,
+                        card,
+                    ) for c in card.player.opponent.cardholders[Pile.BENCH]
+                ]
             return p
         card.propose(
             AVGEPacket(
-                [gen],
+                [gen_active, gen_bench],
                 AVGEEngineID(card, ActionTypes.ATK_1, YanwanZhu),
             )
         )

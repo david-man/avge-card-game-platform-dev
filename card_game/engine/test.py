@@ -980,6 +980,66 @@ class OrderedInterruptReactor(ReactorEventListener[Event]):
         return "ordered-interrupt-reactor"
 
 
+class PriorityTaggedEvent(BaseEvent):
+    def __init__(self, order: list[str], tag: str):
+        self.order = order
+        self.tag = tag
+        super().__init__(order=order, tag=tag)
+
+    def get_kwargs(self):
+        return {
+            "order": self.order,
+            "tag": self.tag,
+        }
+
+    def core(self, args={}):
+        self.order.append(self.tag)
+        return self.generate_core_response()
+
+
+class PriorityBaselineProposalEvent(BaseEvent):
+    def __init__(self, order: list[str]):
+        self.order = order
+        super().__init__(order=order)
+
+    def get_kwargs(self):
+        return {
+            "order": self.order,
+        }
+
+    def core(self, args={}):
+        self.order.append("base_event_core")
+        self.propose(Packet([PriorityTaggedEvent(self.order, "priority_0")]), priority=0)
+        return self.generate_core_response()
+
+
+class PriorityEscalatingReactor(ReactorEventListener[Event]):
+    def __init__(self, order: list[str]):
+        self.identifier = "priority-escalating-reactor"
+        super().__init__(group=EngineGroup.EXTERNAL_REACTORS, internal=False)
+        self.order = order
+
+    def event_match(self, event: Event) -> bool:
+        return isinstance(event, PriorityBaselineProposalEvent)
+
+    def event_effect(self) -> bool:
+        return True
+
+    def react(self, args={}):
+        self.order.append("reactor")
+        self.propose(Packet([PriorityTaggedEvent(self.order, "priority_1")]), priority=1)
+        return self.generate_response(ResponseType.ACCEPT)
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return False
+
+    def package(self):
+        return "priority-escalating-reactor"
+
+
 class InterruptInsertedPayloadEvent(BaseEvent):
     def __init__(self, state: MutableState, metrics: dict[str, int]):
         self.state = state
@@ -1952,6 +2012,18 @@ class EngineEdgeCaseTests(unittest.TestCase):
         final = self.drain_engine(eng)
         self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(order, ["candidate_core", "reactor_interrupt", "payload_core", "reactor_resume"])
+
+    def test_reactor_priority_proposal_runs_before_baseline_priority_zero_proposal(self):
+        eng = self.make_engine()
+        order: list[str] = []
+
+        eng.add_listener(PriorityEscalatingReactor(order))
+        eng._propose(Packet([PriorityBaselineProposalEvent(order)]))
+
+        final = self.drain_engine(eng)
+
+        self.assertEqual(final.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(order, ["base_event_core", "reactor", "priority_1", "priority_0"])
 
     def test_interrupt_inserted_event_then_original_skip_undoes_both_cores(self):
         eng = self.make_engine()

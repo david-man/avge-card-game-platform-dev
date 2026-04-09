@@ -33,7 +33,7 @@ class StandardMusescoreFile(AVGEItemCard):
                         InputEvent(
                             player,
                             [StandardMusescoreFile._TOOL_DISCARD_TARGET_KEY],
-                            InputType.DETERMINISTIC,
+                            InputType.SELECTION,
                             lambda res : True,
                             ActionTypes.NONCHAR,
                             card,

@@ -20,10 +20,6 @@ class AVGETokenTransferAssessment(AVGEAssessor):
     def event_match(self, event):
         from .internal_events import AVGEEnergyTransfer
         return isinstance(event, AVGEEnergyTransfer)
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def assess(self, args=None) -> Response:
         from .internal_events import AVGEEnergyTransfer
         event = self.attached_event
@@ -48,7 +44,7 @@ class AVGEHPChangeAssessment(AVGEAssessor):
         return
     def event_match(self, event):
         from .internal_events import AVGECardHPChange
-        return isinstance(event, AVGECardHPChange)
+        return isinstance(event, AVGECardHPChange) and event.catalyst_action != ActionTypes.ENV
     def assess(self, args=None) -> Response:
         from .internal_events import AVGECardHPChange
         event = self.attached_event
@@ -56,6 +52,26 @@ class AVGEHPChangeAssessment(AVGEAssessor):
         assert(not event.target_card.cardholder is None)
         if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE]):
             return self.generate_response(ResponseType.FAST_FORWARD, {'msg': 'HP Changes should only be directed at BENCH, ACTIVE cards. This packet is likely a lingering packet'})
+        return self.generate_response()
+    
+class AVGEMaxHPChangeAssessment(AVGEAssessor):
+    def __init__(self):
+        super().__init__(group = EngineGroup.INTERNAL_1,
+                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
+                         internal = True,
+                         requires_runtime_info=False)
+    def update_status(self):
+        return
+    def event_match(self, event):
+        from .internal_events import AVGECardMaxHPChange
+        return isinstance(event, AVGECardMaxHPChange) and event.catalyst_action != ActionTypes.ENV
+    def assess(self, args=None) -> Response:
+        from .internal_events import AVGECardMaxHPChange
+        event = self.attached_event
+        assert(isinstance(event, AVGECardMaxHPChange))
+        assert(not event.target_card.cardholder is None)
+        if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE]):
+            return self.generate_response(ResponseType.FAST_FORWARD, {'msg': 'MAXHP Changes should only be directed at BENCH, ACTIVE cards. This packet is likely a lingering packet'})
         return self.generate_response()
 
 class AVGEWeaknessModifier(AVGEModifier):
@@ -70,17 +86,13 @@ class AVGEWeaknessModifier(AVGEModifier):
     def event_match(self, event):
         from .internal_events import AVGECardHPChange
         return isinstance(event, AVGECardHPChange) and isinstance(event.caller_card, AVGECharacterCard) and not event.change_type==CardType.ALL and event.modifier_type==AVGEAttributeModifier.SUBSTRACTIVE
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def modify(self, args = None) -> Response:
         from .internal_events import AVGECardHPChange, InputEvent
         event = self.attached_event
         assert(isinstance(event, AVGECardHPChange))
         assert(not event.caller_card is None)
         if(type_weaknesses[event.target_card.card_type]) == event.change_type:
-            coin_toss = event.target_card.env.cache.get(None, AVGEWeaknessModifier._CRIT_KEY,
+            coin_toss = event.caller_card.env.cache.get(event.caller_card, AVGEWeaknessModifier._CRIT_KEY,
                                                         None, True)
             if coin_toss is None:
                 return self.generate_response(ResponseType.INTERRUPT,{
@@ -112,54 +124,50 @@ class AVGECardHPChangeReactor(AVGEReactor):
     def event_match(self, event):
         from .internal_events import AVGECardHPChange
         return isinstance(event, AVGECardHPChange)
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def react(self, args=None) -> Response:
         from .internal_events import AVGECardHPChange, TransferCard, AVGEPlayerAttributeChange, InputEvent
         assert isinstance(self.attached_event, AVGECardHPChange)
         event : AVGECardHPChange = self.attached_event
-        if(event.target_card.hp <= 0):
-            parent_player : AVGEPlayer = event.target_card.player
+        parent_player : AVGEPlayer = event.target_card.player
+        if(event.target_card.hp <= 0 and parent_player.get_active_card() == event.target_card):
             packet = []
-            if(parent_player.get_active_card() == event.target_card):
-                if(len(parent_player.cardholders[Pile.BENCH]) == 0):
-                    e : AVGEEnvironment = event.target_card.env
-                    e.winner = parent_player.opponent
-                    return self.generate_response(ResponseType.GAME_END, {"winner": e.winner, "reason": "KO and no cards left on bench"})
+            if(len(parent_player.cardholders[Pile.BENCH]) == 0):
+                e : AVGEEnvironment = event.target_card.env
+                e.winner = parent_player.opponent
+                return self.generate_response(ResponseType.GAME_END, {"winner": e.winner, "reason": "KO and no cards left on bench"})
 
-                swap_with = event.target_card.env.cache.get(
-                        event.target_card,
-                        AVGECardHPChangeReactor._KO_REPLACE_KEY,
-                        None,
-                        one_look=True,
-                    )
-                if(swap_with is None):
-                    return self.generate_response(
-                        ResponseType.INTERRUPT,
-                        {
-                            INTERRUPT_KEY: [
-                                InputEvent(
-                                    parent_player,
-                                    [AVGECardHPChangeReactor._KO_REPLACE_KEY],
-                                    InputType.SELECTION,
-                                    lambda r : True,
-                                    ActionTypes.ENV,
-                                    event.target_card,
-                                    {
-                                        'query_label': 'ko_replace',
-                                        'bench': list(parent_player.cardholders[Pile.BENCH])
-                                    },
-                                )
-                            ]
-                        },
-                    )
-                packet.append(TransferCard(swap_with,
-                                            parent_player.cardholders[Pile.BENCH],
-                                            parent_player.cardholders[Pile.ACTIVE],
-                                            ActionTypes.ENV,
-                                            None))#propose the swap from the bench, and then propose the discard
+            swap_with = event.target_card.env.cache.get(
+                    event.target_card,
+                    AVGECardHPChangeReactor._KO_REPLACE_KEY,
+                    None,
+                    one_look=True,
+                )
+            if(swap_with is None):
+                return self.generate_response(
+                    ResponseType.INTERRUPT,
+                    {
+                        INTERRUPT_KEY: [
+                            InputEvent(
+                                parent_player,
+                                [AVGECardHPChangeReactor._KO_REPLACE_KEY],
+                                InputType.SELECTION,
+                                lambda r : True,
+                                ActionTypes.ENV,
+                                event.target_card,
+                                {
+                                    'query_label': 'ko_replace',
+                                    'targets': list(parent_player.cardholders[Pile.BENCH]),
+                                    'display': list(parent_player.cardholders[Pile.BENCH])
+                                },
+                            )
+                        ]
+                    },
+                )
+            packet.append(TransferCard(swap_with,
+                                        parent_player.cardholders[Pile.BENCH],
+                                        parent_player.cardholders[Pile.ACTIVE],
+                                        ActionTypes.ENV,
+                                        None))#propose the swap from the bench, and then propose the discard
             packet.append(TransferCard(event.target_card,
                                             event.target_card.cardholder,
                                             parent_player.cardholders[Pile.DISCARD],
@@ -192,11 +200,6 @@ class AVGEPlayerAttributeChangePostChecker(AVGEPostcheck):
     def event_match(self, event):
         from .internal_events import AVGEPlayerAttributeChange
         return isinstance(event, AVGEPlayerAttributeChange)
-
-    def make_announcement(self) -> bool:
-        return True
-    def package(self):
-        return "Clamping player change if necessary"
     def assess(self, args=None):
         from .internal_events import AVGEPlayerAttributeChange
         assert(isinstance(self.attached_event, AVGEPlayerAttributeChange))
@@ -218,11 +221,6 @@ class AVGETransferValidityCheck(AVGEAssessor):
     def event_match(self, event):
         from .internal_events import TransferCard
         return isinstance(event, TransferCard)
-
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def assess(self, args=None) -> Response:
         from .internal_events import TransferCard
         assert(isinstance(self.attached_event, TransferCard))
@@ -255,10 +253,6 @@ class AVGETransferEnergyRequirementReactor(AVGEReactor):
     def event_match(self, event):
         from .internal_events import TransferCard
         return isinstance(event, TransferCard) and isinstance(event.card, AVGECharacterCard) and event.energy_requirement > 0
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def react(self, args = None) -> Response:
         from .internal_events import TransferCard, AVGEEnergyTransfer
         assert(isinstance(self.attached_event, TransferCard))
@@ -290,10 +284,6 @@ class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):
     def event_match(self, event):
         from .internal_events import PlayCharacterCard
         return isinstance(event, PlayCharacterCard)
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def assess(self, args =None) -> Response:
         from .internal_events import PlayCharacterCard
         assert(isinstance(self.attached_event, PlayCharacterCard))
@@ -326,10 +316,6 @@ class AVGEPlayNonCharacterCardValidityCheck(AVGEAssessor):
     def event_match(self, event):
         from .internal_events import PlayNonCharacterCard
         return isinstance(event, PlayNonCharacterCard)
-    def make_announcement(self) -> bool:
-        return False
-    def package(self):
-        return ""
     def assess(self, args=None) -> Response:
         from .internal_events import PlayNonCharacterCard
         assert(isinstance(self.attached_event, PlayNonCharacterCard))

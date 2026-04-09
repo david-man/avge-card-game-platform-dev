@@ -12,7 +12,6 @@ class AliceWang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.WOODWIND, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -88,7 +87,7 @@ class AliceWang(AVGECharacterCard):
                     )
                     for selected in discarded_cards if isinstance(selected, AVGECard)
                 ]
-                self.propose(AVGEPacket(packet, AVGEEngineID(owner_card, ActionTypes.PASSIVE, AliceWang)))
+                self.propose(AVGEPacket(packet, AVGEEngineID(owner_card, ActionTypes.PASSIVE, AliceWang)), 1)
                 return self.generate_response()
 
         owner_card.add_listener(_OpponentHandEqualizer())

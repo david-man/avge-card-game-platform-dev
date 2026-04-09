@@ -35,12 +35,6 @@ class _EdwardGuitarBoost(AVGEModifier):
         if self.owner_card.env.round_id > self.round_active:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "EdwardWilbowo Guitar Boost Modifier"
-
     def modify(self, args=None):
         if args is None:
             args = {}
@@ -58,9 +52,7 @@ class EdwardWilbowo(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.GUITAR, 2, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -92,7 +84,6 @@ class EdwardWilbowo(AVGECharacterCard):
                     ]
                 },
             )
-
         heads = sum(int(v) for v in coin_vals if v is not None)
         if heads <= 0:
             return card.generate_response()

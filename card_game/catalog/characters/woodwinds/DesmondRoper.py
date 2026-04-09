@@ -12,9 +12,7 @@ class DesmondRoper(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.WOODWIND, 1, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = True
         self.has_active = False
 
@@ -24,7 +22,7 @@ class DesmondRoper(AVGECharacterCard):
 
         class _DesmondPlayTracker(AVGEReactor):
             def __init__(self):
-                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, DesmondRoper), group=EngineGroup.EXTERNAL_REACTORS)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.ATK_2, DesmondRoper), group=EngineGroup.EXTERNAL_REACTORS)
 
             def event_match(self, event):
                 from card_game.internal_events import TransferCard
@@ -53,9 +51,8 @@ class DesmondRoper(AVGECharacterCard):
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
-
-        card.propose(
-            AVGEPacket([
+        def hit() -> PacketType:
+            return [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
@@ -72,7 +69,9 @@ class DesmondRoper(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 ),
-            ], AVGEEngineID(card, ActionTypes.ATK_1, DesmondRoper))
+            ]
+        card.propose(
+            AVGEPacket([hit], AVGEEngineID(card, ActionTypes.ATK_1, DesmondRoper))
         )
         return card.generate_response()
 

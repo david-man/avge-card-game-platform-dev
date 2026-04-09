@@ -55,7 +55,7 @@ class SalomonDECIAttackBoostModifier(AVGEModifier):
 			)
 
 		if(int(roll) >= 3):
-			event.modify_magnitude(-30)
+			event.modify_magnitude(30)
 		return self.generate_response()
 
 

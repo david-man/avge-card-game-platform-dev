@@ -10,9 +10,7 @@ class MaggieLi(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.STRING, 2, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -63,17 +61,18 @@ class MaggieLi(AVGECharacterCard):
                     ]
                 },
             )
-
-        packet = [] + [
-            AVGECardHPChange(
-                opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_2,
-                card,
-            )
-        ]
+        def atk() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_2,
+                    card,
+                )
+            ]
+        packet : PacketType = [atk]
         assert isinstance(chosen_target, AVGECharacterCard)
         def gen() -> PacketType:
             k : PacketType = []

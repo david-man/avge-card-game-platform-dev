@@ -13,7 +13,6 @@ class EmilyWang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = False
         self.has_active = True
@@ -64,8 +63,8 @@ class EmilyWang(AVGECharacterCard):
             return [
                 TransferCard(deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card)
             ]
-        for _ in range(min(2, len(deck))):
-            packet.append(draw_top)
+        packet.append(draw_top)
+        packet.append(draw_top)
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EmilyWang)))
         return card.generate_response()

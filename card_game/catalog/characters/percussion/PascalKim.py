@@ -26,12 +26,6 @@ class _PascalDelayedReactor(AVGEReactor):
         if self.owner_card.env.round_id > self.trigger_round:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "PascalKim delayed end-of-opponent-turn damage"
-
     def react(self, args=None):
         if args is None:
             args = {}
@@ -48,7 +42,7 @@ class _PascalDelayedReactor(AVGEReactor):
                 )
             ]
         self.owner_card.propose(
-            AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PascalKim))
+            AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PascalKim), ), 1
         )
         self.invalidate()
         return self.generate_response()
@@ -58,9 +52,7 @@ class PascalKim(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 

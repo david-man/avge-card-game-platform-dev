@@ -31,7 +31,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
         env = owner.env
         deck = owner.player.cardholders[Pile.DECK]
         if len(deck) == 0:
-            return self.generate_response()
+            return self.generate_response(data={MESSAGE_KEY: "No cards in deck to draw from!"})
 
         res = env.cache.get(owner, MatthewWang._COIN_KEY, None, True)
         if res is None:
@@ -91,7 +91,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
             owner.propose(
                 AVGEPacket([
                     draw_top
-                ], AVGEEngineID(owner, ActionTypes.PASSIVE, MatthewWang))
+                ], AVGEEngineID(owner, ActionTypes.PASSIVE, MatthewWang)), 1
             )
 
         return self.generate_response()
@@ -104,7 +104,6 @@ class MatthewWang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PIANO, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

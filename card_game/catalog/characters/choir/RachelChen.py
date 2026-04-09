@@ -12,9 +12,8 @@ class RachelChen(AVGECharacterCard):
     _TARGET_BASE_KEY = "rachel_chen_satb_key"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.CHOIR, 1, 1, 3)
+        super().__init__(unique_id, 110, CardType.CHOIR, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = False
         self.has_active = True
@@ -57,20 +56,21 @@ class RachelChen(AVGECharacterCard):
                             card,
                             {"query_label": "rachel_chen_retrieve_item", 
                              "targets": candidates,
-                             "display":candidates},
+                             "display": list(discard),
+                             "allow_none": True},
                         )
                     ]
                 },
             )
-        assert(isinstance(chosen, AVGECharacterCard))
-        card.propose(
-            AVGEPacket(
-                [TransferCard(chosen, discard, hand, ActionTypes.ACTIVATE_ABILITY, card)],
-                AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, RachelChen),
+        if(isinstance(chosen, AVGECard)):
+            card.propose(
+                AVGEPacket(
+                    [TransferCard(chosen, discard, hand, ActionTypes.ACTIVATE_ABILITY, card)],
+                    AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, RachelChen),
+                )
             )
-        )
-        # mark used this round
-        card.env.cache.set(card, RachelChen._ACTIVE_USE_KEY, card.env.round_id)
+            # mark used this round
+            card.env.cache.set(card, RachelChen._ACTIVE_USE_KEY, card.env.round_id)
 
         return card.generate_response()
 
@@ -90,12 +90,8 @@ class RachelChen(AVGECharacterCard):
         if choir_count <= 0:
             return card.generate_response(data={MESSAGE_KEY: "No choir in play!"})
 
-        # build list of opponent character targets (can be chosen multiple times)
-
-        # if only one opponent target, apply damage choir_count times to that target
-        packet = []
-        
-        # multiple opponent choices: ask player to pick `choir_count` targets (allow repeats)
+        packet : PacketType = []
+        # ask player to pick `choir_count` targets (allow repeats)
         keys = [RachelChen._TARGET_BASE_KEY + str(i) for i in range(choir_count)]
         chars = [card.env.cache.get(card, key, None, True) for key in keys]
         if(chars[0] is None):
@@ -112,6 +108,7 @@ class RachelChen(AVGECharacterCard):
                             card,
                             {"query_label": "rachel_chen_atk1_targets",
                             "targets": opponent.get_cards_in_play(),
+                            "display": opponent.get_cards_in_play(),
                             "allow_repeats": True},
                         )
                     ]

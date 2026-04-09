@@ -12,26 +12,25 @@ class MichelleKim(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = True
         self.has_active = False
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, PlayNonCharacterCard, TransferCard
-
-        packet : PacketType = [] + [
-            AVGECardHPChange(
-                card.player.opponent.get_active_card(),
-                10,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.STRING,
-                ActionTypes.ATK_1,
-                card,
-            )
-        ]
+        def atk() -> PacketType:
+            return [
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    10,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_1,
+                    card,
+                )
+            ]
+        packet : PacketType = [atk]
 
         deck = card.player.cardholders[Pile.DECK]
         hand = card.player.cardholders[Pile.HAND]
@@ -57,7 +56,7 @@ class MichelleKim(AVGECharacterCard):
 
         class _MikuPlayReactor(AVGEReactor):
             def __init__(self):
-                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MichelleKim), group=EngineGroup.EXTERNAL_REACTORS)
+                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.ATK_1, MichelleKim), group=EngineGroup.EXTERNAL_REACTORS)
                 self.owner_card = owner_card
 
             def event_match(self, event):

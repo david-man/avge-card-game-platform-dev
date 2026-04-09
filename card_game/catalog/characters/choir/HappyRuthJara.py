@@ -11,9 +11,8 @@ class HappyRuthJara(AVGECharacterCard):
     _TARGET_BASE_KEY = "happy_satb_key"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.CHOIR, 1, 1, 3)
+        super().__init__(unique_id, 90, CardType.CHOIR, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = False
         self.has_active = True

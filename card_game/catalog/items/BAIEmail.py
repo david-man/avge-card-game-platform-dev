@@ -6,9 +6,10 @@ from card_game.engine.engine_constants import EngineGroup
 
 
 class BAIEmailStadiumPlayLockAssessor(AVGEAssessor):
-	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard):
+	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, round_until : int =0):
 		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, BAIEmail), group=EngineGroup.EXTERNAL_PRECHECK_1)
 		self.owner_card = owner_card
+		self.round_until = round_until
 
 	def event_match(self, event):
 		from card_game.internal_events import PlayNonCharacterCard
@@ -22,9 +23,7 @@ class BAIEmailStadiumPlayLockAssessor(AVGEAssessor):
 		return True
 
 	def update_status(self):
-		round_until = self.owner_card.env.cache.get(self.owner_card, BAIEmail._STADIUM_LOCK_UNTIL_KEY, 0)
-		assert isinstance(round_until, int)
-		if(self.owner_card.env.round_id > round_until):
+		if(self.owner_card.env.round_id > self.round_until):
 			self.invalidate()
 
 	def make_announcement(self) -> bool:
@@ -39,7 +38,6 @@ class BAIEmailStadiumPlayLockAssessor(AVGEAssessor):
 
 class BAIEmail(AVGEItemCard):
 	_STADIUM_PICK_KEY = "baiemail_stadium_pick"
-	_STADIUM_LOCK_UNTIL_KEY = "baiemail_stadium_lock_until"
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
@@ -48,10 +46,9 @@ class BAIEmail(AVGEItemCard):
 	
 	@staticmethod
 	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCard, PlayNonCharacterCard, TurnEnd
+		from card_game.internal_events import InputEvent, TransferCard
 
-		card.env.cache.set(card, BAIEmail._STADIUM_LOCK_UNTIL_KEY, card.player.get_next_turn())
-		lock_assessor = BAIEmailStadiumPlayLockAssessor(card)
+		lock_assessor = BAIEmailStadiumPlayLockAssessor(card, card.player.get_next_turn())
 		card.add_listener(lock_assessor)
 
 		packet : PacketType = []

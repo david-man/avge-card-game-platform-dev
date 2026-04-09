@@ -12,7 +12,6 @@ class JoshuaKou(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.PIANO, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = False
         self.has_active = True
@@ -30,15 +29,6 @@ class JoshuaKou(AVGECharacterCard):
         deck = card.player.cardholders[Pile.DECK]
 
         def generate_packet() -> PacketType:
-            if card not in hand:
-                return [
-                    EmptyEvent(
-                        ActionTypes.ACTIVATE_ABILITY,
-                        card,
-                        response_data={MESSAGE_KEY: "JoshuaKou active failed: card not in hand."},
-                    )
-                ]
-            
             packet: PacketType = [
                 EmptyEvent(
                     ActionTypes.ACTIVATE_ABILITY,

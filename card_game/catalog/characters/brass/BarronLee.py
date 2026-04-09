@@ -22,12 +22,6 @@ class _BarronEnergyCapPostcheck(AVGEPostcheck):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "BarronLee Energy Cap Postcheck"
-
     def assess(self, args=None) -> Response:
         from card_game.internal_events import AVGEEnergyTransfer
         # if target target energy attached > 3
@@ -42,9 +36,8 @@ class _BarronEnergyCapPostcheck(AVGEPostcheck):
 class BarronLee(AVGECharacterCard):
     _EMBOUCHURE_KEY = 'barron-lee-embouchure'
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.BRASS, 1)
+        super().__init__(unique_id, 100, CardType.BRASS, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -61,7 +54,7 @@ class BarronLee(AVGECharacterCard):
             assert opponent is not None
             for c in opponent.get_cards_in_play():
                 cur = len(c.energy)
-                assert(c.player is not FileNotFoundError)
+                assert(isinstance(c.player, AVGEPlayer))
                 if(cur > 3):
                     for token in c.energy[3:]:
                         packet.append(
@@ -110,8 +103,6 @@ class BarronLee(AVGECharacterCard):
         keys = [BarronLee._EMBOUCHURE_KEY+str(i) for i in range(total_energy)]
         vals = [card.env.cache.get(card, key, None, True) for key in keys]
         if vals[0] is None:
-            # ask player for deterministic integer allocations
-
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
@@ -132,7 +123,7 @@ class BarronLee(AVGECharacterCard):
                 },
             )
 
-        packet : PacketType= [] + [generate_packet]
+        packet : PacketType= [generate_packet]
         # transfer accordingly
         for i, token_to in enumerate(vals):
             assert isinstance(token_to, AVGECharacterCard)
@@ -146,7 +137,6 @@ class BarronLee(AVGECharacterCard):
                 card
             ))
 
-        if len(packet) > 0:
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
 
         return card.generate_response()

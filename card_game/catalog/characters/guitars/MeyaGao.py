@@ -35,12 +35,6 @@ class _MeyaGuitarBoost(AVGEModifier):
         if self.owner_card.env.round_id > self.round_active:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "MeyaGao Guitar Boost Modifier"
-
     def modify(self, args=None):
         if args is None:
             args = {}
@@ -77,12 +71,6 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
         if self.card_blocked.env.round_id > self.round_active:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "MeyaGao Attack Block Assessor"
-
     def assess(self, args=None) -> Response:
         if args is None:
             args = {}
@@ -109,12 +97,6 @@ class _MeyaDamageReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "MeyaGao Damage Reactor"
-
     def react(self, args=None) -> Response:
         if args is None:
             args = {}
@@ -136,7 +118,6 @@ class MeyaGao(AVGECharacterCard):
         super().__init__(unique_id, 120, CardType.GUITAR, 2, 2, 0)
         self.has_atk_1 = False
         self.has_atk_2 = True
-        self.atk_2_cost = 0
         self.has_passive = True
         self.has_active = False
 

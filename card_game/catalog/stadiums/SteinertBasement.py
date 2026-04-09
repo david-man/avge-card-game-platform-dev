@@ -52,7 +52,7 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 
 class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertBasement), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertBasement), group=EngineGroup.EXTERNAL_MODIFIERS_1)
 		self.owner_card = owner_card
 
 	def event_match(self, event):

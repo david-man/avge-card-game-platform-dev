@@ -12,7 +12,6 @@ class FelixChen(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -99,7 +98,7 @@ class FelixChen(AVGECharacterCard):
             return card.generate_response()
         
 
-        packet = [
+        packet : PacketType = [
             AVGECardHPChange(
                 target,
                 dmg,

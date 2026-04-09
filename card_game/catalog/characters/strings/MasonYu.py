@@ -9,13 +9,12 @@ class MasonYu(AVGECharacterCard):
     _ATK2_COIN_BASE = "mason_atk2_coin_"
     _ATK2_TARGET_1 = "mason_atk2_target_1"
     _ATK2_TARGET_2 = "mason_atk2_target_2"
+    _AFFECTED = "mason_given_arranger"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 2, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -70,9 +69,11 @@ class MasonYu(AVGECharacterCard):
         player = card.player
         already_arranger = [c for c in player.get_cards_in_play() if isinstance(c, AVGECharacterCard) and len(c.statuses_attached.get(StatusEffect.ARRANGER, [])) > 0]
         packet = []
+        remove_from = []
         for c in player.get_cards_in_play():
-            packet.append(AVGECardStatusChange(StatusEffect.ARRANGER, StatusChangeType.ADD, c, ActionTypes.ATK_2, card))
-
+            if c not in already_arranger:
+                remove_from.append(c)
+                packet.append(AVGECardStatusChange(StatusEffect.ARRANGER, StatusChangeType.ADD, c, ActionTypes.ATK_2, card))
         if len(already_arranger) == 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
             return card.generate_response()

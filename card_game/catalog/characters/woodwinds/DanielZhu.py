@@ -13,7 +13,6 @@ class DanielZhu(AVGECharacterCard):
         super().__init__(unique_id, 120, CardType.WOODWIND, 2, 0, 3)
         self.has_atk_1 = False
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = True
         self.has_active = False
 
@@ -57,7 +56,7 @@ class DanielZhu(AVGECharacterCard):
                 from card_game.internal_events import AVGECardHPChange
                 assert isinstance(event, AVGECardHPChange)
                 env = owner_card.env
-                redirect_amount = env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, None, True)
+                redirect_amount = env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, None)
                 if redirect_amount is None:
                     def is_valid(results):
                         if(len(results)!=1 or not isinstance(results[0], int)):
@@ -110,7 +109,7 @@ class DanielZhu(AVGECharacterCard):
                 return True
 
             def event_effect(self) -> bool:
-                return owner_card.env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, 0, True) != 0
+                return owner_card.env.cache.get(owner_card, DanielZhu._REDIRECT_KEY, 0) != 0
 
             def update_status(self):
                 return

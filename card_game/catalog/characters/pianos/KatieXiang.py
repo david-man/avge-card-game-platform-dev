@@ -21,13 +21,7 @@ class KatieTurnEndReactor(AVGEReactor):
 
     def update_status(self):
         return
-
-    def make_announcement(self) -> bool:
-        return True
-
-    def package(self):
-        return "KatieXiang turn-end reactor"
-
+    
     def react(self, args=None):
         if args is None:
             args = {}
@@ -52,7 +46,7 @@ class KatieTurnEndReactor(AVGEReactor):
                         )
             return packet
 
-        self.propose(AVGEPacket([generate_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)))
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)), 1)
         return self.generate_response()
 
 
@@ -60,7 +54,6 @@ class KatieXiang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PIANO, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

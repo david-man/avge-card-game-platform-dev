@@ -13,9 +13,7 @@ class MichaelTu(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = False
         self.has_active = False
 
@@ -88,31 +86,7 @@ class MichaelTu(AVGECharacterCard):
                 REVEAL_KEY: to_reveal
             }
         ))
-
-        missing = object()
-        chosen = card.env.cache.get(card, MichaelTu._ACK, missing, True)
-        if chosen is missing:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            player,
-                            [MichaelTu._ACK],
-                            InputType.SELECTION,
-                            lambda r: True,
-                            ActionTypes.ATK_2,
-                            card,
-                            {
-                                "query_label": "michael_tu_ack",
-                                "targets": [first_char] if first_char is not None else [],
-                                "display": to_reveal,
-                                "allow_none": True
-                            },
-                        )
-                    ]
-                },
-            )
+        
         if first_char is None:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MichaelTu)))
             return card.generate_response()

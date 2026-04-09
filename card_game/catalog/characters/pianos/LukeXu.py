@@ -24,9 +24,6 @@ class LukeXuPassiveConstraint(AVGEConstraint):
         if self.owner_card.env.round_id != self.round_played:
             self.invalidate()
 
-    def make_announcement(self) -> bool:
-        return True
-
 
 class LukeNextAttackHalvedModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
@@ -70,7 +67,6 @@ class LukeXu(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.PIANO, 1, 1)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False

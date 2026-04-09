@@ -11,9 +11,7 @@ class HanleiGao(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 2, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -63,7 +61,6 @@ class HanleiGao(AVGECharacterCard):
                     ]
                 },
             )
-
         if pick is not None:
             packet.append(TransferCard(pick, bench_holder, active_holder, ActionTypes.ATK_1, card))
             packet.append(TransferCard(card, active_holder, bench_holder, ActionTypes.ATK_1, card))

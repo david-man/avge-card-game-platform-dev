@@ -19,6 +19,14 @@ class Packet(Generic[EV]):
             self.element[i:i] = e
         else:
             raise Exception("Cannot insert into packet when packet not assembled")
+    def __str__(self):
+        if(len(self.element) == 0):
+            return "[]"
+        _str="["
+        for e in self.element:
+            _str += "unestablished" if isinstance(e, Callable) else str(e)
+            _str += ","
+        return _str + "]"
     def append(self, e : list[EV | Generator]):
         if(isinstance(self.element ,list)):
             self.element += e
@@ -46,6 +54,7 @@ class Packet(Generic[EV]):
                     self.element = next_seq + self.element
                     return self.get_next_event()
                 else:
+                    x._check_internal()
                     return x
 
 class Event():
@@ -59,14 +68,18 @@ class Event():
         self.core_ran : bool = False
 
         self.generate_internal_listeners()
-        for group in self.event_listener_groups.values():
-            for listener in group:
-                listener.attach_to_event(self)
         self._external_listeners_attached = False
 
         self._kwargs = kwargs
         self.fast_forward = False
         self.skip_forward = False
+    def _check_internal(self):
+        for group in self.event_listener_groups.values():
+            for listener in group:
+                if(not listener.event_match(self)):
+                    listener.invalidate()
+                else:
+                    listener.attach_to_event(self)
     def _constrain_internal(self, constraint : constrainer.Constraint):
         #checks the internal event listeners with a constrainer
         for group in self.event_listener_groups.values():

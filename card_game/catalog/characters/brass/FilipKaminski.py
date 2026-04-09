@@ -8,11 +8,9 @@ from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange
 class FilipKaminski(AVGECharacterCard):
     _TYPE_CHOICE_KEY = "filip_type_choice"
     def __init__(self, unique_id):
-        super().__init__(unique_id, 120, CardType.BRASS, 2)
+        super().__init__(unique_id, 120, CardType.BRASS, 2, 1, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 2
         self.has_passive = False
         self.has_active = False
 
@@ -32,9 +30,6 @@ class FilipKaminski(AVGECharacterCard):
         hand = card.player.cardholders[Pile.HAND]
         if len(deck) == 0:
             return card.generate_response(data={MESSAGE_KEY: "no cards in deck!"})
-        top = deck.peek()
-        card.propose(AVGEPacket([TransferCard(top, deck, hand, ActionTypes.ATK_1, card)], 
-                                AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
         chosen_val = card.env.cache.get(card, FilipKaminski._TYPE_CHOICE_KEY, None, one_look=True)
         if chosen_val is None:
             return card.generate_response(
@@ -56,17 +51,21 @@ class FilipKaminski(AVGECharacterCard):
                 },
             )
 
-
+        top = deck.peek()
+        card.propose(AVGEPacket([TransferCard(top, deck, hand, ActionTypes.ATK_1, card)], 
+                                AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
         top_type = type(top)
         if top_type == chosen_val:
-            card.propose(AVGEPacket([AVGECardHPChange(
-                card.player.opponent.get_active_card(),
-                60,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.BRASS,
-                ActionTypes.ATK_1,
-                card,
-            )], AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
+            def atk() -> PacketType:
+                return [AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    60,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.BRASS,
+                    ActionTypes.ATK_1,
+                    card,
+                )]
+            card.propose(AVGEPacket([atk], AVGEEngineID(card, ActionTypes.ATK_1, FilipKaminski)))
 
         return card.generate_response()
 

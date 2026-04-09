@@ -16,7 +16,6 @@ class YuelinHu(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 3
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -85,18 +84,19 @@ class YuelinHu(AVGECharacterCard):
                 if not should_discard:
                     return self.generate_response()
                 target = cast(TransferCard, self.attached_event).card
-                packet = [
-                    TransferCard(target, hand, discard, ActionTypes.PASSIVE, self.owner_card),
-                    AVGECardHPChange(
-                        player.opponent.get_active_card(),
-                        40,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.STRING,
-                        ActionTypes.PASSIVE,
-                        self.owner_card,
-                    ),
-                ]
-                self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, YuelinHu)))
+                def gen() -> PacketType:
+                    return [
+                        TransferCard(target, hand, discard, ActionTypes.PASSIVE, self.owner_card),
+                        AVGECardHPChange(
+                            player.opponent.get_active_card(),
+                            40,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.STRING,
+                            ActionTypes.PASSIVE,
+                            self.owner_card,
+                        ),
+                    ]
+                self.propose(AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, YuelinHu)))
                 return self.generate_response()
 
         owner_card.add_listener(_BirbDrawReactor())

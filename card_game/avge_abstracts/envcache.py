@@ -26,10 +26,11 @@ class DeleteKey(Change):
 class EnvironmentCache():
     
     def __init__(self, card_ids : list[str]):
-        self.cache = {k : {} for k in card_ids}
+        
         self._changelog : list[Change] = []
         self._capturing_changes = False
         self.empty_card = AVGECard("ENVIRONMENT_CARD_VARIABLE")
+        self.cache = {k : {} for k in card_ids + ["ENVIRONMENT_CARD_VARIABLE"]}
     def set(self, card : AVGECard, key : str, value):
         if(card is None):
             card = self.empty_card

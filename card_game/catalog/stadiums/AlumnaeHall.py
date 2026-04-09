@@ -46,7 +46,7 @@ class AlumnaeHallDrawPunishReactor(AVGEReactor):
 						character,
 						nonlethal_damage,
 						AVGEAttributeModifier.SUBSTRACTIVE,
-						character.card_type,
+						CardType.ALL,
 						ActionTypes.NONCHAR,
 						self.owner_card,
 					)

@@ -10,7 +10,6 @@ class BenCherekIII(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.GUITAR, 2, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
@@ -35,10 +34,16 @@ class BenCherekIII(AVGECharacterCard):
                     ]
                 },
             )
-
         if yn:
             def gen() -> PacketType:
                 return [TransferCard(
+                    card,
+                    card.cardholder,
+                    card.player.cardholders[Pile.ACTIVE],
+                    ActionTypes.PASSIVE,
+                    card,
+                ),
+                TransferCard(
                     card.player.get_active_card(),
                     card.player.cardholders[Pile.ACTIVE],
                     card.player.cardholders[Pile.BENCH],
@@ -47,13 +52,6 @@ class BenCherekIII(AVGECharacterCard):
                 )]
             card.propose(AVGEPacket([
                 gen,
-                TransferCard(
-                    card,
-                    card.cardholder,
-                    card.player.cardholders[Pile.ACTIVE],
-                    ActionTypes.PASSIVE,
-                    card,
-                ),
             ], AVGEEngineID(card, ActionTypes.PASSIVE, BenCherekIII)))
         return card.generate_response()
 

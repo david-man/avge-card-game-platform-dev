@@ -11,9 +11,7 @@ class AndreaCR(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
         self.has_atk_1 = True
-        self.atk_1_cost = 1
         self.has_atk_2 = True
-        self.atk_2_cost = 3
         self.has_passive = False
         self.has_active = False
 
@@ -99,8 +97,16 @@ class AndreaCR(AVGECharacterCard):
                 )
             ]
         assert isinstance(chosen_target, AVGECharacterCard) 
-        def gen_2() -> PacketType:
-            return [AVGEEnergyTransfer(token, chosen_target, chosen_target.player, ActionTypes.ATK_2, card) for token in list(chosen_target.energy)[:min(2, len(chosen_target.energy))]]
-        packet : PacketType = [gen, gen_2]
+        def discard_energy() -> PacketType:
+            if(len(chosen_target.energy) > 0):
+                return [
+                    AVGEEnergyTransfer(
+                        chosen_target.energy[0], 
+                        chosen_target, 
+                        chosen_target.player, 
+                        ActionTypes.ATK_2, 
+                        card)]
+            return []
+        packet : PacketType = [gen, discard_energy, discard_energy]
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, AndreaCR)))
         return card.generate_response()

@@ -13,7 +13,6 @@ class EugeniaAmpofo(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 2)
         self.has_atk_1 = True
-        self.atk_1_cost = 2
         self.has_atk_2 = False
         self.has_passive = False
         self.has_active = True
@@ -54,7 +53,6 @@ class EugeniaAmpofo(AVGECharacterCard):
                     ]
                 },
             )
-
         target_card = choice
 
         def generate_packet() -> PacketType:
@@ -126,7 +124,6 @@ class EugeniaAmpofo(AVGECharacterCard):
                     ]
                 },
             )
-
         if pick is not None:
             packet.append(TransferCard(pick, bench_holder, active_holder, ActionTypes.ATK_1, card))
             packet.append(TransferCard(card, active_holder, bench_holder, ActionTypes.ATK_1, card))

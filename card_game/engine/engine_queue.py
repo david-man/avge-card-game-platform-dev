@@ -10,11 +10,19 @@ class EngineQueue(Generic[T]):
         self.buffered_queue : list[tuple[int, T]] = []
         self.queue_status = QueueStatus.OPEN
         self.event_counter : int = 0
-    
+    def __len__(self):
+        return len(self.main_queue)
+    def peek_n(self, n : int = 1) -> list[T]:
+        #peeks into the main queue
+        if(n > len(self.main_queue)):
+            raise IndexError()
+        else:
+            return [h[2] for h in _heap.nsmallest(n, self.main_queue)]
     def propose(self, item : T, priority : int = 0):
         #Proposes an event addition, which does different things based on what the queue status is
+        #priority gets inverted because f*** python heaps 
         if(self.queue_status == QueueStatus.OPEN):
-            _heap.heappush(self.main_queue, (priority, self.event_counter, item))
+            _heap.heappush(self.main_queue, (-priority, self.event_counter, item))
             self.event_counter += 1
         elif(self.queue_status == QueueStatus.BUFFERED):
             self.buffered_queue.append((priority, item))
