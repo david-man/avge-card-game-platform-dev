@@ -89,5 +89,5 @@ class GoonStatusChangeReactor(AVGEReactor):
 			])
 
 		if(len(packet) > 0):
-			self.extend(packet)
+			self.extend_event(packet)
 		return self.generate_response()

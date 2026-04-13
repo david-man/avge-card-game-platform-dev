@@ -55,12 +55,12 @@ class KathySun(AVGECharacterCard):
                     ]
                 },
             )
-        def generate_packet(card) -> PacketType:
+        def generate_packet(chosen_card) -> PacketType:
             packet: PacketType = []
-            if isinstance(card, AVGECard):
+            if isinstance(chosen_card, AVGECard):
                 packet.append(
                     TransferCard(
-                        card,
+                        chosen_card,
                         opponent_hand,
                         opponent_deck,
                         ActionTypes.ATK_1,
@@ -70,7 +70,7 @@ class KathySun(AVGECharacterCard):
                 )
             return packet
         
-        packet : PacketType = [lambda : generate_packet(card) for card in shuffle]
+        packet : PacketType = [lambda chosen=selected: generate_packet(chosen) for selected in shuffle]
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, KathySun)))
         return card.generate_response()
 

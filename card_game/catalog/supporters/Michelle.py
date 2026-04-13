@@ -7,12 +7,15 @@ from card_game.constants import *
 from card_game.constants import ActionTypes
 
 class Michelle(AVGESupporterCard):
+	_KEEP_KEY = "michelle_keep_card"
+
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
 	@staticmethod
 	def play_card(card: AVGECard) -> Response:
-		from card_game.internal_events import TransferCard
+		from card_game.internal_events import InputEvent, TransferCard
+
 		if(card.env.round_id == 0):
 			return card.generate_response(
 				ResponseType.SKIP,
@@ -21,40 +24,52 @@ class Michelle(AVGESupporterCard):
 
 		opponent = card.player.opponent
 		opponent_hand = opponent.cardholders[Pile.HAND]
-		opponent_deck = opponent.cardholders[Pile.DECK]
+		opponent_discard = opponent.cardholders[Pile.DISCARD]
 
-		hand_snapshot = list(opponent_hand)
-		initial_deck_count = len(opponent_deck)
-		
-		def hand_shuffle() -> PacketType:
-			packet : PacketType= []
-			for card in opponent.cardholders[Pile.HAND]:
-				def shuffle_card() -> PacketType:
-					return [TransferCard(
-						card,
-						opponent_hand,
-						opponent_deck,
-						ActionTypes.NONCHAR,
-						card,
-						random.randint(0, len(opponent.cardholders[Pile.DECK])),
-					)]
-				packet.append(
-					shuffle_card
+		if(len(opponent_hand) <= 1):
+			return card.generate_response(ResponseType.CORE)
+
+		missing = object()
+		keep_card = card.env.cache.get(card, Michelle._KEEP_KEY, missing, True)
+		if(keep_card is missing):
+			return card.generate_response(
+				ResponseType.INTERRUPT,
+				{
+					INTERRUPT_KEY: [
+						InputEvent(
+							opponent,
+							[Michelle._KEEP_KEY],
+							InputType.SELECTION,
+							lambda r: True,
+							ActionTypes.NONCHAR,
+							card,
+							{
+								LABEL_FLAG: "michelle_opponent_keep_one",
+								TARGETS_FLAG: list(opponent_hand),
+								DISPLAY_FLAG: list(opponent_hand),
+							},
+						)
+					]
+				},
+			)
+
+		packet: PacketType = []
+		for hand_card in list(opponent_hand):
+			if(hand_card == keep_card):
+				continue
+			packet.append(
+				TransferCard(
+					hand_card,
+					opponent_hand,
+					opponent_discard,
+					ActionTypes.NONCHAR,
+					card,
+					random.randint(0, len(opponent_discard)),
 				)
-			return packet
-		def pick() -> PacketType:
-			if(len(opponent.cardholders[Pile.DECK]) == 0):
-				return []
-			else:
-				return [
-					TransferCard(
-						opponent.cardholders[Pile.DECK].peek(),
-						opponent_deck,
-						opponent_hand,
-						ActionTypes.NONCHAR,
-						card,
-					)
-				]
-		card.propose(AVGEPacket([hand_shuffle, pick], AVGEEngineID(card, ActionTypes.NONCHAR, Michelle)))
+			)
+
+		if(len(packet) > 0):
+			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Michelle)))
+		card.env.cache.delete(card, Michelle._KEEP_KEY)
 
 		return card.generate_response(ResponseType.CORE)

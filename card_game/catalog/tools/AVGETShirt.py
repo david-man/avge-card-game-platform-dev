@@ -13,7 +13,7 @@ class AVGETShirt(AVGEToolCard):
 		from card_game.internal_events import AVGECardStatusChange
 		assert self.card_attached is not None
 		
-		self.extend([
+		self.extend_event([
 				AVGECardStatusChange(
 				StatusEffect.GOON,
 				StatusChangeType.ERASE,

@@ -18,9 +18,9 @@ class Lio(AVGESupporterCard):
 		def hand() -> PacketType:
 			packet : PacketType= []
 			for c in player.cardholders[Pile.HAND]:
-				def gen() -> PacketType:
+				def gen(k=c) -> PacketType:
 					return [TransferCard(
-						c,
+						k,
 						player.cardholders[Pile.HAND],
 						player.cardholders[Pile.DECK],
 						ActionTypes.NONCHAR,
@@ -34,14 +34,14 @@ class Lio(AVGESupporterCard):
 
 		def draw() -> PacketType:
 			packet : PacketType= []
-			deck = player.cardholders[Pile.HAND]
+			deck = player.cardholders[Pile.DECK]
 			for _ in range(4):
 				def gen() -> PacketType:
 					if(len(deck) == 0):
 						return []
 					return [TransferCard(
 						deck.peek(),
-						player.cardholders[Pile.DECK],
+						deck,
 						player.cardholders[Pile.HAND],
 						ActionTypes.NONCHAR,
 						card)]

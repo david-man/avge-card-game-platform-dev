@@ -22,14 +22,14 @@ class AVGECard():
     def __eq__(self, other : object):
         return isinstance(other, AVGECard) and self.unique_id == other.unique_id
     def __str__(self):
-        return type(self).__name__
+        return type(self).__name__ + "(" + str(self.unique_id) + ")"
     def attach_to_cardholder(self, cardholder : AVGECardholder):
         self.cardholder = cardholder
         self.player = cardholder.player
         self.env = cardholder.env
     def add_listener(self, listener : AVGEAbstractEventListener):
-        """Interface for cards to add their own external listeners. Cards 
-        must use this interface"""
+        """Interface for cards to add their own external listeners. Cards that stick around
+        should use this interface"""
         assert self.env is not None
         self.env.add_listener(listener)
         self.owned_listeners.append(listener)
@@ -60,6 +60,9 @@ class AVGECard():
     def extend(self, packet : list[AVGEEvent | DeferredAVGEPacket]):
         assert self.env is not None
         self.env.extend(packet)
+    def extend_event(self, packet : list[AVGEEvent | DeferredAVGEPacket]):
+        assert self.env is not None
+        self.env.extend_event(packet)
 class AVGECharacterCard(AVGECard):
     def __init__(self, 
                  unique_id : str,

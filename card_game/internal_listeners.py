@@ -50,7 +50,7 @@ class AVGEHPChangeAssessment(AVGEAssessor):
         event = self.attached_event
         assert(isinstance(event, AVGECardHPChange))
         assert(not event.target_card.cardholder is None)
-        if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE]):
+        if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE] and event.catalyst_action != ActionTypes.ENV):
             return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: 'HP Changes should only be directed at BENCH, ACTIVE cards. This packet is likely a lingering packet'})
         return self.generate_response()
     
@@ -70,7 +70,7 @@ class AVGEMaxHPChangeAssessment(AVGEAssessor):
         event = self.attached_event
         assert(isinstance(event, AVGECardMaxHPChange))
         assert(not event.target_card.cardholder is None)
-        if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE]):
+        if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE] and event.catalyst_action != ActionTypes.ENV):
             return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: 'MAXHP Changes should only be directed at BENCH, ACTIVE cards. This packet is likely a lingering packet'})
         return self.generate_response()
 

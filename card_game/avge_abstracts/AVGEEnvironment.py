@@ -150,6 +150,9 @@ class AVGEEnvironment():
     def extend(self, p : list[AVGEEvent | DeferredAVGEPacket]):
         #opens engine in limited manner to cards and players
         self._engine._extend(p)
+    def extend_event(self, p : list[AVGEEvent | DeferredAVGEPacket]):
+        #opens engine in limited manner to cards and players
+        self._engine._extend_event(p)
     def add_listener(self, el : AbstractEventListener):
         """
         If you're thinking of using this, you should have a VERY clear update_status invalidation constraint that you can guarantee will fire eventually. 

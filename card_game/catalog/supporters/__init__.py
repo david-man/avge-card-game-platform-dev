@@ -7,3 +7,4 @@ from .Lucas import *
 from .Michelle import *
 from .Richard import *
 from .Victoria import *
+from .Will import *

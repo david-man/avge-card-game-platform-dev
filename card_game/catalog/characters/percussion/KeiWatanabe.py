@@ -50,7 +50,7 @@ class KeiWatanabe(AVGECharacterCard):
             AVGEPacket([
                 AVGECardHPChange(
                     chosen,
-                    20,
+                    10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_1,

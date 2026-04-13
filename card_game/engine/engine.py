@@ -85,8 +85,12 @@ class Engine(Generic[EV]):
             self.event_running._ff()
 
     def _extend(self, packet : list[EV | Gen]):
-        #extends the current running event with this one
+        #extends the current running PACKET with the given
         self.packet_running.append(packet)
+
+    def _extend_event(self, packet : list[EV | Gen]):
+        #extends the current running EVENT with the givne
+        self.packet_running.insert(0, packet)
         
     def forward(self, args : Data | None = None) -> Response:
         if(args is None):

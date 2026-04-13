@@ -69,7 +69,8 @@ class Victoria(AVGESupporterCard):
 							{
 								LABEL_FLAG: "victoria_pick_cards_and_destination",
 								TARGETS_FLAG: matching_characters,
-								DISPLAY_FLAG: list(deck)
+								DISPLAY_FLAG: list(deck),
+								ALLOW_NONE: True
 							},
 						)
 					]

@@ -36,7 +36,7 @@ class Johann(AVGESupporterCard):
 		if(supporter_pick is missing):
 			return card.generate_response(ResponseType.INTERRUPT,
 					{INTERRUPT_KEY:[
-						[
+						
 					InputEvent(
 						player,
 						[Johann._SUPPORTER_PICK_KEY],
@@ -51,12 +51,12 @@ class Johann(AVGESupporterCard):
 							ALLOW_NONE: True,
 						},
 					)
-						]
+						
 					]})
 		if(item_or_tool_pick is missing):
 			return card.generate_response(ResponseType.INTERRUPT,
 					{INTERRUPT_KEY:[
-						[
+						
 					InputEvent(
 						player,
 						[Johann._ITEM_OR_TOOL_PICK_KEY],
@@ -71,13 +71,13 @@ class Johann(AVGESupporterCard):
 							ALLOW_NONE: True,
 						},
 					)
-						]
+						
 					]})
 		
 		if(stadium_pick is missing):
 			return card.generate_response(ResponseType.INTERRUPT,
 					{INTERRUPT_KEY:[
-						[
+						
 					InputEvent(
 						player,
 						[Johann._STADIUM_PICK_KEY],
@@ -92,7 +92,7 @@ class Johann(AVGESupporterCard):
 							ALLOW_NONE: True,
 						},
 					)
-						]
+						
 					]})
 
 		if(supporter_pick is not None):

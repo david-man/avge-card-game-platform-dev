@@ -14,7 +14,7 @@ class Bucket(AVGEToolCard):
         assert self.card_attached is not None
         assert self.original_type is not None
         
-        self.extend(
+        self.extend_event(
             [
                 AVGECardTypeChange(
                     self.card_attached,

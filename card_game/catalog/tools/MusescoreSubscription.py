@@ -15,7 +15,7 @@ class MusescoreSubscription(AVGEToolCard):
 		super().deactivate_card()
 
 		assert self.card_attached is not None
-		self.extend([
+		self.extend_event([
 				AVGECardStatusChange(
 				StatusEffect.ARRANGER,
 				StatusChangeType.ERASE,

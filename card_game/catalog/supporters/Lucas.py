@@ -19,13 +19,9 @@ class Lucas(AVGESupporterCard):
 		hand = player.cardholders[Pile.HAND]
 
 		board_characters: list[AVGECharacterCard] = []
-		for target_player in [player, player.opponent]:
-			for character in target_player.cardholders[Pile.ACTIVE]:
-				if(isinstance(character, AVGECharacterCard)):
-					board_characters.append(character)
-			for character in target_player.cardholders[Pile.BENCH]:
-				if(isinstance(character, AVGECharacterCard)):
-					board_characters.append(character)
+		for character in player.get_cards_in_play():
+			if(isinstance(character, AVGECharacterCard)):
+				board_characters.append(character)
 
 		board_types = {
 			character.card_type
@@ -56,7 +52,7 @@ class Lucas(AVGESupporterCard):
 											card,
 											{LABEL_FLAG: "lucas_choice_top",
 											TARGETS_FLAG: eligible_deck_characters,
-											DISPLAY_FLAG: deck}
+											DISPLAY_FLAG: list(deck)}
 										)
 									]
 								 }
@@ -81,7 +77,7 @@ class Lucas(AVGESupporterCard):
 											card,
 											{LABEL_FLAG: "lucas_choice_hand",
 											TARGETS_FLAG: eligible_deck_characters,
-											DISPLAY_FLAG: deck}
+											DISPLAY_FLAG: list(deck)}
 										)
 									]
 								 }

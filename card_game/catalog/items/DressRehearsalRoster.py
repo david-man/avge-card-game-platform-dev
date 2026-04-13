@@ -65,23 +65,23 @@ class DressRehearsalRoster(AVGEItemCard):
 			)
 		packet : PacketType = []
 		for selected in selected_chars:
-			def gen() -> PacketType:
-				assert isinstance(selected, AVGECharacterCard) 
+			def gen_1(chosen=selected) -> PacketType:
+				assert isinstance(chosen, AVGECharacterCard) 
 				return [AVGEEnergyTransfer(
-						selected.energy[0],
-						selected,
-						selected.env,
+						chosen.energy[0],
+						chosen,
+						chosen.env,
 						ActionTypes.NONCHAR,
 						card)]
-			packet.append(gen)
+			packet.append(gen_1)
 
 		cards_to_shuffle = list(discard)
 		if(len(cards_to_shuffle) > 4):
 			cards_to_shuffle = random.sample(cards_to_shuffle, 4)
 		for card_to_shuffle in cards_to_shuffle:
-			def gen() -> PacketType:
+			def gen(chosen=card_to_shuffle) -> PacketType:
 				return [TransferCard(
-					card_to_shuffle,
+					chosen,
 					discard,
 					deck,
 					ActionTypes.NONCHAR,

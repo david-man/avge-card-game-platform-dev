@@ -57,7 +57,7 @@ class AVGECardHPChange(AVGEEvent):
         self.target_card.hp = self.current_proposed_value()
         self.final_change = self.target_card.hp
         if(self.target_card.hp <= 0 and self.target_card.cardholder.pile_type != Pile.DISCARD):
-            self.target_card.env.extend(
+            self.target_card.env.extend_event(
                 [TransferCard(self.target_card,
                                                 self.target_card.cardholder,
                                                 self.target_card.player.cardholders[Pile.DISCARD],
@@ -78,7 +78,11 @@ class AVGECardHPChange(AVGEEvent):
         self.attach_listener(MaidStatusDamageShieldModifier())
     
     def package(self):
-        return f"{self.modifier_type} change for {self.target_card} HP of magnitude {self.magnitude}"
+        return (
+            f"AVGECardHPChange(target={self.target_card}, modifier={self.modifier_type}, "
+            f"magnitude={self.magnitude}, change_type={self.change_type}, action={self.catalyst_action}, "
+            f"caller={self.caller_card})"
+        )
         
 class AVGECardMaxHPChange(AVGEEvent):
     def __init__(self,
@@ -131,7 +135,10 @@ class AVGECardMaxHPChange(AVGEEvent):
         return
     
     def package(self):
-        return f"{self.modifier_type} change for {self.target_card} HP of magnitude {self.magnitude}"
+        return (
+            f"AVGECardMaxHPChange(target={self.target_card}, modifier={self.modifier_type}, "
+            f"magnitude={self.magnitude}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
     
 class AVGECardTypeChange(AVGEEvent):
     def __init__(self,
@@ -159,7 +166,10 @@ class AVGECardTypeChange(AVGEEvent):
         return
     
     def package(self):
-        return f"Changing {self.target_card} type to {self.new_type}"
+        return (
+            f"AVGECardTypeChange(target={self.target_card}, new_type={self.new_type}, "
+            f"action={self.catalyst_action}, caller={self.caller_card})"
+        )
 class AVGECardStatusChange(AVGEEvent):
     def __init__(self,
                  status_effect : StatusEffect,
@@ -219,7 +229,10 @@ class AVGECardStatusChange(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Transferring energy!"
+        return (
+            f"AVGECardStatusChange(target={self.target}, status={self.status_effect}, "
+            f"change_type={self.change_type}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
 class AVGEEnergyTransfer(AVGEEvent):
     def __init__(self,
                  token : EnergyToken,
@@ -243,7 +256,10 @@ class AVGEEnergyTransfer(AVGEEvent):
         from .internal_listeners import AVGETokenTransferAssessment
         self.attach_listener(AVGETokenTransferAssessment())
     def package(self):
-        return f"Transferring energy!"
+        return (
+            f"AVGEEnergyTransfer(token={self.token.unique_id}, source={self.source}, target={self.target}, "
+            f"action={self.catalyst_action}, caller={self.caller_card})"
+        )
 class AVGEPlayerAttributeChange(AVGEEvent):
     def __init__(self, 
                  target_player : AVGEPlayer, #can be delayed to runtime if wanted
@@ -293,7 +309,11 @@ class AVGEPlayerAttributeChange(AVGEEvent):
         self.attach_listener(AVGEPlayerAttributeChangePostChecker())
     
     def package(self):
-        return f"{self.attribute_modifier_type} AVGEPlayerAttributeChange on {self.target_player} for {self.attribute} of magnitude {self.magnitude}"
+        return (
+            f"AVGEPlayerAttributeChange(player={self.target_player}, attribute={self.attribute}, "
+            f"modifier={self.attribute_modifier_type}, magnitude={self.magnitude}, "
+            f"action={self.catalyst_action}, caller={self.caller_card})"
+        )
 
 class TransferCard(AVGEEvent):
     _ACTIVE_REPLACE_KEY = "internal_active_replace_pick"
@@ -341,6 +361,8 @@ class TransferCard(AVGEEvent):
             #character setup for discard
             if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) 
             and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
+                
+                #replacement for active
                 if(self.pile_from.pile_type == Pile.ACTIVE and self.temp_cache.get("CARD_REPLACED", None) is None):
                     if(len(self.card.player.cardholders[Pile.BENCH]) == 0):
                         e : AVGEEnvironment = self.card.env
@@ -387,8 +409,6 @@ class TransferCard(AVGEEvent):
                                                                     self.catalyst_action,
                                                                     None))
                         self.temp_cache["CARD_REPLACED"] = True
-                
-                #on card discard
                 #discard tools
                 def packet_1():
                     assert isinstance(self.card, AVGECharacterCard)
@@ -423,27 +443,6 @@ class TransferCard(AVGEEvent):
                     return packet
                 def packet_4():
                     assert isinstance(self.card, AVGECharacterCard)
-                    packet : PacketType = []
-                    #reset MAXHP
-                    packet.append(AVGECardMaxHPChange(
-                        self.card,
-                        self.card.default_max_hp,
-                        AVGEAttributeModifier.SET_STATE,
-                        self.catalyst_action,
-                        None
-                    ))
-                    #reset HP
-                    packet.append(AVGECardHPChange(
-                        self.card,
-                        self.card.default_max_hp,
-                        AVGEAttributeModifier.SET_STATE,
-                        CardType.ALL,
-                        self.catalyst_action,
-                        None
-                    ))
-                    return packet
-                def packet_5():
-                    assert isinstance(self.card, AVGECharacterCard)
                     packet : PacketType= []
                     for status in self.card.statuses_responsible:
                         for card in self.card.statuses_responsible[status]:
@@ -455,6 +454,26 @@ class TransferCard(AVGEEvent):
                                 self.catalyst_action,
                                 self.card
                             ))
+                    return packet
+                #reset HP/MAXHP
+                def packet_5():
+                    assert isinstance(self.card, AVGECharacterCard)
+                    packet : PacketType = []
+                    packet.append(AVGECardMaxHPChange(
+                        self.card,
+                        self.card.default_max_hp,
+                        AVGEAttributeModifier.SET_STATE,
+                        self.catalyst_action,
+                        None
+                    ))
+                    packet.append(AVGECardHPChange(
+                        self.card,
+                        self.card.default_max_hp,
+                        AVGEAttributeModifier.SET_STATE,
+                        CardType.ALL,
+                        self.catalyst_action,
+                        None
+                    ))
                     return packet
                 self.card.deactivate_card()
                 to_dos.extend([packet_1, packet_2, packet_3, packet_4, packet_5])
@@ -509,7 +528,7 @@ class TransferCard(AVGEEvent):
 
             self.temp_cache[self._POST_TRANSFER] = True
             if(len(to_dos) > 0):
-                self.card.env.extend(to_dos)
+                self.card.env.extend_event(to_dos)
         return self.generate_core_response()
     
     def invert_core(self, args : Data | None = None):
@@ -534,7 +553,11 @@ class TransferCard(AVGEEvent):
         self.attach_listener(AVGETransferEnergyRequirementReactor())
     
     def package(self):
-        return f"{self.card} from {self.pile_from} to {self.pile_to}"
+        return (
+            f"TransferCard(card={self.card}, from={self.pile_from.pile_type}, to={self.pile_to.pile_type}, "
+            f"new_idx={self.new_idx}, energy_requirement={self.energy_requirement}, "
+            f"action={self.catalyst_action}, caller={self.caller_card})"
+        )
 class ReorderCardholder(AVGEEvent):
     def __init__(self,
                  cardholder : AVGECardholder,
@@ -556,7 +579,10 @@ class ReorderCardholder(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Reordering {self.cardholder.player.unique_id}'s {self.cardholder.pile_type}"
+        return (
+            f"ReorderCardholder(player={self.cardholder.player.unique_id}, pile={self.cardholder.pile_type}, "
+            f"new_order={self.new_order}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
 #In PlayCharacter & PlayNoncharacter Card, the caller card should always be either set to the card itself or a card that is appropriating that card's ability
         
 #In addition, if a card requires an input, it is expected that they use the InputEvent. Don't use args
@@ -592,7 +618,10 @@ class PlayCharacterCard(AVGEEvent):
         from .internal_listeners import AVGEPlayCharacterCardValidityCheck
         self.attach_listener(AVGEPlayCharacterCardValidityCheck())
     def package(self):
-        return f"{self.card_action} action from {self.card}"
+        return (
+            f"PlayCharacterCard(card={self.card}, card_action={self.card_action}, "
+            f"energy_requirement={self.energy_requirement}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
     
 class PlayNonCharacterCard(AVGEEvent):
     def __init__(self, 
@@ -617,7 +646,9 @@ class PlayNonCharacterCard(AVGEEvent):
         from .internal_listeners import AVGEPlayNonCharacterCardValidityCheck
         self.attach_listener(AVGEPlayNonCharacterCardValidityCheck())
     def package(self):
-        return f"{self.card} was played!"
+        return (
+            f"PlayNonCharacterCard(card={self.card}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
 class PhasePickCard(AVGEEvent):
     def __init__(self, 
                  player : AVGEPlayer,
@@ -649,7 +680,9 @@ class PhasePickCard(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Pick Up Card Phase"
+        return (
+            f"PhasePickCard(player={self.player.unique_id}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
 
 class Phase2(AVGEEvent):
     def __init__(self, 
@@ -825,7 +858,9 @@ class Phase2(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Phase 2"
+        return (
+            f"Phase2(player={self.player.unique_id}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
     
 class AtkPhase(AVGEEvent):
     def __init__(self, 
@@ -839,7 +874,9 @@ class AtkPhase(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Atk phase"
+        return (
+            f"AtkPhase(player={self.player.unique_id}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
     def invert_core(self, args : Data | None = None):
         raise Exception("A phase should never be canceled")
     def core(self, args : Data | None = None) -> Response:
@@ -906,7 +943,11 @@ class EmptyEvent(AVGEEvent):
     def invert_core(self, args ={}):
         return
     def package(self):
-        return
+        data_keys = list(self.response_data.keys()) if isinstance(self.response_data, dict) else []
+        return (
+            f"EmptyEvent(response_type={self.response_type}, data_keys={data_keys}, "
+            f"action={self.catalyst_action}, caller={self.caller_card})"
+        )
     def generate_internal_listeners(self):
         return
 class InputEvent(AVGEEvent):
@@ -961,12 +1002,11 @@ class InputEvent(AVGEEvent):
                 targets = self.query_data.get(TARGETS_FLAG, [])
                 assert isinstance(targets, list)
                 assert isinstance(display, list)
-                allow_none = self.query_data.get("allow_none", False)
+                allow_none = self.query_data.get(ALLOW_NONE, False)
                 if(allow_none):
                     targets += [None]
                 seen = []
                 for i, res in enumerate(input_result):
-                    allow_none = self.query_data.get("allow_none", False)
                     allow_repeats = self.query_data.get(ALLOW_REPEAT, False)
                     if((res in seen and not allow_repeats) or (res not in targets)):
                         valid = False
@@ -1019,7 +1059,11 @@ class InputEvent(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Input Event!"
+        label = self.query_data.get(LABEL_FLAG, None)
+        return (
+            f"InputEvent(player={self.player_for.unique_id}, input_keys={self.input_keys}, "
+            f"input_type={self.input_type}, label={label}, action={self.catalyst_action}, caller={self.caller_card})"
+        )
 class TurnEnd(AVGEEvent):
     def __init__(self,
                  environment : AVGEEnvironment,
@@ -1050,7 +1094,10 @@ class TurnEnd(AVGEEvent):
     def generate_internal_listeners(self):
         return
     def package(self):
-        return f"Ending Turn! Resetting all to default"
+        return (
+            f"TurnEnd(current_turn={self.env.player_turn.unique_id}, round={self.env.round_id}, "
+            f"action={self.catalyst_action}, caller={self.caller_card})"
+        )
     
 class PlayerInitEvent(AVGEEvent):
     _PLAYER_ACTIVE = "PLAYER_ACTIVE"
@@ -1104,3 +1151,8 @@ class PlayerInitEvent(AVGEEvent):
                          None))
         self.propose(AVGEPacket(p, AVGEEngineID(None, ActionTypes.ENV, None)))
         return self.generate_core_response()
+
+    def package(self):
+        return (
+            f"PlayerInitEvent(player={self.player.unique_id}, action={self.catalyst_action}, caller={self.caller_card})"
+        )

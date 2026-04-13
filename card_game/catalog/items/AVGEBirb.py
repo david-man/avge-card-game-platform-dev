@@ -18,11 +18,13 @@ class AVGEBirbNextTurnDamageModifier(AVGEModifier):
 			return False
 		if(event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE):
 			return False
-		if(event.catalyst_action in [ActionTypes.ATK_1, ActionTypes.ATK_2]):
+		if(event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]):
 			return False
 		if not isinstance(event.caller_card, AVGECard):
 			return False
 		if(event.caller_card.player != self.owner_card.player.opponent):
+			return False
+		if(event.caller_card.env.round_id != self.round_active):
 			return False
 		return True
 
@@ -38,13 +40,15 @@ class AVGEBirbNextTurnDamageModifier(AVGEModifier):
 
 	def package(self):
 		return "AVGEBirb Modifier"
+	
+	def on_packet_completion(self):
+		self.invalidate()
 
 	def modify(self, args=None):
 		event = self.attached_event
 		from card_game.internal_events import AVGECardHPChange
 		assert isinstance(event, AVGECardHPChange)
 		event.modify_magnitude(20)
-		self.invalidate()
 		return self.generate_response()
 
 class AVGEBirb(AVGEItemCard):
@@ -58,8 +62,8 @@ class AVGEBirb(AVGEItemCard):
 
 		opponent = card.player.opponent
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
-		damage_modifier = AVGEBirbNextTurnDamageModifier(card, card.env.round_id)
-		card.add_listener(damage_modifier)
+		damage_modifier = AVGEBirbNextTurnDamageModifier(card, card.player.opponent.get_next_turn())
+		card.env.add_listener(damage_modifier)
 		def generate_packet():
 			packet = []
 			for character in card.player.opponent.get_cards_in_play():

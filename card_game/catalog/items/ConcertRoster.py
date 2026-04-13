@@ -44,7 +44,8 @@ class ConcertRoster(AVGEItemCard):
 							{
 								LABEL_FLAG: "concert_roster_top_pick",
 								DISPLAY_FLAG: considered_cards,
-								TARGETS_FLAG: pick_choices
+								TARGETS_FLAG: pick_choices,
+								ALLOW_NONE: True
 							},
 						)
 					]
@@ -56,7 +57,7 @@ class ConcertRoster(AVGEItemCard):
 					ActionTypes.NONCHAR,
 					card,
 					response_data={
-						REVEAL_KEY: list(picked_card)
+						REVEAL_KEY: list([picked_card])
 					}
 				))
 			packet.append(

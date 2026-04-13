@@ -30,20 +30,20 @@ _HIDDEN_RESPONSE_KEYS = {
 }
 start_round = 1 
 p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [CarolynZheng],
+    Pile.ACTIVE: [KeiWatanabe],
     Pile.BENCH: [],
-    Pile.HAND: [IceSkates, AVGEShowcaseSticker],
-    Pile.DISCARD: [MainHall, AVGEBirb, ConcertProgram, ConcertProgram],
-    Pile.DECK: [AVGEBirb, IceSkates, LukeXu, Johann, DanielYang,DavidMan],
-    Pile.STADIUM: [AlumnaeHall],
+    Pile.HAND: [Lucas, Bucket, AVGETShirt, Richard, Victoria],
+    Pile.DISCARD: [MainHall, AVGEBirb, Johann, AVGEBirb, IceSkates],
+    Pile.DECK: [MainHall, IceSkates, FionaLi, DavidMan, JennieWang,AVGEBirb,AVGEBirb,LukeXu, Johann, DanielYang, AVGEBirb],
+    Pile.STADIUM: [],
 }
 
 p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [DavidMan],
-    Pile.BENCH: [FelixChen],
-    Pile.HAND: [MaidOutfit, SteinertBasement,LukeXu,  JennieWang, ConcertTicket, FoldingStand],
-    Pile.DISCARD: [VideoCamera],
-    Pile.DECK: [JennieWang, JuliaCiacerelli],
+    Pile.ACTIVE: [KeiWatanabe],
+    Pile.BENCH: [FionaLi, DavidMan],
+    Pile.HAND: [AVGEBirb, SteinertPracticeRoom,  JennieWang, ConcertTicket, FoldingStand],
+    Pile.DISCARD: [VideoCamera, JuliaCiacerelli, MaggieLi],
+    Pile.DECK: [JennieWang, JuliaCiacerelli, MaidOutfit, VideoCamera],
 }
 
 def _filtered_response_data(data: Data | None) -> Data:
@@ -885,7 +885,7 @@ def _actuate_inspector_events(env: AVGEEnvironment, event_count : int) -> str:
         if(resp.response_type in [ResponseType.REQUIRES_QUERY]):
             return f"Actuation paused at {resp.response_type} after {steps} step(s)."
         if(resp.response_type == ResponseType.NEXT_EVENT):
-            print("NEXT EVENT: ", type(env._engine.event_running).__name__)
+            print("NEXT EVENT: ", env._engine.event_running)
     return f"Actuation stopped after 300 steps (safety limit)."
 
 
@@ -1460,7 +1460,7 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                 _log_scanner_response(resp)
             if(resp.response_type == ResponseType.NEXT_EVENT):
                 print("--------------------------------------------------")
-                print(f"NEW EVENT: {type(resp.source).__name__}")
+                print(f"NEW EVENT: {str(resp.source)}")
                 if(scanner_settings["pause_on_finished"]):
                     root.after(0, update_label, label, _build_ui_text(env))
                     _wait_for_scanner_enter(root, stop_event)
@@ -1478,13 +1478,13 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                 print(f"SKIP: {_filtered_response_data(resp.data)}")
                 print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.FINISHED):
-                print("Event finished.")
+                print("EVENT FINISHED")
                 print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.FINISHED_PACKET):
-                print("Packet finished.")
+                print("EVENT & PACKET FINISHED.")
                 print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.NO_MORE_EVENTS):
-                print("No more events!")
+                print("\n\n\n")
                 if(env.game_phase == GamePhase.ATK_PHASE):
                     if(env.player_turn.attributes[AVGEPlayerAttribute.ATTACKS_LEFT] > 0):
                         env.propose(

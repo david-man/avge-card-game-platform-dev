@@ -47,3 +47,6 @@ class AVGEReactor(AVGEAbstractEventListener, ReactorEventListener[AVGEEvent]):
     def extend(self, e : list[AVGEEvent | DeferredAVGEPacket]):
         assert self.engine is not None
         self.engine._extend(e)
+    def extend_event(self, e : list[AVGEEvent | DeferredAVGEPacket]):
+        assert self.engine is not None
+        self.engine._extend_event(e)

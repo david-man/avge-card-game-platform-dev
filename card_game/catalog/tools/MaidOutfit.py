@@ -14,7 +14,7 @@ class MaidOutfit(AVGEToolCard):
 
 		
 		assert self.card_attached is not None
-		self.extend([
+		self.extend_event([
 				AVGECardStatusChange(
 				StatusEffect.MAID,
 				StatusChangeType.ERASE,

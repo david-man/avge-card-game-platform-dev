@@ -60,7 +60,7 @@ class ConcertProgram(AVGEItemCard):
 					ActionTypes.NONCHAR,
 					card,
 					response_data={
-						REVEAL_KEY: list(picked_character)
+						REVEAL_KEY: list([picked_character])
 					}
 				))
 			packet.append(
