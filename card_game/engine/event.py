@@ -21,7 +21,7 @@ class Packet(Generic[EV]):
             raise Exception("Cannot insert into packet when packet not assembled")
     def __str__(self):
         if(len(self.element) == 0):
-            return "[]"
+            return "[empty]"
         _str="["
         for e in self.element:
             _str += "unestablished" if isinstance(e, Callable) else str(e)
@@ -73,13 +73,16 @@ class Event():
         self._kwargs = kwargs
         self.fast_forward = False
         self.skip_forward = False
+        self.initiated = False
     def _check_internal(self):
-        for group in self.event_listener_groups.values():
-            for listener in group:
-                if(not listener.event_match(self)):
-                    listener.invalidate()
-                else:
-                    listener.attach_to_event(self)
+        if(not self.initiated):
+            self.initiated = True
+            for group in self.event_listener_groups.values():
+                for listener in group:
+                    if(not listener.event_match(self)):
+                        listener.invalidate()
+                    else:
+                        listener.attach_to_event(self)
     def _constrain_internal(self, constraint : constrainer.Constraint):
         #checks the internal event listeners with a constrainer
         for group in self.event_listener_groups.values():
@@ -186,7 +189,7 @@ class Event():
                         if(constraint._should_attach(listener)):
                             listener.detach_from_event()
                             self.event_listener_groups[self.group_on].remove(listener)
-                            return Response(self, ResponseType.ACCEPT, data = {'constrainer_announced': constraint.package()})
+                            return Response(self, ResponseType.ACCEPT, data = {'constrained_by': constraint})
             #if all event listeners constrained, we can mark the group as constrained
             self.groups_constrained[self.group_on] = True
             #step 2: consider ordering if must be

@@ -12,13 +12,18 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 		self.round_active = round
 
 	def event_match(self, event):
+		from card_game.internal_events import TransferCard
+
 		if(not self.owner_card._is_active_stadium()):
-			return False
-		if(not isinstance(event, PlayNonCharacterCard)):
 			return False
 		if(not self.owner_card.env.round_id >= self.round_active):
 			return False
 		if(not event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+			return False
+		if(not isinstance(event, (PlayNonCharacterCard, TransferCard))):
+			return False
+		if(isinstance(event, TransferCard)
+		   and (event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH)):
 			return False
 		player_id = event.card.player.unique_id
 		if(player_id == str(PlayerID.P1)):
@@ -37,19 +42,24 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 
 
 class MainHallCountPlayReactor(AVGEReactor):
-	def __init__(self, owner_card: AVGEStadiumCard, round : int):
+	def __init__(self, owner_card: AVGEStadiumCard, round_start : int):
 		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MainHall), group=EngineGroup.EXTERNAL_REACTORS)
 		self.owner_card = owner_card
-		self.round_active = round
+		self.round_start = round_start
 
 	def event_match(self, event):
+		from card_game.internal_events import TransferCard
+
 		if(not self.owner_card._is_active_stadium()):
 			return False
-		if(not isinstance(event, PlayNonCharacterCard)):
-			return False
-		if(not self.owner_card.env.round_id >= self.round_active):
+		if(not self.owner_card.env.round_id >= self.round_start):
 			return False
 		if(not event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+			return False
+		if(not isinstance(event, (PlayNonCharacterCard, TransferCard))):
+			return False
+		if(isinstance(event, TransferCard)
+		   and (event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH)):
 			return False
 		return True
 
@@ -59,7 +69,8 @@ class MainHallCountPlayReactor(AVGEReactor):
 
 	def react(self, args=None):
 		event = self.attached_event
-		assert isinstance(event, PlayNonCharacterCard)
+		from card_game.internal_events import TransferCard
+		assert isinstance(event, (PlayNonCharacterCard, TransferCard))
 		player_id = event.card.player.unique_id
 		if(player_id == str(PlayerID.P1)):
 			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0)

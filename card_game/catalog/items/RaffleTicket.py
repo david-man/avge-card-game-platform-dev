@@ -39,9 +39,9 @@ class RaffleTicket(AVGEItemCard):
 								ActionTypes.NONCHAR,
 								card,
 								{
-									"query_label": "raffle_ticket_birb",
-									"targets": card.player.get_cards_in_play(),
-									"display": card.player.get_cards_in_play()
+									LABEL_FLAG: "raffle_ticket_birb",
+									TARGETS_FLAG: card.player.get_cards_in_play(),
+									DISPLAY_FLAG: card.player.get_cards_in_play()
 								},
 							)
 						]

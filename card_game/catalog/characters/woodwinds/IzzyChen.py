@@ -19,11 +19,10 @@ class IzzyChen(AVGECharacterCard):
 
     @staticmethod
     def can_play_active(card) -> bool:
-        already_used = card.env.cache.get(card, IzzyChen._ACTIVE_USED_KEY, None, True)
+        already_used = card.env.cache.get(card, IzzyChen._ACTIVE_USED_KEY, None)
         if card.env.round_id == already_used:
             return False
-        discard = card.player.cardholders[Pile.DISCARD]
-        return any(isinstance(c, AVGEStadiumCard) for c in discard.cards_by_id.values())
+        return True
 
     @staticmethod
     def active(card: AVGECharacterCard) -> Response:
@@ -49,9 +48,9 @@ class IzzyChen(AVGECharacterCard):
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
                             {
-                                "query_label": "izzy_stadium_recover",
-                                "targets": stadiums,
-                                "display": list(discard)
+                                LABEL_FLAG: "izzy_stadium_recover",
+                                TARGETS_FLAG: stadiums,
+                                DISPLAY_FLAG: list(discard)
                             },
                         )
                     ]
@@ -81,7 +80,7 @@ class IzzyChen(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "izzychen_2coin"},
+                            {LABEL_FLAG: "izzychen_2coin"},
                         )
                     ]
                 },

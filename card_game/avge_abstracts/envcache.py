@@ -31,7 +31,7 @@ class EnvironmentCache():
         self._capturing_changes = False
         self.empty_card = AVGECard("ENVIRONMENT_CARD_VARIABLE")
         self.cache = {k : {} for k in card_ids + ["ENVIRONMENT_CARD_VARIABLE"]}
-    def set(self, card : AVGECard, key : str, value):
+    def set(self, card : AVGECard | None, key : str, value):
         if(card is None):
             card = self.empty_card
         if(self._capturing_changes):
@@ -49,7 +49,7 @@ class EnvironmentCache():
         if(one_look):
             self.delete(card, key)
         return val
-    def delete(self, card : AVGECard, key : str):
+    def delete(self, card : AVGECard | None, key : str):
         """Attempts to delete a key in data cache. If key does not exist, does nothing"""
         if(card is None):
             card = self.empty_card

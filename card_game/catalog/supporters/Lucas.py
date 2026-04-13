@@ -54,9 +54,9 @@ class Lucas(AVGESupporterCard):
 											lambda res : True,
 											ActionTypes.NONCHAR,
 											card,
-											{"query_label": "lucas_choice_top",
-											"targets": eligible_deck_characters,
-											"display": deck}
+											{LABEL_FLAG: "lucas_choice_top",
+											TARGETS_FLAG: eligible_deck_characters,
+											DISPLAY_FLAG: deck}
 										)
 									]
 								 }
@@ -79,9 +79,9 @@ class Lucas(AVGESupporterCard):
 											lambda res : True,
 											ActionTypes.NONCHAR,
 											card,
-											{"query_label": "lucas_choice_hand",
-											"targets": eligible_deck_characters,
-											"display": deck}
+											{LABEL_FLAG: "lucas_choice_hand",
+											TARGETS_FLAG: eligible_deck_characters,
+											DISPLAY_FLAG: deck}
 										)
 									]
 								 }

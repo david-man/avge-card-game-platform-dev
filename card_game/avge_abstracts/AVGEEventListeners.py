@@ -7,7 +7,7 @@ from enum import StrEnum
 from .AVGEEvent import AVGEEvent
 
 if TYPE_CHECKING:
-    from .AVGEEvent import AVGEPacket
+    from .AVGEEvent import AVGEPacket, DeferredAVGEPacket
 
 
 class ActionTypes(StrEnum):
@@ -44,3 +44,6 @@ class AVGEReactor(AVGEAbstractEventListener, ReactorEventListener[AVGEEvent]):
     def propose(self, e : AVGEPacket, priority : int = 0):#type: ignore
         assert self.engine is not None
         self.engine._propose(e, priority)
+    def extend(self, e : list[AVGEEvent | DeferredAVGEPacket]):
+        assert self.engine is not None
+        self.engine._extend(e)

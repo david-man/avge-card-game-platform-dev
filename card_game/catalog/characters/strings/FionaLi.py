@@ -66,6 +66,7 @@ class FionaLi(AVGECharacterCard):
 
         if owner_card.cardholder.pile_type == Pile.BENCH:
             active = owner_card.player.get_active_card()
+            print("FIONALI: ACTIVE: ", active.unique_id)
             if isinstance(active, AVGECharacterCard):
                 owner_card.propose(
                     AVGEPacket([

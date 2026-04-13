@@ -84,7 +84,7 @@ class CarolynZheng(AVGECharacterCard):
         def generate_packet() -> PacketType:
             return [AVGECardHPChange(
                 card.player.opponent.get_active_card(),
-                1000,
+                70,
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.BRASS,
                 ActionTypes.ATK_1,

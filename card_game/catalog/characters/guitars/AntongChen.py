@@ -37,7 +37,7 @@ class AntongChen(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "antong_chen_5coin"},
+                            {LABEL_FLAG: "antong_chen_5coin"},
                         )
                     ]
                 },

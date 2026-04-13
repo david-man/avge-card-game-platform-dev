@@ -8,6 +8,7 @@ from card_game.engine.engine_constants import EngineGroup
 
 class BokaiBi(AVGECharacterCard):
     _D6_KEY = "bokaibi_d6_roll"
+    _PASSIVE_DAMAGE_CHOICE_KEY = "bokaibi_passive_damage_choice"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PERCUSSION, 2, 2)
@@ -26,19 +27,24 @@ class BokaiBi(AVGECharacterCard):
                 )
 
             def event_match(self, event):
-                from card_game.internal_events import TransferCard
+                from card_game.internal_events import TransferCard, PlayNonCharacterCard
 
-                if not isinstance(event, TransferCard):
-                    return False
-                if event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH:
-                    return False
-                if event.card.player != card.player.opponent:
-                    return False
-                for c in card.player.get_cards_in_play():
-                    if isinstance(c, AVGECharacterCard) and type(c) == type(event.card):
-                        return True
+                if isinstance(event, TransferCard):
+                    if event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH:
+                        return False
+                    if event.card.player != card.player.opponent:
+                        return False
+                    for c in card.player.cardholders[Pile.HAND]:
+                        if type(c) == type(event.card):
+                            return True
+                elif isinstance(event, PlayNonCharacterCard):
+                    if(event.card.player != card.player.opponent):
+                        return False
+                    for c in card.player.cardholders[Pile.HAND]:
+                        print(type(event.card))
+                        if type(c) == type(event.card):
+                            return True
                 return False
-
             def event_effect(self) -> bool:
                 return True
 
@@ -48,23 +54,52 @@ class BokaiBi(AVGECharacterCard):
             def react(self, args=None) -> Response:
                 if args is None:
                     args = {}
-                from card_game.internal_events import AVGECardHPChange, TransferCard
+                from card_game.internal_events import AVGECardHPChange, InputEvent, EmptyEvent, PlayNonCharacterCard, TransferCard
+                overlap = None
+                assert isinstance(self.attached_event, (TransferCard, PlayNonCharacterCard))
+                for c in card.player.cardholders[Pile.HAND]:
+                    if type(c) == type(self.attached_event.card):
+                        overlap = c
+                        break
+                if(overlap is None):
+                    return self.generate_response()
+                choice = card.env.cache.get(card, BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY, None, True)
+                if choice is None:
+                    return card.generate_response(
+                        ResponseType.INTERRUPT,
+                        {
+                            INTERRUPT_KEY: [
+                                InputEvent(
+                                    card.player,
+                                    [BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY],
+                                    InputType.BINARY,
+                                    lambda r: True,
+                                    ActionTypes.PASSIVE,
+                                    card,
+                                    {LABEL_FLAG: "bokaibi_passive_optional_20"},
+                                )
+                            ]
+                        },
+                    )
 
-                event = self.attached_event
-                assert isinstance(event, TransferCard)
-                assert isinstance(event.card, AVGECharacterCard)
-                card.propose(
-                    AVGEPacket([
-                        AVGECardHPChange(
-                            event.card,
-                            60,
-                            AVGEAttributeModifier.SUBSTRACTIVE,
-                            CardType.PERCUSSION,
-                            ActionTypes.PASSIVE,
-                            card,
-                        )
-                    ], AVGEEngineID(card, ActionTypes.PASSIVE, BokaiBi))
-                )
+                if(choice):
+                    card.propose(
+                        AVGEPacket([
+                            EmptyEvent(
+                                ActionTypes.PASSIVE,
+                                card,
+                                response_data={REVEAL_KEY: [overlap]}
+                            ),
+                            AVGECardHPChange(
+                                card.player.opponent.get_active_card(),
+                                20,
+                                AVGEAttributeModifier.SUBSTRACTIVE,
+                                CardType.PERCUSSION,
+                                ActionTypes.PASSIVE,
+                                card,
+                            )
+                        ], AVGEEngineID(card, ActionTypes.PASSIVE, BokaiBi))
+                    )
 
                 return self.generate_response()
 
@@ -88,7 +123,7 @@ class BokaiBi(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "bokai_bi_d6"},
+                            {LABEL_FLAG: "bokai_bi_d6"},
                         )
                     ]
                 },

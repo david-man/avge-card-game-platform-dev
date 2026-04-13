@@ -45,11 +45,11 @@ class CastReserve(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "cast_reserve_player_item_pick",
-								"targets": deck_items,
-								"display": deck_items,
-								"allow_none": True,
-								"allow_repeats": False
+								LABEL_FLAG: "cast_reserve_player_item_pick",
+								TARGETS_FLAG: deck_items,
+								DISPLAY_FLAG: deck_items,
+								ALLOW_NONE: True,
+								ALLOW_REPEAT: False
 							},
 						)
 					]
@@ -70,9 +70,9 @@ class CastReserve(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "cast_reserve_opponent_shuffle_choice",
-								"targets": selected_three,
-								"display": selected_three
+								LABEL_FLAG: "cast_reserve_opponent_shuffle_choice",
+								TARGETS_FLAG: selected_three,
+								DISPLAY_FLAG: selected_three
 							},
 						)
 					]

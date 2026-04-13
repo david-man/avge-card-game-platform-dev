@@ -48,15 +48,13 @@ class BAIEmail(AVGEItemCard):
 	def play_card(card) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
 
-		lock_assessor = BAIEmailStadiumPlayLockAssessor(card, card.player.get_next_turn())
-		card.add_listener(lock_assessor)
 
 		packet : PacketType = []
 		if(len(card.env.stadium_cardholder) > 0):
 			x = card.env.stadium_cardholder.peek()
 			assert isinstance(x, AVGEStadiumCard)
 			active_stadium : AVGEStadiumCard = x
-			discard_owner = active_stadium.original_owner 
+			discard_owner = active_stadium.player 
 			assert discard_owner is not None
 			packet.append(TransferCard(
 							active_stadium,
@@ -84,10 +82,10 @@ class BAIEmail(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "baiemail_stadium_pick",
-								"targets": stadiums_in_deck,
-								"display": list(deck),
-								"allow_none": True
+								LABEL_FLAG: "baiemail_stadium_pick",
+								TARGETS_FLAG: stadiums_in_deck,
+								DISPLAY_FLAG: list(deck),
+								ALLOW_NONE: True
 							},
 						)
 					]
@@ -103,6 +101,8 @@ class BAIEmail(AVGEItemCard):
 					card,
 				)
 			)
+		lock_assessor = BAIEmailStadiumPlayLockAssessor(card, card.player.get_next_turn())
+		card.add_listener(lock_assessor)
 		if(len(packet) > 0):
 			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, BAIEmail)))
 

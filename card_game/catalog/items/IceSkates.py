@@ -39,9 +39,9 @@ class IceSkates(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "iceskates_switch_bench",
-								"targets": bench_targets,
-								"display": bench_targets
+								LABEL_FLAG: "iceskates_switch_bench",
+								TARGETS_FLAG: bench_targets,
+								DISPLAY_FLAG: bench_targets
 							},
 						)
 					]

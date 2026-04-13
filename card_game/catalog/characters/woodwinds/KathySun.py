@@ -7,8 +7,7 @@ from card_game.constants import *
 from card_game.constants import ActionTypes
 
 class KathySun(AVGECharacterCard):
-    _OPPONENT_SHUFFLE_KEY_1 = "kathysun_opponent_shuffle_selection_1"
-    _OPPONENT_SHUFFLE_KEY_2 = "kathysun_opponent_shuffle_selection_2"
+    _OPPONENT_SHUFFLE_KEY = "kathysun_opponent_shuffle_selection_"
     _D6_ROLL_KEY = "kathysun_runtime_d6_roll"
 
     def __init__(self, unique_id):
@@ -26,41 +25,36 @@ class KathySun(AVGECharacterCard):
         opponent_hand = opponent.cardholders[Pile.HAND]
         opponent_deck = opponent.cardholders[Pile.DECK]
 
-        packet : PacketType = []
-        packet.append(EmptyEvent(
-            ActionTypes.ATK_1,
-            card,
-            response_data={
-                REVEAL_KEY: list(opponent_hand)
-            }
-        ))
-
-        missing = object()
-        chosen_for_shuffle_1 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_1, missing, True)
-        chosen_for_shuffle_2 = card.env.cache.get(card, KathySun._OPPONENT_SHUFFLE_KEY_2, missing, True)
-        if chosen_for_shuffle_1 is missing:
+        keys = [KathySun._OPPONENT_SHUFFLE_KEY + str(i) for i in range(min(2, len(opponent.cardholders[Pile.HAND])))]
+        shuffle = [card.env.cache.get(card, key , None, True)  for key in keys]
+        if shuffle[0] is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
                     INTERRUPT_KEY: [
+                        EmptyEvent(
+                            ActionTypes.ATK_1,
+                            card,
+                            response_data={
+                                REVEAL_KEY: list(opponent_hand)
+                            }
+                        ),
                         InputEvent(
                             opponent,
-                            [KathySun._OPPONENT_SHUFFLE_KEY_1, KathySun._OPPONENT_SHUFFLE_KEY_2],
+                            keys,
                             InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "kathy_sun_opponent_shuffle",
-                                "targets": list(opponent_hand),
-                                "display": list(opponent_hand),
-                                "allow_none": True
+                                LABEL_FLAG: "kathy_sun_opponent_shuffle",
+                                TARGETS_FLAG: list(opponent_hand),
+                                DISPLAY_FLAG: list(opponent_hand),
                             },
                         )
                     ]
                 },
             )
-        assert chosen_for_shuffle_2 is not missing
         def generate_packet(card) -> PacketType:
             packet: PacketType = []
             if isinstance(card, AVGECard):
@@ -76,10 +70,8 @@ class KathySun(AVGECharacterCard):
                 )
             return packet
         
-        g1 = lambda: generate_packet(chosen_for_shuffle_1)
-        g2 = lambda: generate_packet(chosen_for_shuffle_2)
-
-        card.propose(AVGEPacket([g1, g2], AVGEEngineID(card, ActionTypes.ATK_1, KathySun)))
+        packet : PacketType = [lambda : generate_packet(card) for card in shuffle]
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, KathySun)))
         return card.generate_response()
 
     @staticmethod
@@ -99,7 +91,7 @@ class KathySun(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "kathy_sun_d6"},
+                            {LABEL_FLAG: "kathy_sun_d6"},
                         )
                     ]
                 },

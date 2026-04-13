@@ -10,7 +10,7 @@ class AliceWang(AVGECharacterCard):
     _CARDS_TO_DISCARD_BASE_KEY = "alice_cards_to_discard_"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 2)
+        super().__init__(unique_id, 100, CardType.STRING, 1, 2)
         self.has_atk_1 = True
         self.has_atk_2 = False
         self.has_passive = True
@@ -32,7 +32,7 @@ class AliceWang(AVGECharacterCard):
 
                 if not isinstance(event, TurnEnd):
                     return False
-                return event.env.player_turn == owner_card.player
+                return event.env.player_turn == owner_card.player.opponent
 
             def event_effect(self) -> bool:
                 return True
@@ -68,9 +68,9 @@ class AliceWang(AVGECharacterCard):
                                     ActionTypes.PASSIVE,
                                     owner_card,
                                     {
-                                        "query_label": "alicewang_discard_passive",
-                                        "targets": list(opponent_hand),
-                                        "display": list(opponent_hand)
+                                        LABEL_FLAG: "alicewang_discard_passive",
+                                        TARGETS_FLAG: list(opponent_hand),
+                                        DISPLAY_FLAG: list(opponent_hand)
                                     },
                                 )
                             ]

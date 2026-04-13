@@ -42,9 +42,9 @@ class ConcertRoster(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "concert_roster_top_pick",
-								"display": considered_cards,
-								"targets": pick_choices
+								LABEL_FLAG: "concert_roster_top_pick",
+								DISPLAY_FLAG: considered_cards,
+								TARGETS_FLAG: pick_choices
 							},
 						)
 					]

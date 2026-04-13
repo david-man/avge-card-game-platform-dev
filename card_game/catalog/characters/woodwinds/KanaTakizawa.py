@@ -79,7 +79,7 @@ class KanaTakizawa(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "kana_d6"},
+                            {LABEL_FLAG: "kana_d6"},
                         )
                     ]
                 },

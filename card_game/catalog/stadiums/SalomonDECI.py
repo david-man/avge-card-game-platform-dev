@@ -51,7 +51,7 @@ class SalomonDECIAttackBoostModifier(AVGEModifier):
 							 lambda r: True, 
 							 ActionTypes.PASSIVE, 
 							 self.owner_card, 
-							 {"query_label": "DECI_D6"})]},
+							 {LABEL_FLAG: "DECI_D6"})]},
 			)
 
 		if(int(roll) >= 3):

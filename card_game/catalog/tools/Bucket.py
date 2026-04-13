@@ -13,17 +13,18 @@ class Bucket(AVGEToolCard):
         from card_game.internal_events import AVGECardTypeChange
         assert self.card_attached is not None
         assert self.original_type is not None
-        super().deactivate_card()
-        self.propose(
-            AVGEPacket([
+        
+        self.extend(
+            [
                 AVGECardTypeChange(
                     self.card_attached,
                     self.original_type,
                     ActionTypes.ENV,
                     None,
                 )
-            ], AVGEEngineID(None, ActionTypes.ENV, None))
+            ]
         )
+        super().deactivate_card()
 
     def play_card(self) -> Response:
         from card_game.avge_abstracts.AVGECardholder import AVGEToolCardholder

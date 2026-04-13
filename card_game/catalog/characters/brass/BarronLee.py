@@ -5,9 +5,9 @@ from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import AVGEEnergyTransfer
 
-class _BarronEnergyCapPostcheck(AVGEPostcheck):
+class _BarronEnergyCapPostcheck(AVGEAssessor):
     def __init__(self, owner_card: AVGECharacterCard):
-        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, None), group=EngineGroup.EXTERNAL_POSTCHECK_1)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, None), group=EngineGroup.EXTERNAL_PRECHECK_1)
         self.owner_card = owner_card
 
     def event_match(self, event):
@@ -30,7 +30,7 @@ class _BarronEnergyCapPostcheck(AVGEPostcheck):
         new_amt = len(target.energy)
 
         if new_amt > 3:
-            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot attach more than 3 energy to opposing characters (BarronLee passive)."})
+            return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: "Cannot attach more than 3 energy to opposing characters (BarronLee passive)."})
         return self.generate_response()
 
 class BarronLee(AVGECharacterCard):
@@ -61,7 +61,7 @@ class BarronLee(AVGECharacterCard):
                             AVGEEnergyTransfer(
                                 token,
                                 c,
-                                c.player,
+                                c.env,
                                 ActionTypes.PASSIVE,
                                 card
                             )
@@ -114,10 +114,10 @@ class BarronLee(AVGECharacterCard):
                             lambda res : True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "barron_lee_energy_alloc", 
-                            "targets": chars,
-                            "allow_repeat": True,
-                            "display": chars},
+                            {LABEL_FLAG: "barron_lee_energy_alloc", 
+                            TARGETS_FLAG: chars,
+                            ALLOW_REPEAT: True,
+                            DISPLAY_FLAG: chars},
                         )
                     ]
                 },

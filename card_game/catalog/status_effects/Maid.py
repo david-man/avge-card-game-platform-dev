@@ -30,6 +30,8 @@ class MaidStatusDamageShieldModifier(AVGEModifier):
 			return False
 		if(event.magnitude > 10):
 			return False
+		if event.change_type == CardType.ALL:
+			return False
 		return self._has_maid(event.target_card)
 
 	def event_effect(self) -> bool:

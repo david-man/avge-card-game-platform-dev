@@ -29,7 +29,7 @@ class BenCherekIII(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             card,
-                            {"query_label": "ben_cherek_yn_key"},
+                            {LABEL_FLAG: "ben_cherek_yn_key"},
                         )
                     ]
                 },

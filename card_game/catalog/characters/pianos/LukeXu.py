@@ -41,6 +41,8 @@ class LukeNextAttackHalvedModifier(AVGEModifier):
             return False
         if(event.caller_card is None):
             return False
+        if event.change_type == CardType.ALL:
+            return False
         return event.caller_card.player == self.owner_card.player.opponent
 
     def event_effect(self) -> bool:

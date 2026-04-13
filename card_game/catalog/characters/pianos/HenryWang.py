@@ -25,7 +25,7 @@ class HenryWang(AVGECharacterCard):
             return [
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
-                    30,
+                    50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,

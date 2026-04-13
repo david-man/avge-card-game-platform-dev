@@ -45,9 +45,9 @@ class Camera(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "camera_discard_pick",
-								"targets":eligible_cards,
-								"display": list(target_discard)
+								LABEL_FLAG: "camera_discard_pick",
+								TARGETS_FLAG:eligible_cards,
+								DISPLAY_FLAG: list(target_discard)
 							},
 						)
 					]

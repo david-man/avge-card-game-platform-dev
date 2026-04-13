@@ -33,6 +33,8 @@ class FelixChen(AVGECharacterCard):
                     return False
                 if event.target_card.player != owner_card.player:
                     return False
+                if event.change_type == CardType.ALL:
+                    return False
                 types = [c.card_type for c in owner_card.player.get_cards_in_play()]
                 return len(types) == len(set(types))
 
@@ -84,7 +86,7 @@ class FelixChen(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "felixchen_multiphonics"},
+                            {LABEL_FLAG: "felixchen_multiphonics"},
                         )
                     ]
                 },

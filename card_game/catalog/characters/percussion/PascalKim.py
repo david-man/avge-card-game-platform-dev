@@ -103,7 +103,7 @@ class PascalKim(AVGECharacterCard):
         packet.append(gen)
 
         trigger_round = card.player.opponent.get_next_turn()
-        card.add_listener(_PascalDelayedReactor(card, trigger_round))
+        card.env.add_listener(_PascalDelayedReactor(card, trigger_round))
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, PascalKim)))
         return card.generate_response()

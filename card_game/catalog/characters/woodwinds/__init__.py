@@ -1,5 +1,4 @@
 """Package exports for this catalog namespace."""
-from .AliceWang import *
 from .AnaliseJia import *
 from .AnnaBrown import *
 from .BettySolomon import *

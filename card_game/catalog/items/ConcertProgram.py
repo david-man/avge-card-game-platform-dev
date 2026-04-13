@@ -44,10 +44,10 @@ class ConcertProgram(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "concert_program_top_pick",
-								"targets": character_choices,
-								"display": considered_cards,
-								"allow_none": True
+								LABEL_FLAG: "concert_program_top_pick",
+								TARGETS_FLAG: character_choices,
+								DISPLAY_FLAG: considered_cards,
+								ALLOW_NONE: True
 							},
 						)
 					]

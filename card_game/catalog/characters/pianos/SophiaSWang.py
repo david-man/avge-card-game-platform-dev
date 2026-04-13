@@ -22,6 +22,8 @@ class SophiaNextAttackHalvedModifier(AVGEModifier):
             return False
         if(not isinstance(event.caller_card, AVGECharacterCard)):
             return False
+        if event.change_type == CardType.ALL:
+            return False
         return event.caller_card.player == self.owner_card.player.opponent
 
     def event_effect(self) -> bool:

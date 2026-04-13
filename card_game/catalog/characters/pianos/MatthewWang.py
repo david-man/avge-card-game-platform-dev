@@ -14,7 +14,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
     def event_match(self, event):
         from card_game.internal_events import PhasePickCard
 
-        return isinstance(event, PhasePickCard) and self.owner_card.player != self.owner_card.env.player_turn and self.owner_card == self.owner_card.player.get_active_card()
+        return isinstance(event, PhasePickCard) and self.owner_card.player == self.owner_card.env.player_turn and self.owner_card == self.owner_card.player.get_active_card()
 
     def event_effect(self) -> bool:
         return True
@@ -33,7 +33,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
         if len(deck) == 0:
             return self.generate_response(data={MESSAGE_KEY: "No cards in deck to draw from!"})
 
-        res = env.cache.get(owner, MatthewWang._COIN_KEY, None, True)
+        res = env.cache.get(owner, MatthewWang._COIN_KEY, None)
         if res is None:
             return owner.generate_response(
                 ResponseType.INTERRUPT,
@@ -46,13 +46,14 @@ class _MatthewTurnBeginReactor(AVGEReactor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {"query_label": "matthew_wang_1coin"},
+                            {LABEL_FLAG: "matthew_wang_1coin"},
                         )
                     ]
                 },
             )
 
         if int(res) != 1:
+            env.cache.delete(owner, MatthewWang._COIN_KEY)
             return self.generate_response()
 
         choice = env.cache.get(owner, MatthewWang._DRAW_CHOICE_KEY, None, True)
@@ -68,12 +69,12 @@ class _MatthewTurnBeginReactor(AVGEReactor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {"query_label": "matthew_wang_successful_coin"},
+                            {LABEL_FLAG: "matthew_wang_successful_coin"},
                         )
                     ]
                 },
             )
-
+        env.cache.delete(owner, MatthewWang._COIN_KEY)
         if choice == 1:
             def draw_top() -> PacketType:
                 if len(deck) == 0:

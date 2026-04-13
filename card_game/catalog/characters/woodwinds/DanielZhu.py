@@ -34,6 +34,8 @@ class DanielZhu(AVGECharacterCard):
                     return False
                 if event.target_card == owner_card:
                     return False
+                if event.target_card.player == owner_card.player.opponent:
+                    return False
                 if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
                     return False
                 if owner_card.hp <= 1:
@@ -76,7 +78,7 @@ class DanielZhu(AVGECharacterCard):
                                     ActionTypes.PASSIVE,
                                     owner_card,
                                     {
-                                        "query_label": "daniel_redirect",
+                                        LABEL_FLAG: "daniel_redirect",
                                         "maxdmg": max_redirect,
                                     },
                                 )
@@ -157,7 +159,7 @@ class DanielZhu(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "daniel_atk2_d6"},
+                            {LABEL_FLAG: "daniel_atk2_d6"},
                         )
                     ]
                 },

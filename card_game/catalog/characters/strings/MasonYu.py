@@ -44,9 +44,9 @@ class MasonYu(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "mason_yu_atk1",
-                                "targets": bench,
-                                "display": bench
+                                LABEL_FLAG: "mason_yu_atk1",
+                                TARGETS_FLAG: list(bench),
+                                DISPLAY_FLAG: list(bench)
                             },
                         )
                     ]
@@ -79,7 +79,7 @@ class MasonYu(AVGECharacterCard):
             return card.generate_response()
 
         coin_keys = [MasonYu._ATK2_COIN_BASE + str(i) for i in range(len(already_arranger))]
-        rolls = [card.env.cache.get(card, key, None, True) for key in coin_keys]
+        rolls = [card.env.cache.get(card, key, None) for key in coin_keys]
         if rolls[0] is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -92,7 +92,7 @@ class MasonYu(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "mason_yu_coinflips"},
+                            {LABEL_FLAG: "mason_yu_coinflips"},
                         )
                     ]
                 },
@@ -122,10 +122,10 @@ class MasonYu(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "mason_yu_atk_2_choice",
-                                "targets": opp_cards,
-                                "display": opp_cards,
-                                "allow_none": True
+                                LABEL_FLAG: "mason_yu_atk_2_choice",
+                                TARGETS_FLAG: opp_cards,
+                                DISPLAY_FLAG: opp_cards,
+                                ALLOW_NONE: True
                             },
                         )
                     ]
@@ -153,6 +153,7 @@ class MasonYu(AVGECharacterCard):
                     card,
                 )
             )
+        [card.env.cache.delete(card, key) for key in coin_keys]
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
 
         return card.generate_response()

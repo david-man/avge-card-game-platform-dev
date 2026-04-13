@@ -33,9 +33,9 @@ class SasMajumder(AVGECharacterCard):
 
                 if not isinstance(event, TransferCard):
                     return False
-                if event.pile_to.pile_type != Pile.BENCH:
+                if event.pile_to.pile_type != Pile.DISCARD:
                     return False
-                if event.card.player != owner_card.player.opponent:
+                if event.card.player != owner_card.player:
                     return False
 
                 env = owner_card.env
@@ -72,23 +72,25 @@ class SasMajumder(AVGECharacterCard):
                                     lambda r: True,
                                     ActionTypes.PASSIVE,
                                     owner_card,
-                                    {"query_label": "sas_majumder_passive"},
+                                    {LABEL_FLAG: "sas_majumder_passive"},
                                 )
                             ]
                         },
                     )
                 if choice:
-                    owner_card.propose(
-                        AVGEPacket([
+                    def transfer_top() -> PacketType:
+                        return [
                             TransferCard(
                                 event.card,
-                                owner_card.player.opponent.cardholders[Pile.BENCH],
-                                owner_card.player.opponent.cardholders[Pile.DECK],
+                                owner_card.cardholder,
+                                owner_card.player.cardholders[Pile.DECK],
                                 ActionTypes.PASSIVE,
                                 owner_card,
                                 0,
                             )
-                        ], AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder))
+                        ]
+                    owner_card.propose(
+                        AVGEPacket([transfer_top], AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder))
                     )
                     owner_card.env.cache.set(owner_card, SasMajumder._LAST_ROUND_USED_KEY, owner_card.env.round_id)
 

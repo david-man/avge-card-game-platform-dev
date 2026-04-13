@@ -14,3 +14,4 @@ from .MichaelTu import *
 from .MichelleKim import *
 from .SophiaYWang import *
 from .YuelinHu import *
+from .AliceWang import *

@@ -38,9 +38,9 @@ class StandardMusescoreFile(AVGEItemCard):
                             ActionTypes.NONCHAR,
                             card,
                             {
-                                "query_label": "standard_musescore_file_tool_discard_target",
-                                "targets": tool_targets,
-                                "display": player.get_cards_in_play()
+                                LABEL_FLAG: "standard_musescore_file_tool_discard_target",
+                                TARGETS_FLAG: tool_targets,
+                                DISPLAY_FLAG: player.get_cards_in_play()
                             },
                         )
                     ]
@@ -48,6 +48,7 @@ class StandardMusescoreFile(AVGEItemCard):
             )
 
         packet : PacketType = []
+        
         assert(isinstance(chosen_tool_target, AVGECharacterCard))
         tool_to_discard = list(chosen_tool_target.tools_attached)[0]
         packet.append(
@@ -76,10 +77,10 @@ class StandardMusescoreFile(AVGEItemCard):
                             ActionTypes.NONCHAR,
                             card,
                             {
-                                "query_label": "standard_musescore_file_nonitem_pick",
-                                "targets": non_item_choices,
-                                "display": list(deck),
-                                "allow_none": True
+                                LABEL_FLAG: "standard_musescore_file_nonitem_pick",
+                                TARGETS_FLAG: non_item_choices,
+                                DISPLAY_FLAG: list(deck),
+                                ALLOW_NONE: True
                             },
                         )
                     ]

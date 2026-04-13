@@ -14,7 +14,7 @@ class KatieTurnEndReactor(AVGEReactor):
     def event_match(self, event):
         from card_game.internal_events import TurnEnd
 
-        return isinstance(event, TurnEnd) and event.env.player_turn == self.owner_card.player.opponent and self.owner_card.hp < 70
+        return isinstance(event, TurnEnd) and event.env.player_turn == self.owner_card.player and self.owner_card.hp < 50
 
     def event_effect(self) -> bool:
         return True
@@ -33,17 +33,16 @@ class KatieTurnEndReactor(AVGEReactor):
             packet: PacketType = []
             for player in owner.env.players.values():
                 for c in player.get_cards_in_play():
-                    if c != owner:
-                        packet.append(
-                            AVGECardHPChange(
-                                c,
-                                20,
-                                AVGEAttributeModifier.ADDITIVE,
-                                CardType.ALL,
-                                ActionTypes.PASSIVE,
-                                owner,
-                            )
+                    packet.append(
+                        AVGECardHPChange(
+                            c,
+                            20,
+                            AVGEAttributeModifier.ADDITIVE,
+                            CardType.ALL,
+                            ActionTypes.PASSIVE,
+                            owner,
                         )
+                    )
             return packet
 
         self.propose(AVGEPacket([generate_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)), 1)

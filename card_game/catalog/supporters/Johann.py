@@ -45,10 +45,10 @@ class Johann(AVGESupporterCard):
 						ActionTypes.NONCHAR,
 						card,
 						{
-							"query_label": "johann_3card_query_supporter",
-							"target": supporters_in_discard,
-							"display": list(discard),
-							"allow_none": True,
+							LABEL_FLAG: "johann_3card_query_supporter",
+							TARGETS_FLAG: supporters_in_discard,
+							DISPLAY_FLAG: list(discard),
+							ALLOW_NONE: True,
 						},
 					)
 						]
@@ -65,10 +65,10 @@ class Johann(AVGESupporterCard):
 						ActionTypes.NONCHAR,
 						card,
 						{
-							"query_label": "johann_3card_query_item",
-							"target": items_or_tools_in_discard,
-							"display": list(discard),
-							"allow_none": True,
+							LABEL_FLAG: "johann_3card_query_item",
+							TARGETS_FLAG: items_or_tools_in_discard,
+							DISPLAY_FLAG: list(discard),
+							ALLOW_NONE: True,
 						},
 					)
 						]
@@ -86,10 +86,10 @@ class Johann(AVGESupporterCard):
 						ActionTypes.NONCHAR,
 						card,
 						{
-							"query_label": "johann_3card_query_stadium",
-							"target": stadiums_in_discard,
-							"display": list(discard),
-							"allow_none": True,
+							LABEL_FLAG: "johann_3card_query_stadium",
+							TARGETS_FLAG: stadiums_in_discard,
+							DISPLAY_FLAG: list(discard),
+							ALLOW_NONE: True,
 						},
 					)
 						]

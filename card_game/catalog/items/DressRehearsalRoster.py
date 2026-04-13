@@ -53,11 +53,11 @@ class DressRehearsalRoster(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "dress_rehearsal_roster_energy_remove",
-								"targets": in_play_characters,
-								"display": in_play_characters,
-								"allow_repeats": True,
-								"allow_none": False
+								LABEL_FLAG: "dress_rehearsal_roster_energy_remove",
+								TARGETS_FLAG: in_play_characters,
+								DISPLAY_FLAG: in_play_characters,
+								ALLOW_REPEAT: True,
+								ALLOW_NONE: False
 							},
 						)
 					]

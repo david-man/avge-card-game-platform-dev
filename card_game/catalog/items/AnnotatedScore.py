@@ -44,9 +44,9 @@ class AnnotatedScore(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "annotated_score_hand",
-								"targets": list(opponent_hand),
-								"display": list(opponent_hand)
+								LABEL_FLAG: "annotated_score_hand",
+								TARGETS_FLAG: list(opponent_hand),
+								DISPLAY_FLAG: list(opponent_hand)
 							},
 						)
 					]
@@ -66,8 +66,8 @@ class AnnotatedScore(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "annotated_score_discard",
-								"targets": list(opponent_discard)
+								LABEL_FLAG: "annotated_score_discard",
+								TARGETS_FLAG: list(opponent_discard)
 							},
 						)
 					]

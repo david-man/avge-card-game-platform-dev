@@ -53,69 +53,83 @@ class SarahChen(AVGECharacterCard):
         if len(eligible_cards) == 0:
             return card.generate_response(data={MESSAGE_KEY: "No concert programs or tickets in hand!"})
 
-        discard_selection = card.env.cache.get(card, SarahChen._DISCARD_SELECTION_KEY, None)
-        if discard_selection is None:
+        discard_keys = [SarahChen._DISCARD_SELECTION_KEY + str(i) for i in range(len(eligible_cards))]
+        missing = object()
+        discard_vals = [card.env.cache.get(card, key, missing) for key in discard_keys]
+        if discard_vals[0] is missing:
             return card.generate_response(
                 ResponseType.INTERRUPT,
                 {
                     INTERRUPT_KEY: [
                         InputEvent(
                             player,
-                            [SarahChen._DISCARD_SELECTION_KEY],
+                            discard_keys,
                             InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "sarah_chen_atk_2_discard",
-                                "targets": eligible_cards,
-                                "display": list(hand)
+                                LABEL_FLAG: "sarah_chen_atk_2_discard",
+                                TARGETS_FLAG: eligible_cards,
+                                DISPLAY_FLAG: list(hand),
+                                ALLOW_NONE: True
                             },
                         )
                     ]
                 },
             )
-        target_selection = card.env.cache.get(card, SarahChen._TARGET_SELECTION_KEY, None, True)
-        if target_selection is None:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            player,
-                            [SarahChen._TARGET_SELECTION_KEY],
-                            InputType.SELECTION,
-                            lambda r: True,
+        packet : PacketType = []
+        selected_keys = []
+        for i in range(len(discard_vals)):
+            if(discard_vals[i] is not None):
+                selected_keys.append(SarahChen._TARGET_SELECTION_KEY + str(i))
+        if(len(selected_keys) > 0):
+            targets_vals = [card.env.cache.get(card, key, missing, True) for key in selected_keys]
+            if targets_vals[0] is missing:
+                return card.generate_response(
+                    ResponseType.INTERRUPT,
+                    {
+                        INTERRUPT_KEY: [
+                            InputEvent(
+                                player,
+                                selected_keys,
+                                InputType.SELECTION,
+                                lambda r: True,
+                                ActionTypes.ATK_2,
+                                card,
+                                {
+                                    LABEL_FLAG: "sarah_chen_atk_2_target",
+                                    TARGETS_FLAG: opponent.get_cards_in_play(),
+                                    DISPLAY_FLAG: opponent.get_cards_in_play(),
+                                    ALLOW_REPEAT: True
+                                },
+                            )
+                        ]
+                    },
+                )
+            
+            for target in targets_vals:
+                assert isinstance(target, AVGECharacterCard)
+                packet.append(AVGECardHPChange(
+                            target,
+                            40,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.WOODWIND,
                             ActionTypes.ATK_2,
                             card,
-                            {
-                                "query_label": "sarah_chen_atk_2_target",
-                                "targets": opponent.get_cards_in_play(),
-                                "display": opponent.get_cards_in_play()
-                            },
-                        )
-                    ]
-                },
-            )
-        assert isinstance(target_selection, AVGECharacterCard)
-        card.propose(
-            AVGEPacket([
-                TransferCard(
-                    discard_selection,
-                    hand,
-                    discard,
+                        ))
+        for to_discard in discard_vals:
+            if(to_discard is not None):
+                assert isinstance(to_discard, AVGECard)
+                packet.append(TransferCard(
+                    to_discard,
+                    to_discard.cardholder,
+                    to_discard.player.cardholders[Pile.DISCARD],
                     ActionTypes.ATK_2,
-                    card,
-                ),
-                AVGECardHPChange(
-                    target_selection,
-                    40,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_2,
-                    card,
-                ),
-            ], AVGEEngineID(card, ActionTypes.ATK_2, SarahChen))
-        )
-        card.env.cache.delete(card, SarahChen._DISCARD_SELECTION_KEY)
+                    card
+                ))
+        for key in discard_keys:
+            card.env.cache.delete(card, key)
+        if(len(packet) > 0):
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, SarahChen)))
         return card.generate_response()

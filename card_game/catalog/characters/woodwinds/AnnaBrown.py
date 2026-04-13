@@ -35,6 +35,8 @@ class AnnaBrown(AVGECharacterCard):
                     return False
                 if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
                     return False
+                if event.change_type == CardType.ALL:
+                    return False
                 return True
 
             def event_effect(self) -> bool:
@@ -52,7 +54,7 @@ class AnnaBrown(AVGECharacterCard):
 
                 event = self.attached_event
                 assert isinstance(event, AVGECardHPChange)
-                event.modify_magnitude(-20)
+                event.modify_magnitude(-event.magnitude)
                 return self.generate_response()
 
         owner_card.add_listener(_BenchDamageReducer())

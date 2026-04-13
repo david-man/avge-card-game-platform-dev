@@ -46,7 +46,7 @@ class OrderedDict(Generic[T]):
         val = self._dict[key]
         del self._dict[key]
         return key, val
-    def get_posn(self, k) -> int:
+    def get_posn(self, k : str) -> int:
         if(k not in self._dict.keys()):
             raise Exception("key not found")
         else:

@@ -5,7 +5,6 @@ from card_game.constants import *
 from card_game.constants import ActionTypes
 
 class EmilyWang(AVGECharacterCard):
-    _ACTIVE_DISCARD_KEY = "emilywang_active_discard_tool"
     _COIN_KEY_0 = "emilywang_coin_0"
     _COIN_KEY_1 = "emilywang_coin_1"
     _COIN_KEY_2 = "emilywang_coin_2"
@@ -22,8 +21,6 @@ class EmilyWang(AVGECharacterCard):
         env = card.env
         if env is None or card.player is None:
             return False
-        if env.game_phase != GamePhase.ATK_PHASE:
-            return False
         if env.player_turn != card.player:
             return False
         return len(card.tools_attached) > 0
@@ -33,24 +30,6 @@ class EmilyWang(AVGECharacterCard):
         from card_game.internal_events import TransferCard, InputEvent
 
         tool = card.tools_attached.peek()
-        chosen = card.env.cache.get(card, EmilyWang._ACTIVE_DISCARD_KEY, None, True)
-        if chosen is None:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            card.player,
-                            [EmilyWang._ACTIVE_DISCARD_KEY],
-                            InputType.BINARY,
-                            lambda r: True,
-                            ActionTypes.ACTIVATE_ABILITY,
-                            card,
-                            {"query_type": "emily_wang_tool_discard"},
-                        )
-                    ]
-                },
-            )
 
         discard = card.player.cardholders[Pile.DISCARD]
         packet: PacketType = [TransferCard(tool, tool.cardholder, discard, ActionTypes.ACTIVATE_ABILITY, card)]
@@ -63,7 +42,6 @@ class EmilyWang(AVGECharacterCard):
             return [
                 TransferCard(deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card)
             ]
-        packet.append(draw_top)
         packet.append(draw_top)
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EmilyWang)))
@@ -88,7 +66,7 @@ class EmilyWang(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "emily_wang_triple_stop"},
+                            {LABEL_FLAG: "emily_wang_triple_stop"},
                         )
                     ]
                 },

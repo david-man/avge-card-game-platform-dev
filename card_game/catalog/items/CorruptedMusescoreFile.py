@@ -37,9 +37,9 @@ class CorruptedMusescoreFile(AVGEItemCard):
                             ActionTypes.NONCHAR,
                             card,
                             {
-                                "query_label": "corrupted_musescore_file_tool_discard_target",
-                                "targets": tool_targets,
-                                "display": player.get_cards_in_play()
+                                LABEL_FLAG: "corrupted_musescore_file_tool_discard_target",
+                                TARGETS_FLAG: tool_targets,
+                                DISPLAY_FLAG: player.get_cards_in_play()
                             },
                         )
                     ]
@@ -73,10 +73,10 @@ class CorruptedMusescoreFile(AVGEItemCard):
                             ActionTypes.NONCHAR,
                             card,
                             {
-                                "query_label": "corrupted_musescore_file_item_pick",
-                                "targets": item_choices,
-                                "display": list(deck),
-                                "allow_none": True
+                                LABEL_FLAG: "corrupted_musescore_file_item_pick",
+                                TARGETS_FLAG: item_choices,
+                                DISPLAY_FLAG: list(deck),
+                                ALLOW_NONE: True
                             },
                         )
                     ]

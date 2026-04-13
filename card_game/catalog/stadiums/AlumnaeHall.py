@@ -36,24 +36,23 @@ class AlumnaeHallDrawPunishReactor(AVGEReactor):
 		event = self.attached_event
 		assert isinstance(event, TransferCard)
 		target_player : AVGEPlayer = event.card.player
-		damage_packet = []
-		for character in target_player.get_cards_in_play():
-			current_hp = int(character.hp)
-			nonlethal_damage = min(10, current_hp - 1)
-			if nonlethal_damage > 0:
-				damage_packet.append(
+		def gen() -> PacketType:
+			packet : PacketType = []
+			for character in target_player.get_cards_in_play():
+				current_hp = character.hp
+				packet.append(
 					AVGECardHPChange(
 						character,
-						nonlethal_damage,
+						min(current_hp - 1, 10),
 						AVGEAttributeModifier.SUBSTRACTIVE,
 						CardType.ALL,
 						ActionTypes.NONCHAR,
 						self.owner_card,
 					)
 				)
+			return packet
 
-		if(len(damage_packet) > 0):
-			self.propose(AVGEPacket(damage_packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, AlumnaeHall)))
+		self.propose(AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, AlumnaeHall)), 1)
 		return self.generate_response()
 
 

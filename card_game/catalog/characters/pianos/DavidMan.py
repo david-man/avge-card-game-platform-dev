@@ -20,6 +20,8 @@ class DavidNextAttackHalvedModifier(AVGEModifier):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
+        if event.change_type == CardType.ALL:
+            return False
         if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
             return False
         if(not isinstance(event.caller_card, AVGECharacterCard)):
@@ -93,7 +95,7 @@ class DavidMan(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
-                            {"query_label": "david_man_top_bottom",
+                            {LABEL_FLAG: "david_man_top_bottom",
                              "card": card.env.cache.get(card, DavidMan._RANDOM_PICK_KEY, None)},
                         )
                     ]
@@ -108,7 +110,6 @@ class DavidMan(AVGECharacterCard):
                 return [EmptyEvent(ActionTypes.ACTIVATE_ABILITY, card,response_data={MESSAGE_KEY:"DavidMan active had no valid discard target at resolve."})]
             return [
                 TransferCard(chosen_card, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, new_idx)]
-
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, DavidMan)))
         return card.generate_response()
 

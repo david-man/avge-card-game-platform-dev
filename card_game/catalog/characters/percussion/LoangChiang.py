@@ -53,10 +53,10 @@ class LoangChiang(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "loang_chiang_benched_percussion_swap",
-                                "targets": perc_candidates,
-                                "display": list(bench_holder),
-                                "allow_none": True,
+                                LABEL_FLAG: "loang_chiang_benched_percussion_swap",
+                                TARGETS_FLAG: perc_candidates,
+                                DISPLAY_FLAG: list(bench_holder),
+                                ALLOW_NONE: True,
                             },
                         )
                     ]

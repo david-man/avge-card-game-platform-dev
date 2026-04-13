@@ -46,21 +46,22 @@ class PetterutiMaidDamageModifier(AVGEModifier):
 class PetterutiMaidTransfer(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
 		super().__init__(
-			identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, PetterutiLounge),
+			identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, PetterutiLounge),
 			group=EngineGroup.EXTERNAL_MODIFIERS_1,
 		)
 		self.owner_card = owner_card
 
 	def event_match(self, event):
+		
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, TransferCard)):
 			return False
-		if(not isinstance(event.caller_card, AVGECharacterCard)):
+		if(not isinstance(event.card, AVGECharacterCard)):
 			return False
-		if(not (event.pile_to.pile_type == Pile.ACTIVE and event.pile_from.pile_type == Pile.BENCH)):
+		if(not (event.pile_from.pile_type == Pile.ACTIVE and event.pile_to.pile_type == Pile.BENCH)):
 			return False
-		return len(event.caller_card.statuses_attached.get(StatusEffect.MAID, [])) > 0
+		return len(event.card.statuses_attached.get(StatusEffect.MAID, [])) > 0
 
 	def event_effect(self) -> bool:
 		return True

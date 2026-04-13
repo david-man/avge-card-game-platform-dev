@@ -29,6 +29,7 @@ class AVGECardHPChange(AVGEEvent):
         self.change_type = change_type
         self.modifier_type = modifier_type
         self.old_amt = None
+        self.final_change = None
     def modify_magnitude(self, change : int):
         #please use this function when modifying magnitudes, thanks!
         if(self.modifier_type != AVGEAttributeModifier.SET_STATE):
@@ -36,20 +37,33 @@ class AVGECardHPChange(AVGEEvent):
                 return
         self.magnitude += change
         self.magnitude = max(0, self.magnitude)
-        if(self.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE):
-            self.magnitude = min(self.target_card.hp, self.magnitude)
     def current_proposed_value(self):
         if(self.modifier_type == AVGEAttributeModifier.ADDITIVE):
-            return self.target_card.hp + self.magnitude
+            return min(self.target_card.hp + self.magnitude, self.target_card.max_hp)
         elif(self.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE):
-            return self.target_card.hp - self.magnitude
+            return max(0, self.target_card.hp - self.magnitude)
         else:
             return self.magnitude
-    
+    def clamp_magnitude(self):
+        if(self.modifier_type == AVGEAttributeModifier.ADDITIVE):
+            self.magnitude = min(self.target_card.max_hp - self.target_card.hp, self.magnitude)
+        elif(self.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE):
+            self.magnitude = min(self.target_card.hp, self.magnitude)
+        else:
+            self.magnitude = max(0, min(self.magnitude, self.target_card.max_hp))
     def core(self, args : Data | None = None) -> Response:
         self.old_amt = self.target_card.hp
+        self.clamp_magnitude()
         self.target_card.hp = self.current_proposed_value()
-        self.target_card.hp = min(self.target_card.hp, self.target_card.max_hp)
+        self.final_change = self.target_card.hp
+        if(self.target_card.hp <= 0 and self.target_card.cardholder.pile_type != Pile.DISCARD):
+            self.target_card.env.extend(
+                [TransferCard(self.target_card,
+                                                self.target_card.cardholder,
+                                                self.target_card.player.cardholders[Pile.DISCARD],
+                                                ActionTypes.ENV,
+                                                None)]
+            )
         return self.generate_core_response()
     
     def invert_core(self, args : Data | None = None):
@@ -57,12 +71,11 @@ class AVGECardHPChange(AVGEEvent):
         self.target_card.hp = self.old_amt
 
     def generate_internal_listeners(self):
-        from .internal_listeners import AVGEHPChangeAssessment, AVGEWeaknessModifier, AVGECardHPChangeReactor
+        from .internal_listeners import AVGEHPChangeAssessment, AVGEWeaknessModifier
         from .catalog.status_effects.Maid import MaidStatusDamageShieldModifier
         self.attach_listener(AVGEHPChangeAssessment())
         self.attach_listener(AVGEWeaknessModifier())
         self.attach_listener(MaidStatusDamageShieldModifier())
-        self.attach_listener(AVGECardHPChangeReactor())
     
     def package(self):
         return f"{self.modifier_type} change for {self.target_card} HP of magnitude {self.magnitude}"
@@ -178,11 +191,14 @@ class AVGECardStatusChange(AVGEEvent):
             else:
                 self.made_change = False
         elif(self.change_type == StatusChangeType.REMOVE):
-            self._old = self.target.statuses_attached[self.status_effect]
-            for card in self.target.statuses_attached[self.status_effect]:
-                if(isinstance(card, AVGECharacterCard)):
-                    card.statuses_responsible[self.status_effect].remove(self.target)
-            self.target.statuses_attached[self.status_effect] = []
+            if(len(self.target.statuses_attached[self.status_effect]) == 0):
+                self.made_change = False
+            else:
+                self._old = self.target.statuses_attached[self.status_effect]
+                for card in self.target.statuses_attached[self.status_effect]:
+                    if(isinstance(card, AVGECharacterCard)):
+                        card.statuses_responsible[self.status_effect].remove(self.target)
+                self.target.statuses_attached[self.status_effect] = []
         return self.generate_core_response()
     def invert_core(self, args = None):
         if(not self.made_change):
@@ -280,6 +296,10 @@ class AVGEPlayerAttributeChange(AVGEEvent):
         return f"{self.attribute_modifier_type} AVGEPlayerAttributeChange on {self.target_player} for {self.attribute} of magnitude {self.magnitude}"
 
 class TransferCard(AVGEEvent):
+    _ACTIVE_REPLACE_KEY = "internal_active_replace_pick"
+    _PRE_TRANSFER = "pre_transfer"
+    _TRANSFER = "transfer"
+    _POST_TRANSFER = "post_transfer"
     def __init__(self, 
                  card : AVGECard, #can be delayed to runtime if wanted
                  pile_from : AVGECardholder, #can be delayed to runtime if wanted
@@ -305,128 +325,191 @@ class TransferCard(AVGEEvent):
 
     
     def core(self, args :Data | None = None) -> Response:
-        self.old_idx = self.pile_from.get_posn(self.card)
+        if(self.temp_cache.get(self._PRE_TRANSFER, None) is None):
+            """
+            STAGE 1: PRE TRANSFER
+            """
+            self.old_idx = self.pile_from.get_posn(self.card)
+            to_dos : PacketType = []
 
-        if(isinstance(self.card, AVGEToolCard)):
-            self._previous_card = self.card.card_attached
-            self.card.card_attached = self.pile_to.parent_card if isinstance(self.pile_to, AVGEToolCardholder) else None
-
-        
-        self.card.env.transfer_card(self.card, self.pile_from, self.pile_to, self.new_idx)
-
-        if(self.pile_to.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard) and self.pile_from.pile_type != Pile.TOOL):
-            #on tool attachment
-            packet : PacketType = [PlayNonCharacterCard(
-                self.card,
-                ActionTypes.ENV,
-                self.card,
-            )]
-            self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
-
-        if(self.pile_to.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard) and self.pile_from.pile_type != Pile.STADIUM):
-            #on stadium attachment
-            packet : PacketType = [PlayNonCharacterCard(
-                self.card,
-                ActionTypes.ENV,
-                self.card,
-            )]
-            self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
-
-        if(self.pile_to.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_from.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
-            #on card activation
-            if(self.card.has_passive):
-                packet : PacketType = [PlayCharacterCard(
-                    self.card,
-                    ActionTypes.PASSIVE,
-                    ActionTypes.ENV,
-                    self.card,
-                )]
-                self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
-
-        if(self.pile_to.pile_type in [Pile.HAND, Pile.DECK, Pile.DISCARD]):
-            #wipes cache when its convenient
-            self.card.env.cache.wipe(self.card)
-
-        if(self.pile_to.pile_type == Pile.DISCARD):
-            #on tool/stadium discard
+            #tool, stadium discard
             if(self.pile_from.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard)):
                 self.card.deactivate_card()
             if(self.pile_from.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard)):
                 self.card.deactivate_card()
 
-        if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
-            #on card discard
-            #discard tools
-            def packet_1():
-                assert isinstance(self.card, AVGECharacterCard)
-                packet : PacketType = [TransferCard(tool,
-                                            self.card.tools_attached,
-                                            self.pile_to,
-                                            ActionTypes.ENV,
-                                            None) for tool in self.card.tools_attached]
-                return packet
-            #drop the energy
-            def packet_2():
-                assert isinstance(self.card, AVGECharacterCard)
-                packet : PacketType = [AVGEEnergyTransfer(token,
-                                            self.card,
-                                            self.card.env,
-                                            ActionTypes.ENV,
-                                            None) for token in self.card.energy]
-                return packet
-            #drop the statuses
-            def packet_3():
-                assert isinstance(self.card, AVGECharacterCard)
-                packet : PacketType = []
-                #drop all statuses
-                for status_effect, cards in self.card.statuses_attached.items():
-                    for c in cards:
+            #character setup for discard
+            if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) 
+            and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
+                if(self.pile_from.pile_type == Pile.ACTIVE and self.temp_cache.get("CARD_REPLACED", None) is None):
+                    if(len(self.card.player.cardholders[Pile.BENCH]) == 0):
+                        e : AVGEEnvironment = self.card.env
+                        e.winner = self.card.player.opponent
+                        return self.card.generate_response(ResponseType.GAME_END, {"winner": e.winner, "reason": "KO and no cards left on bench"})
+                    else:
+                        swap_with = self.card.env.cache.get(
+                            None,
+                            TransferCard._ACTIVE_REPLACE_KEY,
+                            None,
+                            True
+                        )
+                        if(swap_with is None):
+                            return self.generate_core_response(
+                                ResponseType.INTERRUPT,
+                                {
+                                    INTERRUPT_KEY: [
+                                        InputEvent(
+                                            self.card.player,
+                                            [TransferCard._ACTIVE_REPLACE_KEY],
+                                            InputType.SELECTION,
+                                            lambda r : True,
+                                            self.catalyst_action,
+                                            None,
+                                            {
+                                                LABEL_FLAG: 'active_replace',
+                                                TARGETS_FLAG: list(self.card.player.cardholders[Pile.BENCH]),
+                                                DISPLAY_FLAG: list(self.card.player.cardholders[Pile.BENCH])
+                                            },
+                                        )
+                                    ]
+                                },
+                            )
+                        to_dos.append(TransferCard(swap_with,
+                                            self.card.player.cardholders[Pile.BENCH],
+                                            self.card.player.cardholders[Pile.ACTIVE],
+                                            self.catalyst_action,
+                                            None))#propose the swap from the bench first, and then propose the discard
+                        if(self.pile_to.pile_type == Pile.DISCARD):
+                            to_dos.append(AVGEPlayerAttributeChange(self.card.player.opponent,
+                                                                    AVGEPlayerAttribute.KO_COUNT,
+                                                                    1,
+                                                                    AVGEAttributeModifier.ADDITIVE,
+                                                                    self.catalyst_action,
+                                                                    None))
+                        self.temp_cache["CARD_REPLACED"] = True
+                
+                #on card discard
+                #discard tools
+                def packet_1():
+                    assert isinstance(self.card, AVGECharacterCard)
+                    packet : PacketType = [TransferCard(tool,
+                                                self.card.tools_attached,
+                                                self.pile_to,
+                                                self.catalyst_action,
+                                                None) for tool in self.card.tools_attached]
+                    return packet
+                #drop the energy
+                def packet_2():
+                    assert isinstance(self.card, AVGECharacterCard)
+                    packet : PacketType = [AVGEEnergyTransfer(token,
+                                                self.card,
+                                                self.card.env,
+                                                self.catalyst_action,
+                                                None) for token in self.card.energy]
+                    return packet
+                #drop the statuses
+                def packet_3():
+                    assert isinstance(self.card, AVGECharacterCard)
+                    packet : PacketType = []
+                    #drop all statuses
+                    for status_effect in self.card.statuses_attached.keys():
                         packet.append(AVGECardStatusChange(
                             status_effect,
                             StatusChangeType.REMOVE,
                             self.card,
-                            ActionTypes.ENV,
-                            c
+                            self.catalyst_action,
+                            None
                         ))
-                return packet
-            def packet_4():
-                assert isinstance(self.card, AVGECharacterCard)
-                packet : PacketType = []
-                #reset MAXHP
-                packet.append(AVGECardMaxHPChange(
+                    return packet
+                def packet_4():
+                    assert isinstance(self.card, AVGECharacterCard)
+                    packet : PacketType = []
+                    #reset MAXHP
+                    packet.append(AVGECardMaxHPChange(
+                        self.card,
+                        self.card.default_max_hp,
+                        AVGEAttributeModifier.SET_STATE,
+                        self.catalyst_action,
+                        None
+                    ))
+                    #reset HP
+                    packet.append(AVGECardHPChange(
+                        self.card,
+                        self.card.default_max_hp,
+                        AVGEAttributeModifier.SET_STATE,
+                        CardType.ALL,
+                        self.catalyst_action,
+                        None
+                    ))
+                    return packet
+                def packet_5():
+                    assert isinstance(self.card, AVGECharacterCard)
+                    packet : PacketType= []
+                    for status in self.card.statuses_responsible:
+                        for card in self.card.statuses_responsible[status]:
+                            assert isinstance(card, AVGECharacterCard)
+                            packet.append(AVGECardStatusChange(
+                                status,
+                                StatusChangeType.ERASE,
+                                card,
+                                self.catalyst_action,
+                                self.card
+                            ))
+                    return packet
+                self.card.deactivate_card()
+                to_dos.extend([packet_1, packet_2, packet_3, packet_4, packet_5])
+            self.temp_cache[self._PRE_TRANSFER] = True
+            if(len(to_dos) > 0):
+                return self.generate_core_response(
+                    ResponseType.INTERRUPT, 
+                    {INTERRUPT_KEY: to_dos}
+                )
+        
+        if(self.temp_cache.get(self._TRANSFER, None) is None):
+            """
+            STAGE 2: TRANSFER
+            """
+            if(isinstance(self.card, AVGEToolCard)):
+                self._previous_card = self.card.card_attached
+            self.card.env.transfer_card(self.card, self.pile_from, self.pile_to, self.new_idx)
+            self.temp_cache[self._TRANSFER] = True
+        if(self.temp_cache.get(self._POST_TRANSFER, None) is None):
+            """
+            STAGE 3: POST-TRANSFER
+            """
+            to_dos : PacketType= [] 
+            if(self.pile_to.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard) and self.pile_from.pile_type != Pile.TOOL):
+                #on tool attachment
+                packet : PacketType = [PlayNonCharacterCard(
                     self.card,
-                    self.card.default_max_hp,
-                    AVGEAttributeModifier.SET_STATE,
-                    ActionTypes.ENV,
-                    None
-                ))
-                #reset HP
-                packet.append(AVGECardHPChange(
+                    self.catalyst_action,
                     self.card,
-                    self.card.default_max_hp,
-                    AVGEAttributeModifier.SET_STATE,
-                    CardType.ALL,
-                    ActionTypes.ENV,
-                    None
-                ))
-                return packet
-            def packet_5():
-                assert isinstance(self.card, AVGECharacterCard)
-                packet : PacketType= []
-                for status in self.card.statuses_responsible:
-                    for card in self.card.statuses_responsible[status]:
-                        assert isinstance(card, AVGECharacterCard)
-                        packet.append(AVGECardStatusChange(
-                            status,
-                            StatusChangeType.ERASE,
-                            card,
-                            ActionTypes.ENV,
-                            self.card
-                        ))
-                return packet
-            self.propose(AVGEPacket([packet_1, packet_2, packet_3, packet_4, packet_5], AVGEEngineID(None, ActionTypes.ENV, None)), 1)
-            self.card.deactivate_card()
-            self.card.env.cache.wipe(self.card)
+                )]
+                to_dos.extend(packet)
+
+            if(self.pile_to.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard) and self.pile_from.pile_type != Pile.STADIUM):
+                #on stadium attachment
+                packet : PacketType = [PlayNonCharacterCard(
+                    self.card,
+                    self.catalyst_action,
+                    self.card,
+                )]
+                to_dos.extend(packet)
+
+            if(self.pile_to.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_from.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
+                #on card activation
+                if(self.card.has_passive):
+                    packet : PacketType = [PlayCharacterCard(
+                        self.card,
+                        ActionTypes.PASSIVE,
+                        self.catalyst_action,
+                        self.card,
+                    )]
+                    to_dos.extend(packet)
+
+            self.temp_cache[self._POST_TRANSFER] = True
+            if(len(to_dos) > 0):
+                self.card.env.extend(to_dos)
         return self.generate_core_response()
     
     def invert_core(self, args : Data | None = None):
@@ -549,18 +632,17 @@ class PhasePickCard(AVGEEvent):
             deck = self.player.cardholders[Pile.DECK]
             hand = self.player.cardholders[Pile.HAND]
             top_card = deck.peek()
-            packet = AVGEPacket([TransferCard(top_card,
+            self.player.env.extend([TransferCard(top_card,
                                       deck,
                                       hand,
                                       ActionTypes.ENV,
-                                      None),
-                                      Phase2(top_card.player,
+                                      None)])
+            self.propose(AVGEPacket([Phase2(top_card.player,
                                              ActionTypes.ENV,
-                                             None)], 
-                                      AVGEEngineID(None, ActionTypes.ENV, None))
-            self.propose(packet)
+                                             None)], AVGEEngineID(None, ActionTypes.ENV, None)))
             return self.generate_core_response()
         else:
+            self.player.env.winner = self.player.opponent
             return self.generate_core_response(ResponseType.GAME_END, {"winner": self.player.opponent, "reason": "no cards left to draw"})
     def invert_core(self, args : Data | None = None):
         raise Exception("A phase should never be canceled")
@@ -588,6 +670,7 @@ class Phase2(AVGEEvent):
         next_action = args.get('next', "")
 
         if(next_action == 'atk'):
+            print("HERE")
             env.game_phase = GamePhase.ATK_PHASE
             self.propose(AVGEPacket([AtkPhase(self.player,
                                   ActionTypes.PLAYER_CHOICE,
@@ -666,10 +749,9 @@ class Phase2(AVGEEvent):
                                            None))
                 if(len(env.stadium_cardholder) > 0):
                     old_stadium : AVGEStadiumCard = cast(AVGEStadiumCard, env.stadium_cardholder.peek())
-                    assert old_stadium.original_owner is not None
                     packet.append(TransferCard(old_stadium,
                                                env.stadium_cardholder,
-                                               old_stadium.original_owner.cardholders[Pile.DISCARD],
+                                               old_stadium.player.cardholders[Pile.DISCARD],
                                                ActionTypes.PLAYER_CHOICE,
                                                None))
                 self.propose(AVGEPacket(packet,AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)))
@@ -857,9 +939,9 @@ class InputEvent(AVGEEvent):
         self.query_data["player_for"] = self.player_for
         if(self.input_type == InputType.SELECTION):
             allow_none = self.query_data.get("allow_none", False)
-            allow_repeats = self.query_data.get("allow_repeats", False)
+            allow_repeats = self.query_data.get(ALLOW_REPEAT, False)
             self.query_data["allow_none"] = allow_none
-            self.query_data["allow_repeats"] = allow_repeats
+            self.query_data[ALLOW_REPEAT] = allow_repeats
 
         if(not isinstance(args.get("input_result", []), list) 
            or len(args.get("input_result", [])) != len(self.input_keys)
@@ -870,27 +952,27 @@ class InputEvent(AVGEEvent):
                                                 'num_inputs': len(self.input_keys),
                                                 } | ({} if self.query_data is None else self.query_data))
         else:
-            assert self.caller_card is not None
-            env : AVGEEnvironment = self.caller_card.env
+            env : AVGEEnvironment = self.player_for.env
             input_result = args.get("input_result", [])
             
-            if(input_result == None):
-                return self.generate_core_response(ResponseType.FAST_FORWARD)
             if(self.input_type == InputType.SELECTION):
                 valid = True
-                display = self.query_data.get("display", None)#all the items that should be displayed. this may or may not be equivalent to targets
-                targets = self.query_data.get("targets", None)
+                display = self.query_data.get(DISPLAY_FLAG, [])#all the items that should be displayed. this may or may not be equivalent to targets
+                targets = self.query_data.get(TARGETS_FLAG, [])
                 assert isinstance(targets, list)
                 assert isinstance(display, list)
+                allow_none = self.query_data.get("allow_none", False)
+                if(allow_none):
+                    targets += [None]
                 seen = []
                 for i, res in enumerate(input_result):
                     allow_none = self.query_data.get("allow_none", False)
-                    allow_repeats = self.query_data.get("allow_repeats", False)
-                    if((res is None and not allow_none) or (res in seen and not allow_repeats)):
-                        if(res not in targets):
-                            valid = False
-                            break
-                    seen.append(res)
+                    allow_repeats = self.query_data.get(ALLOW_REPEAT, False)
+                    if((res in seen and not allow_repeats) or (res not in targets)):
+                        valid = False
+                        break
+                    if(res is not None):
+                        seen.append(res)
                 if not valid:
                     return self.generate_core_response(ResponseType.REQUIRES_QUERY,
                                                {'query_type': 'card_query',
@@ -995,9 +1077,9 @@ class PlayerInitEvent(AVGEEvent):
                         ActionTypes.ENV,
                         None,
                         {
-                            "query_label": "player_init",
-                            "targets": chars,
-                            "display": list(self.player.cardholders[Pile.HAND]),
+                            LABEL_FLAG: "player_init",
+                            TARGETS_FLAG: chars,
+                            DISPLAY_FLAG: list(self.player.cardholders[Pile.HAND]),
                             "allow_none": True
                         }
                     )

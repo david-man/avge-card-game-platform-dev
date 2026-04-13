@@ -27,6 +27,9 @@ class JennieWang(AVGECharacterCard):
         for c in card.player.get_cards_in_play():
             if isinstance(c, JennieWang.TARGET_CLASSES):
                 count += 1
+        for c in card.player.opponent.get_cards_in_play():
+            if isinstance(c, JennieWang.TARGET_CLASSES):
+                count += 1
 
         if count <= 0:
             return card.generate_response(data={MESSAGE_KEY: "No other SE members in play!"})
@@ -36,18 +39,18 @@ class JennieWang(AVGECharacterCard):
         def generate_packet() -> PacketType:
             packet: PacketType = []
             opp = card.player.opponent
-            active = opp.get_active_card()
-            if isinstance(active, AVGECharacterCard):
-                packet.append(
-                    AVGECardHPChange(
-                        active,
-                        per_target,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.PIANO,
-                        ActionTypes.ATK_1,
-                        card,
+            for c in opp.get_cards_in_play():
+                if isinstance(c, AVGECharacterCard):
+                    packet.append(
+                        AVGECardHPChange(
+                            c,
+                            per_target,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.PIANO,
+                            ActionTypes.ATK_1,
+                            card,
+                        )
                     )
-                )
             return packet
         def generate_packet_bench() -> PacketType:
             packet : PacketType = []

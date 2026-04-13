@@ -27,7 +27,7 @@ class HappyRuthJara(AVGECharacterCard):
         if len(card.tools_attached) > 0:
             return False
         # not used this round
-        last = card.env.cache.get(card, HappyRuthJara._ACTIVE_USE_KEY, None)
+        last = card.env.cache.get(None, HappyRuthJara._ACTIVE_USE_KEY, None)
         if last is not None and last == card.env.round_id:
             return False
         return True
@@ -44,7 +44,7 @@ class HappyRuthJara(AVGECharacterCard):
             )
         )
         # mark used this round
-        card.env.cache.set(card, HappyRuthJara._ACTIVE_USE_KEY, card.env.round_id)
+        card.env.cache.set(None, HappyRuthJara._ACTIVE_USE_KEY, card.env.round_id)
         return card.generate_response()
 
     @staticmethod
@@ -81,10 +81,10 @@ class HappyRuthJara(AVGECharacterCard):
                             lambda r :  True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "happy_atk1_targets",
-                            "targets": opponent.get_cards_in_play(),
-                            "display": opponent.get_cards_in_play(),
-                            "allow_repeats": True},
+                            {LABEL_FLAG: "happy_atk1_targets",
+                            TARGETS_FLAG: opponent.get_cards_in_play(),
+                            DISPLAY_FLAG: opponent.get_cards_in_play(),
+                            ALLOW_REPEAT: True},
                         )
                     ]
                 },

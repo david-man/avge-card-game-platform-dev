@@ -71,8 +71,5 @@ class LindemannPracticeRoom(AVGEStadiumCard):
 	def play_card(self) -> Response:
 		owner_card = self
 
-		if(owner_card.original_owner is None):
-			owner_card.original_owner = owner_card.player
-
 		owner_card.add_listener(LindemannReducedAttackCostModifier(owner_card))
 		return owner_card.generate_response()

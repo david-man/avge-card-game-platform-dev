@@ -35,9 +35,9 @@ class Victoria(AVGESupporterCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "victoria_pick_type",
-								"targets": list(c for c in CardType),
-								"display": list(c for c in CardType)
+								LABEL_FLAG: "victoria_pick_type",
+								TARGETS_FLAG: list(c for c in CardType),
+								DISPLAY_FLAG: list(c for c in CardType)
 							},
 						)
 					]
@@ -67,9 +67,9 @@ class Victoria(AVGESupporterCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "victoria_pick_cards_and_destination",
-								"targets": matching_characters,
-								"display": list(deck)
+								LABEL_FLAG: "victoria_pick_cards_and_destination",
+								TARGETS_FLAG: matching_characters,
+								DISPLAY_FLAG: list(deck)
 							},
 						)
 					]

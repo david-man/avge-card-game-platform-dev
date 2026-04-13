@@ -34,31 +34,28 @@ class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
         event = self.attached_event
         assert isinstance(event, PhasePickCard)
         target_player = event.player
+        def gen() -> PacketType:
+            empty_bench_slots = max(0, max_bench_size - len(target_player.cardholders[Pile.BENCH]))
+            if(empty_bench_slots == 0):
+                return []
 
-        empty_bench_slots = max(0, max_bench_size - len(target_player.cardholders[Pile.BENCH]))
-        if(empty_bench_slots == 0):
-            return self.generate_response()
+            damage_per_character = 10 * empty_bench_slots
+            packet : PacketType = []
 
-        damage_per_character = 10 * empty_bench_slots
-        packet = []
-
-        for character in target_player.get_cards_in_play():
-            current_hp = character.hp
-            if current_hp < damage_per_character:
-                continue
-            packet.append(
-                AVGECardHPChange(
-                    character,
-                    damage_per_character,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.ALL,
-                    ActionTypes.NONCHAR,
-                    self.owner_card,
+            for character in target_player.get_cards_in_play():
+                current_hp = character.hp
+                packet.append(
+                    AVGECardHPChange(
+                        character,
+                        min(current_hp - 1, damage_per_character),
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.ALL,
+                        ActionTypes.NONCHAR,
+                        self.owner_card,
+                    )
                 )
-            )
-
-        if(len(packet) > 0):
-            self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RileyHall)), 1)
+            return packet
+        self.propose(AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RileyHall)), 1)
         return self.generate_response()
 
 

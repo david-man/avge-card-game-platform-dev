@@ -43,9 +43,9 @@ class FilipKaminski(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "filip_type_guess",
-                             "targets": list(possible_types),
-                             "display": list(possible_types)},
+                            {LABEL_FLAG: "filip_type_guess",
+                             TARGETS_FLAG: list(possible_types),
+                             DISPLAY_FLAG: list(possible_types)},
                         )
                     ]
                 },

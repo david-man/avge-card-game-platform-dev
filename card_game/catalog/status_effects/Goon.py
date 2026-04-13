@@ -78,16 +78,16 @@ class GoonStatusChangeReactor(AVGEReactor):
 
 		packet : PacketType= []
 
-		if(event.change_type == StatusChangeType.ADD and len(event.target.statuses_attached.get(StatusEffect.GOON, [])) == 1):
+		if(event.change_type == StatusChangeType.ADD and len(event.target.statuses_attached.get(StatusEffect.GOON, [])) == 1 and event.made_change):
 			packet.extend([
 				AVGECardMaxHPChange(target, 20, AVGEAttributeModifier.ADDITIVE, ActionTypes.ENV, None),
 				AVGECardHPChange(target, 20, AVGEAttributeModifier.ADDITIVE, CardType.ALL, ActionTypes.ENV, None),
 			])
-		elif(event.change_type in [StatusChangeType.REMOVE, StatusChangeType.ERASE] and len(event.target.statuses_attached.get(StatusEffect.GOON, [])) == 0):
+		elif(event.change_type in [StatusChangeType.REMOVE, StatusChangeType.ERASE] and len(event.target.statuses_attached.get(StatusEffect.GOON, [])) == 0 and event.made_change):
 			packet.extend([
 				AVGECardMaxHPChange(target, 20, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, None),
 			])
 
 		if(len(packet) > 0):
-			self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)), 1)
+			self.extend(packet)
 		return self.generate_response()

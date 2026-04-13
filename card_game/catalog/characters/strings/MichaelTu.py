@@ -43,9 +43,9 @@ class MichaelTu(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "michael_tu_atk1",
-                                "targets": bench,
-                                "display": bench
+                                LABEL_FLAG: "michael_tu_atk1",
+                                TARGETS_FLAG: bench,
+                                DISPLAY_FLAG: bench
                             },
                         )
                     ]

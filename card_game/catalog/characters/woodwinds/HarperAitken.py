@@ -65,10 +65,10 @@ class HarperAitken(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "harperaitken_wipeout",
-                                "targets": chars_in_play,
-                                "display": chars_in_play,
-                                "allow_repeat": True
+                                LABEL_FLAG: "harperaitken_wipeout",
+                                TARGETS_FLAG: chars_in_play,
+                                DISPLAY_FLAG: chars_in_play,
+                                ALLOW_REPEAT: True
                             },
                         )
                     ]

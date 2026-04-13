@@ -48,7 +48,7 @@ class WestonPoe(AVGECharacterCard):
                 return True
 
             def update_status(self):
-                if owner_card.env is None:
+                if owner_card.env is None or owner_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE]:
                     self.invalidate()
 
             def react(self, args=None):
@@ -73,7 +73,7 @@ class WestonPoe(AVGECharacterCard):
                 )
                 return self.generate_response()
 
-        owner_card.add_listener(_DamageReflector())
+        owner_card.env.add_listener(_DamageReflector())
         return owner_card.generate_response()
 
     @staticmethod

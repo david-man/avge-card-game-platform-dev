@@ -48,9 +48,9 @@ class _VincentHealReactor(AVGEReactor):
                             lambda r : True,
                             ActionTypes.ATK_2,
                             self.owner_card,
-                            {"query_label": "vincent_chen_heal_pick", 
-                             "targets": bench_chars,
-                             "display": bench_chars},
+                            {LABEL_FLAG: "vincent_chen_heal_pick", 
+                             TARGETS_FLAG: list(bench_chars),
+                             DISPLAY_FLAG: list(bench_chars)},
                         )
                     ]
                 },
@@ -99,14 +99,14 @@ class VincentChen(AVGECharacterCard):
     def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         # attach reactor to heal one benched character for the same amount dealt
-        card.add_listener(_VincentHealReactor(card))
         def generate_packet() -> PacketType:
+            card.add_listener(_VincentHealReactor(card))
             return [AVGECardHPChange(
                 card.player.opponent.get_active_card(),
                 40,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.ALL,
-                ActionTypes.ATK_1,
+                CardType.BRASS,
+                ActionTypes.ATK_2,
                 card,
             )]
         card.propose(

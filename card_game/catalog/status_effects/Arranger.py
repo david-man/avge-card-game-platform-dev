@@ -88,7 +88,7 @@ class ArrangerStatusReactor(AVGEReactor):
 							ActionTypes.PASSIVE,
 							affected_character,
 							{
-								"query_label": "arranger_optional_shuffle",
+								LABEL_FLAG: "arranger_optional_shuffle",
 							},
 						)
 					]

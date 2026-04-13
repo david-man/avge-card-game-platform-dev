@@ -37,9 +37,9 @@ class KeiWatanabe(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "kei_watanabe_rudiments",
-                                "targets": list(candidates),
-                                "display": list(candidates)
+                                LABEL_FLAG: "kei_watanabe_rudiments",
+                                TARGETS_FLAG: list(candidates),
+                                DISPLAY_FLAG: list(candidates)
                             },
                         )
                     ]
@@ -50,7 +50,7 @@ class KeiWatanabe(AVGECharacterCard):
             AVGEPacket([
                 AVGECardHPChange(
                     chosen,
-                    10,
+                    20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_1,
@@ -66,8 +66,8 @@ class KeiWatanabe(AVGECharacterCard):
         from card_game.internal_events import InputEvent, PlayCharacterCard, AVGEEnergyTransfer, EmptyEvent
 
         candidates = [
-            c for c in (card.player.get_cards_in_play() + card.player.opponent.get_cards_in_play())
-            if c.card_type == CardType.PERCUSSION
+            c for c in (card.player.get_cards_in_play())
+            if c.card_type == CardType.PERCUSSION and not isinstance(c, KeiWatanabe)
         ]
         if len(candidates) == 0:
             return card.generate_response(data={MESSAGE_KEY: "No percussion on bench"})
@@ -103,9 +103,9 @@ class KeiWatanabe(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "kei_watanabe_drumkidworkshop",
-                                "targets": list(candidates),
-                                "display": list(candidates),
+                                LABEL_FLAG: "kei_watanabe_drumkidworkshop",
+                                TARGETS_FLAG: list(candidates),
+                                DISPLAY_FLAG: list(candidates),
                                 "actions": [ActionTypes.ATK_1, ActionTypes.ATK_2],
                             },
                         )

@@ -25,7 +25,7 @@ class InaMa(AVGECharacterCard):
         if card.env.round_id == already_used:
             return False
         for c in card.player.get_cards_in_play():
-            if c.card_type == CardType.STRING and len(c.energy) >= 1:
+            if c.card_type == CardType.STRING and len(c.energy) >= 1 and c!= card:
                 return True
         return False
 
@@ -34,7 +34,10 @@ class InaMa(AVGECharacterCard):
         from card_game.internal_events import AVGEEnergyTransfer, InputEvent, EmptyEvent
 
         candidates = [c for c in card.player.get_cards_in_play() if c.card_type == CardType.STRING and len(c.energy) >= 1 and not c == card]
+        if(len(candidates) == 0):
+            return card.generate_response(data={MESSAGE_KEY: "No strings cards with energy!"})
         chosen = card.env.cache.get(card, InaMa._ENERGY_MOVE_SELECTION_KEY, None, True)
+        
         if chosen is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -48,9 +51,9 @@ class InaMa(AVGECharacterCard):
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
                             {
-                                "query_label": "ina_ma_active",
-                                "targets": candidates,
-                                "display": card.player.get_cards_in_play()
+                                LABEL_FLAG: "ina_ma_active",
+                                TARGETS_FLAG: candidates,
+                                DISPLAY_FLAG: card.player.get_cards_in_play()
                             },
                         )
                     ]
@@ -87,7 +90,7 @@ class InaMa(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "ina_ma_triple_stop"},
+                            {LABEL_FLAG: "ina_ma_triple_stop"},
                         )
                     ]
                 },

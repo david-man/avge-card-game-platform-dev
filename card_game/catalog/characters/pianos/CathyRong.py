@@ -35,10 +35,10 @@ class CathyRong(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "cathy_rong_energy_target",
-                                "targets": bench_candidates,
-                                "display": list(opponent.cardholders[Pile.BENCH]),
-                                "allow_none": True
+                                LABEL_FLAG: "cathy_rong_energy_target",
+                                TARGETS_FLAG: bench_candidates,
+                                DISPLAY_FLAG: list(opponent.cardholders[Pile.BENCH]),
+                                ALLOW_NONE: True
                             },
                         )
                     ]

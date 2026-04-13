@@ -13,8 +13,7 @@ class AVGETShirt(AVGEToolCard):
 		from card_game.internal_events import AVGECardStatusChange
 		assert self.card_attached is not None
 		
-		self.propose(
-			AVGEPacket([
+		self.extend([
 				AVGECardStatusChange(
 				StatusEffect.GOON,
 				StatusChangeType.ERASE,
@@ -22,7 +21,7 @@ class AVGETShirt(AVGEToolCard):
 				ActionTypes.ENV,
 				self,
 				)
-			], AVGEEngineID(None, ActionTypes.ENV, None))
+			]
 		)
 		super().deactivate_card()
 	

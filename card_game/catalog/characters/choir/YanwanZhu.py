@@ -19,12 +19,14 @@ class _YanwanStartReactor(AVGEReactor):
             return False
         if self.owner_card.cardholder.pile_type != Pile.ACTIVE:
             return False
-        if len(self.owner_card.player.cardholders[Pile.DECK]) <= 1:
+        if (event.player == self.owner_card.player and len(self.owner_card.player.cardholders[Pile.DECK]) <= 1):
+            return False
+        if (event.player.opponent == self.owner_card.player and len(self.owner_card.player.cardholders[Pile.DECK]) == 0):
             return False
         if len(self.owner_card.energy) != 2:
             return False
 
-        return event.player == self.owner_card.player
+        return True
 
     def event_effect(self) -> bool:
         return True
@@ -54,7 +56,7 @@ class _YanwanStartReactor(AVGEReactor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {"query_label": "yanwan_optional_draw"},
+                            {LABEL_FLAG: "yanwan_optional_draw"},
                         )
                     ]
                 },

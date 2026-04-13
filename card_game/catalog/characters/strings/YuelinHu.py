@@ -74,7 +74,7 @@ class YuelinHu(AVGECharacterCard):
                                     ActionTypes.NONCHAR,
                                     self.owner_card,
                                     {
-                                        "query_label": "yuelin_hu_birb_reactor",
+                                        LABEL_FLAG: "yuelin_hu_birb_reactor",
                                     },
                                 )
                             ]
@@ -121,7 +121,7 @@ class YuelinHu(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "yuelin_hu_triple_stop"},
+                            {LABEL_FLAG: "yuelin_hu_triple_stop"},
                         )
                     ]
                 },

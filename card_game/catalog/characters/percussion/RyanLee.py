@@ -49,9 +49,9 @@ class RyanLee(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "ryan-lee-atk1",
-                                "targets": candidates,
-                                "display": list(bench),
+                                LABEL_FLAG: "ryan-lee-atk1",
+                                TARGETS_FLAG: candidates,
+                                DISPLAY_FLAG: list(bench),
                                 "maxamt": min(2, len(card.player.energy)),
                             },
                         )

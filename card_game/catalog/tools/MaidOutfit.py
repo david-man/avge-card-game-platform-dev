@@ -14,8 +14,7 @@ class MaidOutfit(AVGEToolCard):
 
 		
 		assert self.card_attached is not None
-		self.propose(
-			AVGEPacket([
+		self.extend([
 				AVGECardStatusChange(
 				StatusEffect.MAID,
 				StatusChangeType.ERASE,
@@ -23,7 +22,7 @@ class MaidOutfit(AVGEToolCard):
 				ActionTypes.ENV,
 				self,
 				)
-			], AVGEEngineID(None, ActionTypes.ENV, None))
+			]
 		)
 		super().deactivate_card()
 

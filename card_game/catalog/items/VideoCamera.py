@@ -34,10 +34,10 @@ class VideoCamera(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "video_camera_discard_item_pick",
-								"targets": discard_items,
-								"display": list(discard),
-								"allow_none": True
+								LABEL_FLAG: "video_camera_discard_item_pick",
+								TARGETS_FLAG: discard_items,
+								DISPLAY_FLAG: list(discard),
+								ALLOW_NONE: True
 							},
 						)
 					]

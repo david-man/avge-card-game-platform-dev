@@ -33,8 +33,7 @@ class HanleiGao(AVGECharacterCard):
 
         bench_holder = card.player.cardholders[Pile.BENCH]
         active_holder = card.player.cardholders[Pile.ACTIVE]
-        perc_candidates = [c for c in bench_holder if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION]
-        if len(perc_candidates) == 0:
+        if len(bench_holder) == 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HanleiGao)))
             return card.generate_response(data={MESSAGE_KEY:"No bench characters to swap with! Skipping past bench swap" })
 
@@ -53,9 +52,10 @@ class HanleiGao(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "hanlei_gao_benched_percussion_swap",
-                                "targets": perc_candidates,
-                                "allow_none": True,
+                                LABEL_FLAG: "hanlei_gao_bench_swap",
+                                TARGETS_FLAG: list(bench_holder),
+                                DISPLAY_FLAG: list(bench_holder),
+                                ALLOW_NONE: True,
                             },
                         )
                     ]

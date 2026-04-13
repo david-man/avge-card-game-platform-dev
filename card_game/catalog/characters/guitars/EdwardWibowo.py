@@ -7,7 +7,7 @@ from card_game.engine.engine_constants import EngineGroup
 
 class _EdwardGuitarBoost(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard, round_active: int):
-        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, EdwardWilbowo), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, EdwardWibowo), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
         self.round_active = round_active
 
@@ -46,7 +46,7 @@ class _EdwardGuitarBoost(AVGEModifier):
         return self.generate_response()
 
 
-class EdwardWilbowo(AVGECharacterCard):
+class EdwardWibowo(AVGECharacterCard):
     _ATK1_COIN_BASE = "edward_atk1_coin_"
 
     def __init__(self, unique_id):
@@ -65,7 +65,7 @@ class EdwardWilbowo(AVGECharacterCard):
         if n <= 0:
             return card.generate_response(data={MESSAGE_KEY: "Opponent active card has no energy attached"})
 
-        coin_keys = [EdwardWilbowo._ATK1_COIN_BASE + str(i) for i in range(n)]
+        coin_keys = [EdwardWibowo._ATK1_COIN_BASE + str(i) for i in range(n)]
         coin_vals = [card.env.cache.get(card, key, None, True) for key in coin_keys]
         if coin_vals[0] is None:
             return card.generate_response(
@@ -79,7 +79,7 @@ class EdwardWilbowo(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "edward_wibowo_atk_1"},
+                            {LABEL_FLAG: "edward_wibowo_atk_1"},
                         )
                     ]
                 },
@@ -95,7 +95,7 @@ class EdwardWilbowo(AVGECharacterCard):
                 for token in list(opp_active.energy)[:removable]
             ]
             return packet
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EdwardWilbowo)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EdwardWibowo)))
 
         return card.generate_response()
 
@@ -114,7 +114,7 @@ class EdwardWilbowo(AVGECharacterCard):
                 )
             ]
         card.propose(
-            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, EdwardWilbowo))
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, EdwardWibowo))
         )
         card.add_listener(_EdwardGuitarBoost(card, card.player.get_next_turn()))
 

@@ -8,21 +8,43 @@ import tkinter as tk
 import threading
 from typing import Any, Callable
 from .catalog.characters.brass import *
-from .catalog.characters.pianos.HenryWang import HenryWang
+from .catalog.characters.strings import *
+from .catalog.characters.choir import *
+from .catalog.characters.guitars import *
+from .catalog.characters.percussion import *
+from .catalog.characters.pianos import *
+from .catalog.characters.woodwinds import *
 from .catalog.items import *
-from .catalog.stadiums.MainHall import MainHall
-from .catalog.tools.KikisHeadband import KikisHeadband
+from .catalog.stadiums import *
+from .catalog.supporters import *
+from .catalog.tools import *
 
 
 _HIDDEN_RESPONSE_KEYS = {
     "num_inputs",
-    "targets",
+    TARGETS_FLAG,
     "allow_repeat",
-    "allow_repeats",
-    "allow_none",
-    "display",
+    ALLOW_REPEAT,
+    ALLOW_NONE,
+    DISPLAY_FLAG,
+}
+start_round = 1 
+p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
+    Pile.ACTIVE: [CarolynZheng],
+    Pile.BENCH: [],
+    Pile.HAND: [IceSkates, AVGEShowcaseSticker],
+    Pile.DISCARD: [MainHall, AVGEBirb, ConcertProgram, ConcertProgram],
+    Pile.DECK: [AVGEBirb, IceSkates, LukeXu, Johann, DanielYang,DavidMan],
+    Pile.STADIUM: [AlumnaeHall],
 }
 
+p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
+    Pile.ACTIVE: [DavidMan],
+    Pile.BENCH: [FelixChen],
+    Pile.HAND: [MaidOutfit, SteinertBasement,LukeXu,  JennieWang, ConcertTicket, FoldingStand],
+    Pile.DISCARD: [VideoCamera],
+    Pile.DECK: [JennieWang, JuliaCiacerelli],
+}
 
 def _filtered_response_data(data: Data | None) -> Data:
     if(not isinstance(data, dict)):
@@ -55,15 +77,16 @@ def _log_scanner_response(resp: Response) -> None:
         )
 
 
-def _get_active_external_listener_names_by_player(env: AVGEEnvironment) -> dict[PlayerID, list[str]]:
+def _get_active_external_listener_names_by_player(env: AVGEEnvironment) -> dict[PlayerID | str, list[str]]:
     ignored = {
         "GoonStatusTransferModifier",
         "GoonStatusChangeReactor",
         "ArrangerStatusReactor",
     }
-    active: dict[PlayerID, list[str]] = {
+    active: dict[PlayerID | str, list[str]] = {
         PlayerID.P1: [],
         PlayerID.P2: [],
+        "environment": []
     }
     for listener in env._engine._external_listeners:
         if(listener._invalidated):
@@ -75,99 +98,86 @@ def _get_active_external_listener_names_by_player(env: AVGEEnvironment) -> dict[
         caller_card = getattr(identifier, "caller_card", None)
         caller_player = getattr(caller_card, "player", None)
         if(caller_player is None):
-            continue
-        if(caller_player.unique_id in [PlayerID.P1, PlayerID.P2]):
+            active["environment"].append(name)
+        if(isinstance(caller_player, AVGEPlayer) and caller_player.unique_id in [PlayerID.P1, PlayerID.P2]):
             active[caller_player.unique_id].append(name)
     return active
 
 
+def _format_nonempty_env_cache(env: AVGEEnvironment) -> list[str]:
+    lines: list[str] = []
+    cache_by_card = env.cache.cache
+    none_key = env.cache.empty_card.unique_id
+
+    for card_key in sorted(cache_by_card.keys()):
+        payload = cache_by_card.get(card_key, {})
+        if(not isinstance(payload, dict) or len(payload) == 0):
+            continue
+
+        if(card_key == none_key):
+            header = "None"
+        else:
+            card = env.cards.get(card_key)
+            if(card is None):
+                header = card_key
+            else:
+                header = f"{card.unique_id}<{type(card).__name__}>"
+
+        lines.append(f"- {header}")
+        for key in sorted(payload.keys()):
+            lines.append(f"  {key}: {_truncate_repr(payload[key])}")
+
+    if(len(lines) == 0):
+        return ["(none)"]
+    return lines
+
+
 def _build_ui_text(env: AVGEEnvironment) -> str:
     grouped = _get_active_external_listener_names_by_player(env)
-    p1_line = "(none)" if len(grouped[PlayerID.P1]) == 0 else ", ".join(grouped[PlayerID.P1])
-    p2_line = "(none)" if len(grouped[PlayerID.P2]) == 0 else ", ".join(grouped[PlayerID.P2])
+    p1_names = sorted(grouped[PlayerID.P1])
+    p2_names = sorted(grouped[PlayerID.P2])
+    env_names = sorted(grouped["environment"])
+    p1_lines = ["- (none)"] if len(p1_names) == 0 else [f"- {name}" for name in p1_names]
+    p2_lines = ["- (none)"] if len(p2_names) == 0 else [f"- {name}" for name in p2_names]
+    env_lines = ["- (none)"] if len(env_names) == 0 else [f"- {name}" for name in env_names]
+    env_cache_lines = _format_nonempty_env_cache(env)
+
     queue = env._engine.peek_n(len(env._engine._queue))
     event_running = str(env._engine.event_running)
-    queue_str = ""
-    for packet in queue:
-        queue_str += str(packet)
+    event_stack = list(env._engine.event_stack)
+    queue_lines: list[str] = []
+    for idx, packet in enumerate(queue):
+        queue_lines.append(f"[{idx}] {packet} {packet.identifier.caller_card if isinstance(packet, AVGEPacket) else "??"}")
+    if(len(queue_lines) == 0):
+        queue_lines.append("(empty)")
+
+    event_stack_lines: list[str] = []
+    for idx, event in enumerate(event_stack):
+        event_stack_lines.append(f"[{idx}] {event}")
+    if(len(event_stack_lines) == 0):
+        event_stack_lines.append("(empty)")
+
     return (
         str(env)
-        + "\n\nACTIVE EXTERNAL LISTENERS (P1):\n"
-        + p1_line
+        + "\n\n"
+        + "=" * 72
+        + "\nSCANNER SUMMARY\n"
+        + "=" * 72
+        + "\nACTIVE EXTERNAL LISTENERS (P1):\n"
+        + "\n".join(p1_lines)
         + "\n\nACTIVE EXTERNAL LISTENERS (P2):\n"
-        + p2_line + "\n\n"
-        + "EVENT RUNNING: " + event_running + "\n\n"
-        + "CURRENT QUEUE: " + queue_str
+        + "\n".join(p2_lines)
+        + "\n\nACTIVE EXTERNAL LISTENERS (ENVIRONMENT):\n"
+        + "\n".join(env_lines)
+        + "\n\nENV CACHE (NON-EMPTY):\n"
+        + "\n".join(env_cache_lines)
+        + "\n\nEVENT RUNNING:\n"
+        + event_running
+        + f"\n\nCURRENT QUEUE, len {len(queue)}:\n"
+        + "\n".join(queue_lines)
+        + f"\n\nEVENT STACK, len {len(event_stack)}:\n"
+        + "\n".join(event_stack_lines)
     )
-
-
-class ScannerDummyCharacter(AVGECharacterCard):
-    def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.BRASS, 1, 0, 1)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
-
-    @staticmethod
-    def atk_1(card) -> Response:
-        from .internal_events import AVGECardHPChange
-
-        target = card.player.opponent.get_active_card()
-        if(not isinstance(target, AVGECharacterCard)):
-            return card.generate_response()
-
-        card.propose(
-            AVGEPacket([
-                AVGECardHPChange(
-                    target,
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.BRASS,
-                    ActionTypes.ATK_1,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_1, ScannerDummyCharacter))
-        )
-        return card.generate_response()
-
-    @staticmethod
-    def atk_2(card) -> Response:
-        from .internal_events import AVGECardStatusChange
-
-        target = card.player.opponent.get_active_card()
-        if(not isinstance(target, AVGECharacterCard)):
-            return card.generate_response()
-
-        card.propose(
-            AVGEPacket([
-                AVGECardStatusChange(
-                    StatusEffect.GOON,
-                    StatusChangeType.ADD,
-                    target,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            ], AVGEEngineID(card, ActionTypes.ATK_2, ScannerDummyCharacter))
-        )
-        return card.generate_response()
-    
-p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [CarolynZheng],
-    Pile.BENCH: [HenryWang, JuanBurgos],
-    Pile.HAND: [ConcertTicket, KikisHeadband],
-    Pile.DISCARD: [MainHall],
-    Pile.DECK: [ScannerDummyCharacter, ScannerDummyCharacter],
-}
-
-p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [HenryWang],
-    Pile.BENCH: [BarronLee, ScannerDummyCharacter],
-    Pile.HAND: [VideoCamera, KikisHeadband],
-    Pile.DISCARD: [MainHall],
-    Pile.DECK: [ScannerDummyCharacter, ScannerDummyCharacter],
-}
-
 
 def build_demo_environment(
     p1_setup: dict[Pile, list[type[AVGECard]]] | None = None,
@@ -188,6 +198,7 @@ def build_demo_environment(
         start_turn,
         starting_stadium=starting_stadium,
         starting_stadium_player=starting_stadium_player,
+        start_round=start_round
     )
 
     env.player_turn = env.players[start_turn]
@@ -201,9 +212,15 @@ def build_demo_environment(
     return env
 
 
-# Function to update the label text
-def update_label(label: tk.Label, text: str):
-    label.config(text=text)
+# Function to update the scanner text panel
+def update_label(label: Any, text: str):
+    if(isinstance(label, tk.Text)):
+        label.config(state="normal")
+        label.delete("1.0", "end")
+        label.insert("1.0", text)
+        label.config(state="disabled")
+    else:
+        label.config(text=text)
 
 
 def _safe_get_card(env: AVGEEnvironment, card_id: str) -> AVGECard | None:
@@ -277,6 +294,20 @@ def _format_selection_item(item: Any) -> str:
     return str(item)
 
 
+def _find_display_index_for_target(target: Any, display: list[Any], used_indices: set[int]) -> int | None:
+    for idx, item in enumerate(display):
+        if(idx in used_indices):
+            continue
+        if(item is target):
+            return idx
+    for idx, item in enumerate(display):
+        if(idx in used_indices):
+            continue
+        if(item == target):
+            return idx
+    return None
+
+
 def _parse_display_selection(
     values: list[str],
     expected: int,
@@ -284,6 +315,7 @@ def _parse_display_selection(
     allow_none: bool,
     allow_repeats: bool,
 ) -> list[Any] | None:
+    display= list(display)
     if(len(values) != expected):
         return None
     chosen: list[Any] = []
@@ -323,34 +355,23 @@ def _parse_atk_action_token(token: str) -> ActionTypes | None:
     return None
 
 
-def _print_selection_query_details(query_data: Data) -> None:
-    targets = query_data.get("targets", [])
-    display = query_data.get("display", [])
-    expected = int(query_data.get("num_inputs", 0))
-    allow_none = bool(query_data.get("allow_none", False))
-    allow_repeats = bool(query_data.get("allow_repeats", False))
-
-    print("SELECTION details:")
-    print(f"  num_inputs: {expected}")
-    print(f"  allow_none: {allow_none}")
-    print(f"  allow_repeats: {allow_repeats}")
-    print("  targets:")
-    for idx, item in enumerate(targets):
-        print(f"    [{idx}] {_format_selection_item(item)}")
-    print("  display:")
-    for idx, item in enumerate(display):
-        print(f"    [{idx}] {_format_selection_item(item)}")
-    print("  input format: provide indices from display (use -1 for None)")
-
-
 def _build_input_prompt(resp: Response, last_error: str | None = None) -> str:
     qd = resp.data or {}
-    print(qd)
     query_type = qd.get("query_type", "generic")
     lines: list[str] = [f"query_type: {query_type}"]
 
     if(last_error is not None):
         lines.append(f"last error: {last_error}")
+
+    # Special: For query_label 'david_man_top_bottom', display the card id from the 'card' attribute if present
+    if query_type == "card_query":
+        query_label = str(qd.get(LABEL_FLAG, ""))
+        if query_label == "david_man_top_bottom":
+            card = qd.get("card", None)
+            if card is not None:
+                # Try to get unique_id if it's a card object, else just str
+                card_id = getattr(card, "unique_id", str(card))
+                lines.append(f"card: {card_id}")
 
     if(query_type == "phase2"):
         p = qd.get("player_involved", None)
@@ -368,8 +389,7 @@ def _build_input_prompt(resp: Response, last_error: str | None = None) -> str:
         lines.append(f"to order: {[type(o).__name__ for o in unordered]}")
     elif(query_type == "card_query"):
         query_for = qd.get("player_for")
-        print(query_for)
-        query_label = str(qd.get("query_label", ""))
+        query_label = str(qd.get(LABEL_FLAG, ""))
         expected = int(qd.get("num_inputs", 0))
         input_type = qd.get("input_type")
         if(isinstance(query_for, AVGEPlayer)):
@@ -388,20 +408,30 @@ def _build_input_prompt(resp: Response, last_error: str | None = None) -> str:
             or (isinstance(input_type, list) and len(input_type) > 0 and all(i == InputType.SELECTION for i in input_type))
         )
         if(is_selection):
-            allow_none = bool(qd.get("allow_none", False))
-            allow_repeats = bool(qd.get("allow_repeats", False))
-            targets = qd.get("targets", [])
-            display = qd.get("display", [])
+            allow_none = bool(qd.get(ALLOW_NONE, False))
+            allow_repeats = bool(qd.get(ALLOW_REPEAT, False))
+            targets = list(qd.get(TARGETS_FLAG, []))
+            display = list(qd.get(DISPLAY_FLAG, []))
             lines.append(f"allow_none: {allow_none}")
             lines.append(f"allow_repeats: {allow_repeats}")
             lines.append("format: provide display indices (space/comma separated), use -1 for None")
-            if(isinstance(targets, list)):
-                lines.append("targets:")
-                for idx, item in enumerate(targets):
-                    lines.append(f"  [{idx}] {_format_selection_item(item)}")
             if(isinstance(display, list)):
+                if(isinstance(targets, list)):
+                    lines.append("targets:")
+                    used_display_indices: set[int] = set()
+                    for target in targets:
+                        display_idx = _find_display_index_for_target(target, display, used_display_indices)
+                        if(display_idx is None):
+                            lines.append(f"  [?] {_format_selection_item(target)}")
+                            continue
+                        used_display_indices.add(display_idx)
+                        lines.append(f"  [{display_idx}] {_format_selection_item(target)}")
                 lines.append("display:")
                 for idx, item in enumerate(display):
+                    lines.append(f"  [{idx}] {_format_selection_item(item)}")
+            elif(isinstance(targets, list)):
+                lines.append("targets:")
+                for idx, item in enumerate(targets):
                     lines.append(f"  [{idx}] {_format_selection_item(item)}")
         elif(query_label == "daniel_redirect"):
             max_dmg = qd.get("maxdmg")
@@ -409,7 +439,7 @@ def _build_input_prompt(resp: Response, last_error: str | None = None) -> str:
             if(max_dmg is not None):
                 lines.append(f"maxdmg: {max_dmg}")
         elif(query_label == "kei_watanabe_drumkidworkshop"):
-            display = qd.get("display", [])
+            display = qd.get(DISPLAY_FLAG, [])
             actions = qd.get("actions", [])
             lines.append("format: <display_index> <atk1|atk2>")
             if(isinstance(display, list)):
@@ -421,7 +451,7 @@ def _build_input_prompt(resp: Response, last_error: str | None = None) -> str:
                 for action in actions:
                     lines.append(f"  - {action}")
         elif(query_label == "ryan_lee_atk1"):
-            display = qd.get("display", [])
+            display = qd.get(DISPLAY_FLAG, [])
             max_amt = qd.get("maxamt")
             lines.append("format: <display_index> <integer>")
             if(max_amt is not None):
@@ -446,6 +476,7 @@ def _build_input_prompt(resp: Response, last_error: str | None = None) -> str:
             lines.append(f"data: {filtered}")
         lines.append("format: key=value pairs")
 
+    lines.append("global command: active <card_id>")
     lines.append("type quit/exit to close")
     return "\n".join(lines)
 
@@ -547,15 +578,15 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
         expected = int(query_data.get("num_inputs", 0))
         if(expected <= 0):
             return None
-        query_label = str(query_data.get("query_label", ""))
+        query_label = str(query_data.get(LABEL_FLAG, ""))
 
         if(query_label in ["cast_reserve_player_item_pick", "dress_rehearsal_roster_energy_remove"]):
-            display = query_data.get("display", [])
+            display = query_data.get(DISPLAY_FLAG, [])
             if(not isinstance(display, list)):
                 return None
             values = _split_values(raw)
-            allow_none = bool(query_data.get("allow_none", False))
-            allow_repeats = bool(query_data.get("allow_repeats", False))
+            allow_none = bool(query_data.get(ALLOW_NONE, False))
+            allow_repeats = bool(query_data.get(ALLOW_REPEAT, False))
             chosen_selection = _parse_display_selection(values, expected, display, allow_none, allow_repeats)
             if(chosen_selection is None):
                 return None
@@ -579,7 +610,7 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
             values = _split_values(raw)
             if(len(values) != 2):
                 return None
-            display = query_data.get("display", [])
+            display = query_data.get(DISPLAY_FLAG, [])
             if(not isinstance(display, list)):
                 return None
             selected_list = _parse_display_selection([values[0]], 1, display, False, True)
@@ -594,7 +625,7 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
             values = _split_values(raw)
             if(len(values) != 2):
                 return None
-            display = query_data.get("display", [])
+            display = query_data.get(DISPLAY_FLAG, [])
             if(not isinstance(display, list)):
                 return None
             selected_list = _parse_display_selection([values[0]], 1, display, False, True)
@@ -626,9 +657,9 @@ def parse_scanner_input(raw: str, response: Response, env: AVGEEnvironment) -> D
         )
 
         if(is_selection_query):
-            display = query_data.get("display", [])
-            allow_none = bool(query_data.get("allow_none", False))
-            allow_repeats = bool(query_data.get("allow_repeats", False))
+            display = query_data.get(DISPLAY_FLAG, [])
+            allow_none = bool(query_data.get(ALLOW_NONE, False))
+            allow_repeats = bool(query_data.get(ALLOW_REPEAT, False))
 
             values = _split_values(raw)
             if(len(values) != expected):
@@ -738,7 +769,44 @@ def _print_scanner_help() -> None:
     print("    - ryan_lee_atk1: <display_index> <integer>")
     print("    - dress_rehearsal_roster_energy_remove: same as SELECTION indices")
     print("  ext_*_order: order 2,0,1")
+    print("  global: active <card_id> (queue ACTIVATE_ABILITY with priority 0)")
     print("  safe exit: type 'quit' or 'exit' in any scanner prompt, or close the window")
+
+
+def _handle_global_scanner_command(raw: str, env: AVGEEnvironment) -> bool:
+    tokens = _split_values(raw)
+    if(len(tokens) != 2 or tokens[0].lower() != "active"):
+        return False
+
+    card = _safe_get_card(env, tokens[1])
+    if(not isinstance(card, AVGECharacterCard)):
+        print(f"active command requires a character card id. Got: {tokens[1]}")
+        return True
+
+    p: PacketType = [
+        PlayCharacterCard(
+            card,
+            ActionTypes.ACTIVATE_ABILITY,
+            ActionTypes.ENV,
+            card,
+        )
+    ]
+    packet = AVGEPacket(p, AVGEEngineID(None, ActionTypes.ENV, None))
+
+    event_running = env._engine.event_running
+    if(isinstance(event_running, (Phase2, AtkPhase))):
+        env._engine.external_interrupt(packet)
+        print(
+            f"Queued active ability request for {card.unique_id} via external_interrupt "
+            "(event_running is Phase2/AtkPhase)."
+        )
+    else:
+        env.propose(packet, priority=0)
+        print(
+            f"Queued active ability request for {card.unique_id} with priority 0 "
+            "(normal propose path)."
+        )
+    return True
 
 
 def _truncate_repr(value: Any, max_len: int = 180) -> str:
@@ -748,13 +816,195 @@ def _truncate_repr(value: Any, max_len: int = 180) -> str:
     return text[: max_len - 3] + "..."
 
 
+def _wait_for_scanner_enter(root: tk.Tk, stop_event: threading.Event) -> None:
+    wait_flag = threading.Event()
+    dialog_state: dict[str, tk.Toplevel | None] = {"dialog": None}
+
+    def show_pause_dialog() -> None:
+        if(stop_event.is_set()):
+            wait_flag.set()
+            return
+        try:
+            dialog = tk.Toplevel(root)
+        except tk.TclError:
+            wait_flag.set()
+            return
+
+        dialog_state["dialog"] = dialog
+        dialog.title("Finished")
+        dialog.geometry("420x140+0+360")
+        dialog.minsize(420, 140)
+
+        prompt = tk.Label(
+            dialog,
+            text="FINISHED reached. Press Enter to continue.",
+            justify="left",
+            anchor="w",
+        )
+        prompt.pack(fill="x", padx=10, pady=(12, 8))
+
+        entry = tk.Entry(dialog)
+        entry.pack(fill="x", padx=10, pady=(0, 10))
+        entry.focus_set()
+
+        def continue_run(_event=None) -> None:
+            wait_flag.set()
+            try:
+                dialog.destroy()
+            except Exception:
+                pass
+
+        continue_btn = tk.Button(dialog, text="Continue", command=continue_run)
+        continue_btn.pack(padx=10, pady=(0, 10), anchor="e")
+
+        entry.bind("<Return>", continue_run)
+        dialog.protocol("WM_DELETE_WINDOW", continue_run)
+
+    root.after(0, show_pause_dialog)
+    while(not wait_flag.wait(timeout=0.1)):
+        if(stop_event.is_set()):
+            maybe_dialog = dialog_state["dialog"]
+            if(maybe_dialog is not None):
+                try:
+                    maybe_dialog.destroy()
+                except Exception:
+                    pass
+            return
+
+
+def _actuate_inspector_events(env: AVGEEnvironment, event_count : int) -> str:
+    """Advance the engine immediately after inspector mutations are queued."""
+    steps = 0
+    while(steps < 300):
+        resp = env.forward()
+        steps += 1
+        if(resp.response_type == ResponseType.NO_MORE_EVENTS):
+            return f"Actuated immediately in {steps} step(s)."
+        if(resp.response_type == ResponseType.GAME_END):
+            return f"Actuation reached GAME_END in {steps} step(s)."
+        if(resp.response_type in [ResponseType.REQUIRES_QUERY]):
+            return f"Actuation paused at {resp.response_type} after {steps} step(s)."
+        if(resp.response_type == ResponseType.NEXT_EVENT):
+            print("NEXT EVENT: ", type(env._engine.event_running).__name__)
+    return f"Actuation stopped after 300 steps (safety limit)."
+
+
+def _resolve_mv_cardholder(env: AVGEEnvironment, holder_ref: str, default_player: AVGEPlayer | None):
+    """Resolve cardholder refs like deck, p1:deck, player2.hand, or stadium."""
+    ref = holder_ref.strip().lower()
+    if(ref == "stadium"):
+        if(hasattr(env, "stadium_cardholder")):
+            return env.stadium_cardholder, None
+        return None, "Stadium cardholder is unavailable in this environment."
+
+    scoped_player: AVGEPlayer | None = None
+    pile_token = ref
+
+    for delimiter in [":", "."]:
+        if(delimiter in ref):
+            scope, pile_part = ref.split(delimiter, 1)
+            scope = scope.strip()
+            pile_token = pile_part.strip()
+            if(scope in ["p1", "player1", "1"]):
+                scoped_player = env.players.get(PlayerID.P1)
+            elif(scope in ["p2", "player2", "2"]):
+                scoped_player = env.players.get(PlayerID.P2)
+            else:
+                return None, f"Unknown player scope '{scope}' in holder '{holder_ref}'."
+            break
+
+    try:
+        pile = Pile(pile_token)
+    except Exception:
+        return None, f"Unknown holder '{holder_ref}'. Expected a pile like deck/hand/active/bench/discard/tool/stadium."
+
+    candidate_players: list[AVGEPlayer] = []
+    if(scoped_player is not None):
+        candidate_players = [scoped_player]
+    elif(default_player is not None):
+        candidate_players = [default_player]
+    else:
+        candidate_players = list(env.players.values())
+
+    matches = [
+        p.cardholders[pile]
+        for p in candidate_players
+        if hasattr(p, "cardholders") and pile in p.cardholders
+    ]
+
+    if(len(matches) == 1):
+        return matches[0], None
+    if(len(matches) > 1 and scoped_player is None and default_player is None):
+        return None, (
+            f"Holder '{holder_ref}' is ambiguous across players. "
+            "Use p1:<pile> or p2:<pile> (for example p1:hand)."
+        )
+    return None, f"Holder '{holder_ref}' is not available for the selected player."
+
+
 def _inspect_card_with_dir(env: AVGEEnvironment, raw_command: str) -> str:
+
     command = (raw_command or "").strip()
     if(command == ""):
         return "No command provided. Use 'help' for available commands."
 
     tokens = command.split()
     first = tokens[0].lower()
+
+    if(first == "mv"):
+        # Usage: mv <card_id> <to_holder>
+        if(len(tokens) != 3):
+            return "Usage: mv <card_id> <to_holder>"
+
+        card = env.cards.get(tokens[1])
+        if(card is None):
+            return f"Card not found: {tokens[1]}"
+
+        to_key = tokens[2]
+
+        default_player = getattr(getattr(card, "cardholder", None), "player", None)
+        if(default_player is None and hasattr(card, "player")):
+            default_player = card.player
+
+        from_holder = getattr(card, "cardholder", None)
+        if(from_holder is None):
+            return f"Card {card.unique_id} is not currently in a cardholder."
+
+        to_holder, to_err = _resolve_mv_cardholder(env, to_key, default_player)
+        if(to_holder is None):
+            assert to_err is not None
+            return f"To cardholder not found: {to_err}"
+
+        if(card not in from_holder):
+            return f"Card {card.unique_id} could not be found in its current source holder."
+
+        from_pile = getattr(from_holder, "pile_type", None)
+        from_player = getattr(from_holder, "player", None)
+        from_player_id = getattr(from_player, "unique_id", None)
+        if(from_player_id is not None and from_pile is not None):
+            from_label = f"{from_player_id}:{from_pile}"
+        elif(from_pile is not None):
+            from_label = str(from_pile)
+        else:
+            from_label = "unknown"
+
+        # Build and queue the transfer event
+        events: PacketType = []
+        events.append(
+            TransferCard(
+                card,
+                from_holder,
+                to_holder,
+                ActionTypes.ENV,
+                None
+            )
+        )
+        env._engine.external_interrupt(AVGEPacket(events, AVGEEngineID(None, ActionTypes.ENV, None)))
+        actuation = _actuate_inspector_events(env, 1)
+        return (
+            f"Queued transfer of {card.unique_id} from {from_label} to {to_key}.\n"
+            + actuation
+        )
 
     if(first in ["help", "?"]):
         return (
@@ -769,8 +1019,100 @@ def _inspect_card_with_dir(env: AVGEEnvironment, raw_command: str) -> str:
             "    - include __dunder__ names in the dir() output\n"
             "  clear / cls\n"
             "    - clear the inspector output window\n"
+            "  refresh / redraw\n"
+            "    - force immediate scanner screen update\n"
+            "  set_energy <card_id> <amount>\n"
+            "    - queue ENV energy transfers to set card energy toward amount\n"
+            "  sethp <card_id> <level>\n"
+            "    - queue ENV HP set-state event to set card HP to level\n"
+            "  mv <card_id> <to_holder>\n"
+            "    - move card from its current holder to to_holder; supports p1:<pile>/p2:<pile> scoping\n"
             "  help"
         )
+
+    if(first == "set_energy"):
+        if(len(tokens) != 3):
+            return "Usage: set_energy <card_id> <amount>"
+
+        card = env.cards.get(tokens[1])
+        if(not isinstance(card, AVGECharacterCard)):
+            return f"set_energy requires a character card id. Got: {tokens[1]}"
+
+        try:
+            target_amount = int(tokens[2])
+        except ValueError:
+            return "Amount must be an integer."
+
+        if(target_amount < 0):
+            return "Amount must be >= 0."
+
+        current_amount = len(card.energy)
+        delta = target_amount - current_amount
+        if(delta == 0):
+            return f"No change needed: {card.unique_id} already has {current_amount} energy."
+
+        events: PacketType = []
+        if(delta > 0):
+            movable = min(delta, len(card.player.energy))
+            tokens_to_move = list(card.player.energy)[:movable]
+            for token in tokens_to_move:
+                events.append(AVGEEnergyTransfer(token, card.player, card, ActionTypes.ENV, None))
+            if(len(events) == 0):
+                return (
+                    f"Queued nothing: player has no energy to move. "
+                    f"{card.unique_id} remains at {current_amount}."
+                )
+            env._engine.external_interrupt(AVGEPacket(events, AVGEEngineID(None, ActionTypes.ENV, None)))
+            actuation = _actuate_inspector_events(env, len(tokens_to_move))
+            return (
+                f"Queued {tokens_to_move} transfer(s) from player to {card.unique_id}. "
+                f"Target={target_amount}, current={current_amount}.\n"
+                + actuation
+            )
+
+        movable = min(-delta, len(card.energy))
+        tokens_to_move = list(card.energy)[:movable]
+        for token in tokens_to_move:
+            events.append(AVGEEnergyTransfer(token, card, card.player, ActionTypes.ENV, None))
+        if(len(events) == 0):
+            return f"Queued nothing: {card.unique_id} has no energy to move."
+        env._engine.external_interrupt(AVGEPacket(events, AVGEEngineID(None, ActionTypes.ENV, None)))
+        actuation = _actuate_inspector_events(env, len(tokens_to_move))
+        return (
+            f"Queued {tokens_to_move} transfer(s) from {card.unique_id} to player. "
+            f"Target={target_amount}, current={current_amount}.\n"
+            + actuation
+        )
+
+    if(first == "sethp"):
+        if(len(tokens) != 3):
+            return "Usage: sethp <card_id> <level>"
+
+        card = env.cards.get(tokens[1])
+        if(not isinstance(card, AVGECharacterCard)):
+            return f"sethp requires a character card id. Got: {tokens[1]}"
+
+        try:
+            hp_level = int(tokens[2])
+        except ValueError:
+            return "Level must be an integer."
+
+        if(hp_level < 0):
+            return "Level must be >= 0."
+        p : PacketType = [
+            AVGECardHPChange(
+                card,
+                hp_level,
+                AVGEAttributeModifier.SET_STATE,
+                CardType.ALL,
+                ActionTypes.ENV,
+                None,
+            )
+        ]
+        packet = AVGEPacket(p, AVGEEngineID(None, ActionTypes.ENV, None))
+        env._engine.external_interrupt(packet)
+        actuation = _actuate_inspector_events(env, 1)
+        return f"Queued HP set for {card.unique_id} to {hp_level}.\n{actuation}"
 
     include_dunder = False
     card_id: str | None = None
@@ -819,7 +1161,7 @@ def _inspect_card_with_dir(env: AVGEEnvironment, raw_command: str) -> str:
 def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
     root = tk.Tk()
     root.title("AVGE Scanner")
-    root.geometry("1280x760+80+80")
+    root.geometry("1280x760+240+80")
     stop_event = threading.Event()
 
     # Force visibility on macOS/desktop managers that may start the window behind other apps.
@@ -843,30 +1185,51 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
     root.bind("<Escape>", lambda _event: request_shutdown())
     root.bind("<Command-q>", lambda _event: request_shutdown())
 
-    label = tk.Label(root, text="Loading scanner environment...", font=("Arial", 11), justify="left", anchor="w")
-    label.pack(padx=12, pady=12)
+    display_frame = tk.Frame(root)
+    display_frame.pack(fill="both", expand=True, padx=12, pady=12)
+
+    yscroll = tk.Scrollbar(display_frame, orient="vertical")
+    yscroll.pack(side="right", fill="y")
+
+    xscroll = tk.Scrollbar(display_frame, orient="horizontal")
+    xscroll.pack(side="bottom", fill="x")
+
+    label = tk.Text(
+        display_frame,
+        wrap="none",
+        font=("Menlo", 13),
+        yscrollcommand=yscroll.set,
+        xscrollcommand=xscroll.set,
+    )
+    label.pack(side="left", fill="both", expand=True)
+    yscroll.config(command=label.yview)
+    xscroll.config(command=label.xview)
+    label.insert("1.0", "Loading scanner environment...")
+    label.config(state="disabled")
     root.update_idletasks()
 
     print("Scanner UI launched. If window is not visible, check Mission Control/Spaces for 'AVGE Scanner'.")
     env_state: dict[str, AVGEEnvironment | None] = {"env": None}
+    scanner_settings: dict[str, bool] = {"pause_on_finished": False}
 
     inspector = tk.Toplevel(root)
     inspector.title("AVGE Card Inspector")
-    inspector.geometry("760x560+1400+80")
+    inspector.geometry("520x300+0+0")
+    inspector.minsize(520, 300)
 
     inspector_header = tk.Label(
         inspector,
-        text="Enter a command (help, <card_id>, dir <card_id>, inspect <card_id>, all <card_id>, clear):",
+        text="Enter a command (help, <card_id>, dir <card_id>, inspect <card_id>, all <card_id>, clear, refresh, set_energy, sethp, finished_pause):",
         justify="left",
         anchor="w",
     )
     inspector_header.pack(fill="x", padx=10, pady=(10, 6))
 
-    inspector_output = tk.Text(inspector, wrap="word", height=24)
+    inspector_output = tk.Text(inspector, wrap="word", height=10)
     inspector_output.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
     inspector_entry_frame = tk.Frame(inspector)
-    inspector_entry_frame.pack(fill="x", padx=10, pady=(0, 10))
+    inspector_entry_frame.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
 
     inspector_entry = tk.Entry(inspector_entry_frame)
     inspector_entry.pack(side="left", fill="x", expand=True)
@@ -882,6 +1245,36 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
             inspector_entry.delete(0, "end")
             return
 
+        if(raw_command.lower() in ["refresh", "redraw"]):
+            if(isinstance(env, AVGEEnvironment)):
+                update_label(label, _build_ui_text(env))
+                inspector_output.insert("end", ">>> refresh\nForced scanner screen refresh.\n\n")
+            else:
+                inspector_output.insert("end", ">>> refresh\nEnvironment not ready yet.\n\n")
+            inspector_output.see("end")
+            inspector_entry.delete(0, "end")
+            return
+
+        lowered = raw_command.lower()
+        if(lowered.startswith("finished_pause")):
+            parts = lowered.split()
+            if(len(parts) == 1):
+                current = "on" if scanner_settings["pause_on_finished"] else "off"
+                inspector_output.insert("end", f"FINISHED pause is currently: {current}\n\n")
+                inspector_output.see("end")
+                inspector_entry.delete(0, "end")
+                return
+            if(len(parts) == 2 and parts[1] in ["on", "off"]):
+                scanner_settings["pause_on_finished"] = (parts[1] == "on")
+                inspector_output.insert("end", f"FINISHED pause set to: {parts[1]}\n\n")
+                inspector_output.see("end")
+                inspector_entry.delete(0, "end")
+                return
+            inspector_output.insert("end", "Usage: finished_pause <on|off>\n\n")
+            inspector_output.see("end")
+            inspector_entry.delete(0, "end")
+            return
+
         inspector_output.insert("end", f">>> {raw_command}\n")
         if(not isinstance(env, AVGEEnvironment)):
             inspector_output.insert("end", "Environment not ready yet.\n\n")
@@ -892,6 +1285,7 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
         inspector_output.insert("end", report + "\n\n")
         inspector_output.see("end")
         inspector_entry.delete(0, "end")
+        update_label(label, _build_ui_text(env))
 
     inspector_run_button = tk.Button(inspector_entry_frame, text="Run", command=run_inspector_command)
     inspector_run_button.pack(side="left", padx=(8, 0))
@@ -904,6 +1298,11 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
         "  inspect <card_id>          same as <card_id>\n"
         "  all <card_id>              include __dunder__ names\n"
         "  clear / cls                clear this output\n"
+        "  refresh / redraw           force scanner screen refresh\n"
+        "  set_energy <id> <amount>   queue ENV energy transfers (priority 10)\n"
+        "  sethp <id> <level>         queue ENV HP set-state event (priority 10)\n"
+        "  finished_pause <on|off>    toggle Enter pause after FINISHED (default off)\n"
+        "  finished_pause             show current toggle setting\n"
         "  help\n\n",
     )
 
@@ -920,7 +1319,13 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                 return
             message = resp.data.get(MESSAGE_KEY)
             if(message is None):
-                return
+                message = cast(list[AVGECard], resp.data.get(REVEAL_KEY))
+                if(message is None):
+                    return
+                new_line = ""
+                for card in message:
+                    new_line += "|" + str(card.unique_id) + "|"
+                message = new_line
 
             wait_flag = threading.Event()
 
@@ -965,15 +1370,16 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                     dialog = tk.Toplevel(root)
                     query_dialog_state["dialog"] = dialog
                     dialog.title("Scan Query Input")
-                    dialog.geometry("760x320+220+160")
+                    dialog.geometry("480x220+0+360")
+                    dialog.minsize(480, 220)
 
-                    prompt_box = tk.Text(dialog, height=12, wrap="word")
+                    prompt_box = tk.Text(dialog, height=7, wrap="word")
                     prompt_box.pack(fill="both", expand=True, padx=10, pady=(10, 6))
                     prompt_box.insert("1.0", prompt)
                     prompt_box.config(state="disabled")
 
                     entry_frame = tk.Frame(dialog)
-                    entry_frame.pack(fill="x", padx=10, pady=(0, 10))
+                    entry_frame.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
 
                     entry = tk.Entry(entry_frame)
                     entry.pack(side="left", fill="x", expand=True)
@@ -1019,6 +1425,12 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                     root.after(0, request_shutdown)
                     return
 
+                if(_handle_global_scanner_command(raw_value, env)):
+                    resp = env.forward()
+                    show_message_popup_if_present(resp)
+                    _log_scanner_response(resp)
+                    continue
+
                 parsed = parse_scanner_input(raw_value, resp, env)
                 if(parsed is None):
                     parse_error = "Could not parse input for this query"
@@ -1033,6 +1445,11 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                     if(raw_value.lower() in ["quit", "exit"]):
                         root.after(0, request_shutdown)
                         return
+                    if(_handle_global_scanner_command(raw_value, env)):
+                        resp = env.forward()
+                        show_message_popup_if_present(resp)
+                        _log_scanner_response(resp)
+                        continue
                     parsed = parse_scanner_input(raw_value, resp, env)
                     if(parsed is None):
                         continue
@@ -1042,21 +1459,30 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
                 show_message_popup_if_present(resp)
                 _log_scanner_response(resp)
             if(resp.response_type == ResponseType.NEXT_EVENT):
+                print("--------------------------------------------------")
                 print(f"NEW EVENT: {type(resp.source).__name__}")
+                if(scanner_settings["pause_on_finished"]):
+                    root.after(0, update_label, label, _build_ui_text(env))
+                    _wait_for_scanner_enter(root, stop_event)
             elif(resp.response_type == ResponseType.NEXT_PACKET):
                 packet = env._engine.peek_n(1)[0]
                 assert isinstance(packet, AVGEPacket)
-                
-                print(f"NEW PACKET FROM {packet.identifier.header_class.__name__ if packet.identifier.header_class is not None else "ENVIRONMENT"}")
+                print("--------------------------------------------------")
+                print(f"NEW PACKET OF LEN {len(packet)} FROM {packet.identifier.header_class.__name__ if packet.identifier.header_class is not None else "ENVIRONMENT"}")
+                print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.GAME_END):
-                print("GAME END")
+                print("--------------------------------------------------")
+                print("GAME END, WINNER: ", env.winner.unique_id if env.winner is not None else "????")
                 break
             elif(resp.response_type == ResponseType.SKIP):
                 print(f"SKIP: {_filtered_response_data(resp.data)}")
+                print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.FINISHED):
                 print("Event finished.")
+                print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.FINISHED_PACKET):
                 print("Packet finished.")
+                print("--------------------------------------------------")
             elif(resp.response_type == ResponseType.NO_MORE_EVENTS):
                 print("No more events!")
                 if(env.game_phase == GamePhase.ATK_PHASE):

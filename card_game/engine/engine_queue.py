@@ -28,7 +28,9 @@ class EngineQueue(Generic[T]):
             self.buffered_queue.append((priority, item))
         else:
             return
-
+    def insert(self, item : T, priority : int = 0):
+        _heap.heappush(self.main_queue, (-priority, self.event_counter, item))
+        self.event_counter += 1
     def queue_len(self):
         return len(self.main_queue)    
     

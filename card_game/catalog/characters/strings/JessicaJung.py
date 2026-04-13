@@ -30,7 +30,7 @@ class JessicaJung(AVGECharacterCard):
         card.env.cache.set(card, JessicaJung._ACTIVE_USED_KEY, card.env.round_id)
         discard = card.player.cardholders[Pile.DISCARD]
         supporter_cards = [c for c in list(discard) if isinstance(c, AVGESupporterCard)]
-        flip = card.env.cache.get(card, JessicaJung._COIN_KEY, None, True)
+        flip = card.env.cache.get(card, JessicaJung._COIN_KEY, None)
         if flip is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -43,7 +43,7 @@ class JessicaJung(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
-                            {"query_label": "jessica_jung_active"},
+                            {LABEL_FLAG: "jessica_jung_active"},
                         )
                     ]
                 },
@@ -66,10 +66,10 @@ class JessicaJung(AVGECharacterCard):
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
                             {
-                                "query_label": "jessica_jung_supporter",
-                                "targets": supporter_cards,
-                                "display": list(discard),
-                                "allow_none": True
+                                LABEL_FLAG: "jessica_jung_supporter",
+                                TARGETS_FLAG: supporter_cards,
+                                DISPLAY_FLAG: list(discard),
+                                ALLOW_NONE: True
                             },
                         )
                     ]
@@ -90,7 +90,7 @@ class JessicaJung(AVGECharacterCard):
                     randint(0, len(deck)),
                 )
             ]
-
+        card.env.cache.delete(card, JessicaJung._COIN_KEY)
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JessicaJung)))
         return card.generate_response()
 

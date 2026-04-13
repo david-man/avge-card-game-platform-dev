@@ -16,7 +16,7 @@ class BettySolomon(AVGECharacterCard):
 
     @staticmethod
     def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+        from card_game.internal_events import InputEvent, TransferCard, EmptyEvent
 
         player = card.player
         deck = player.cardholders[Pile.DECK]
@@ -38,9 +38,9 @@ class BettySolomon(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "betty_solomon_outreach",
-                                "targets": character_cards,
-                                "display":list(deck)
+                                LABEL_FLAG: "betty_solomon_outreach",
+                                TARGETS_FLAG: character_cards,
+                                DISPLAY_FLAG:list(deck)
                             },
                         )
                     ]

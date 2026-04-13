@@ -85,16 +85,16 @@ class RachaelYuan(AVGECharacterCard):
                                 ActionTypes.ATK_2,
                                 card,
                                 {
-                                    "query_label": "rachael_yuan_bench_shuffle",
-                                    "targets": list(opponent_bench),
-                                    "display": list(opponent_bench)
+                                    LABEL_FLAG: "rachael_yuan_bench_shuffle",
+                                    TARGETS_FLAG: list(opponent_bench),
+                                    DISPLAY_FLAG: list(opponent_bench)
                                 },
                             )
                         ]
                     },
                 )
             assert chosen_card is not None
-            packet.append(
+            packet.insert(0, 
                 TransferCard(
                     chosen_card,
                     opponent_bench,

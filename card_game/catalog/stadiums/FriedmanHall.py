@@ -52,9 +52,9 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 									lambda res: True, 
 									ActionTypes.ENV, 
 									self.owner_card, 
-									{"query_label": "friedmanhall_turnbegin_pick", 
-		  							"targets": top_two_cards,
-									  "display": top_two_cards})]},
+									{LABEL_FLAG: "friedmanhall_turnbegin_pick", 
+		  							TARGETS_FLAG: top_two_cards,
+									  DISPLAY_FLAG: top_two_cards})]},
 			)
 
 		other = top_two_cards[1] if chosen == top_two_cards[0] else top_two_cards[0]

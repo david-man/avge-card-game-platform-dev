@@ -28,9 +28,9 @@ class StrawberryMatchaLatte(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_type": "strawberry_matcha_latte_query",
-								'targets': card.player.get_cards_in_play(),
-								'display': card.player.get_cards_in_play()
+								LABEL_FLAG: "strawberry_matcha_latte_query",
+								TARGETS_FLAG: card.player.get_cards_in_play(),
+								DISPLAY_FLAG: card.player.get_cards_in_play()
 							},
 						)
 					]

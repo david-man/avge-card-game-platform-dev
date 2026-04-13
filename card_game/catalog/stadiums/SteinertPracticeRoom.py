@@ -89,7 +89,7 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 
 	def play_card(self) -> Response:
 		from card_game.internal_events import InputEvent, PlayCharacterCard, TransferCard
-		player = self.original_owner
+		player = self.player
 		assert player is not None
 		def _resolve_discards_for_player(target_player: AVGEPlayer, base_key: str, resolved_key: str) -> Response:
 
@@ -119,9 +119,9 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 								ActionTypes.NONCHAR,
 								self,
 								{
-									"query_label": "Steinert-practice-room-bench",
-									"targets": list(target_player.cardholders[Pile.BENCH]),
-									"display": list(target_player.cardholders[Pile.BENCH])
+									LABEL_FLAG: "Steinert-practice-room-bench",
+									TARGETS_FLAG: list(target_player.cardholders[Pile.BENCH]),
+									DISPLAY_FLAG: list(target_player.cardholders[Pile.BENCH])
 								},
 							)
 						]

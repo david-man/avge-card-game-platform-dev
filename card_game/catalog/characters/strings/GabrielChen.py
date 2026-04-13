@@ -40,9 +40,9 @@ class GabrielChen(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "gabe_chen_ykwis",
-                                "targets": card.player.opponent.get_cards_in_play(),
-                                "display": card.player.opponent.get_cards_in_play()
+                                LABEL_FLAG: "gabe_chen_ykwis",
+                                TARGETS_FLAG: card.player.opponent.get_cards_in_play(),
+                                DISPLAY_FLAG: card.player.opponent.get_cards_in_play()
                             },
                         )
                     ]
@@ -71,8 +71,8 @@ class GabrielChen(AVGECharacterCard):
     def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
-        r0 = card.env.cache.get(card, GabrielChen._COIN_KEY_0, None, True)
-        r1 = card.env.cache.get(card, GabrielChen._COIN_KEY_1, None, True)
+        r0 = card.env.cache.get(card, GabrielChen._COIN_KEY_0, None)
+        r1 = card.env.cache.get(card, GabrielChen._COIN_KEY_1, None)
         if r0 is None or r1 is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -85,7 +85,7 @@ class GabrielChen(AVGECharacterCard):
                             lambda res: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "gabe_harmonics_2coin"},
+                            {LABEL_FLAG: "gabe_harmonics_2coin"},
                         )
                     ]
                 },
@@ -95,7 +95,7 @@ class GabrielChen(AVGECharacterCard):
         if heads != 2:
             return card.generate_response()
 
-        mode = card.env.cache.get(card, GabrielChen._ATK2_MODE_KEY, None, True)
+        mode = card.env.cache.get(card, GabrielChen._ATK2_MODE_KEY, None)
         if mode is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -108,7 +108,7 @@ class GabrielChen(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "gabe_harmonics_mode_choice"},
+                            {LABEL_FLAG: "gabe_harmonics_mode_choice"},
                         )
                     ]
                 },
@@ -131,9 +131,9 @@ class GabrielChen(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "gabe_harmonics",
-                                "targets": card.player.opponent.get_cards_in_play(),
-                                "display": card.player.opponent.get_cards_in_play()
+                                LABEL_FLAG: "gabe_harmonics",
+                                TARGETS_FLAG: card.player.opponent.get_cards_in_play(),
+                                DISPLAY_FLAG: card.player.opponent.get_cards_in_play()
                             },
                         )
                     ]
@@ -154,5 +154,8 @@ class GabrielChen(AVGECharacterCard):
                     card,
                 )
             )
+        card.env.cache.delete(card, GabrielChen._ATK2_MODE_KEY)
+        card.env.cache.delete(card, GabrielChen._COIN_KEY_0)
+        card.env.cache.delete(card, GabrielChen._COIN_KEY_1)
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, GabrielChen)))
         return card.generate_response()

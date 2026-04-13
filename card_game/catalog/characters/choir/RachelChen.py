@@ -54,10 +54,10 @@ class RachelChen(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
-                            {"query_label": "rachel_chen_retrieve_item", 
-                             "targets": candidates,
-                             "display": list(discard),
-                             "allow_none": True},
+                            {LABEL_FLAG: "rachel_chen_retrieve_item", 
+                             TARGETS_FLAG: candidates,
+                             DISPLAY_FLAG: list(discard),
+                             ALLOW_NONE: True},
                         )
                     ]
                 },
@@ -106,10 +106,10 @@ class RachelChen(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "rachel_chen_atk1_targets",
-                            "targets": opponent.get_cards_in_play(),
-                            "display": opponent.get_cards_in_play(),
-                            "allow_repeats": True},
+                            {LABEL_FLAG: "rachel_chen_atk1_targets",
+                            TARGETS_FLAG: opponent.get_cards_in_play(),
+                            DISPLAY_FLAG: opponent.get_cards_in_play(),
+                            ALLOW_REPEAT: True},
                         )
                     ]
                 },

@@ -60,7 +60,7 @@ class RyanLi(AVGECharacterCard):
         from card_game.internal_events import AVGECardHPChange
 
         last_round = card.env.cache.get(card, RyanLi._LAST_ATK1_ROUND_KEY, None, True)
-        if last_round is not None and last_round > card.env.round_id - 2:
+        if last_round is not None and last_round >= card.player.get_last_turn():
             def generate_packet() -> PacketType:
                 active = card.player.opponent.get_active_card()
                 if not isinstance(active, AVGECharacterCard):

@@ -45,9 +45,9 @@ class EugeniaAmpofo(AVGECharacterCard):
                             ActionTypes.ACTIVATE_ABILITY,
                             card,
                             {
-                                "query_label": "eugenia_ampofo_active_ability",
-                                "targets": list(bench_chars),
-                                "display": list(bench_chars)
+                                LABEL_FLAG: "eugenia_ampofo_active_ability",
+                                TARGETS_FLAG: list(bench_chars),
+                                DISPLAY_FLAG: list(bench_chars)
                             },
                         )
                     ]
@@ -115,10 +115,10 @@ class EugeniaAmpofo(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "eugenia_ampofo_benched_percussion_swap",
-                                "targets": perc_candidates,
-                                "display": list(bench_holder),
-                                "allow_none": True,
+                                LABEL_FLAG: "eugenia_ampofo_benched_percussion_swap",
+                                TARGETS_FLAG: perc_candidates,
+                                DISPLAY_FLAG: list(bench_holder),
+                                ALLOW_NONE: True,
                             },
                         )
                     ]

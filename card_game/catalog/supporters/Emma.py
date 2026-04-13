@@ -85,9 +85,9 @@ class Emma(AVGESupporterCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "emma_opponent_bench_switch",
-								"targets": list(opponent_bench),
-								"display": list(opponent_bench)
+								LABEL_FLAG: "emma_opponent_bench_switch",
+								TARGETS_FLAG: list(opponent_bench),
+								DISPLAY_FLAG: list(opponent_bench)
 							},
 						)])
 		locked_character = selected_bench

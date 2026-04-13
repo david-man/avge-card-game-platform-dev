@@ -43,7 +43,7 @@ class _RossPassiveAssessor(AVGEAssessor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             self.owner_card,
-                            {"query_label": "ross_use_atk1"},
+                            {LABEL_FLAG: "ross_use_atk1"},
                         )
                     ]
                 },
@@ -123,9 +123,9 @@ class RossWilliams(AVGECharacterCard):
                                 ActionTypes.ATK_1,
                                 card,
                                 {
-                                    "query_label": "ross_atk1_target",
-                                    "targets": targets,
-                                    "display": targets
+                                    LABEL_FLAG: "ross_atk1_target",
+                                    TARGETS_FLAG: targets,
+                                    DISPLAY_FLAG: targets
                                 },
                             )
                         ]

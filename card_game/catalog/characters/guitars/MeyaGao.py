@@ -116,8 +116,8 @@ class _MeyaDamageReactor(AVGEReactor):
 class MeyaGao(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 120, CardType.GUITAR, 2, 2, 0)
-        self.has_atk_1 = False
-        self.has_atk_2 = True
+        self.has_atk_1 = True
+        self.has_atk_2 = False
         self.has_passive = True
         self.has_active = False
 
@@ -127,7 +127,7 @@ class MeyaGao(AVGECharacterCard):
         return card.generate_response()
 
     @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
+    def atk_1(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         def gen() -> PacketType:
             return [
@@ -136,12 +136,12 @@ class MeyaGao(AVGECharacterCard):
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
-                    ActionTypes.ATK_2,
+                    ActionTypes.ATK_1,
                     card,
                 )
             ]
         card.propose(
-            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, MeyaGao))
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, MeyaGao))
         )
         card.add_listener(_MeyaGuitarBoost(card, card.player.get_next_turn()))
 

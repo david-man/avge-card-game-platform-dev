@@ -71,8 +71,8 @@ class DanielYang(AVGECharacterCard):
         piano_count = sum(1 for c in bench if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PIANO)
 
         def generate_packet():
-            packet = []
-            packet.append([
+            packet : PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
@@ -81,7 +81,7 @@ class DanielYang(AVGECharacterCard):
                     ActionTypes.ATK_1,
                     card,
                 )
-            ])
+            )
             if piano_count >= 3:
                 for b in card.player.opponent.cardholders[Pile.BENCH]:
                     packet.append(

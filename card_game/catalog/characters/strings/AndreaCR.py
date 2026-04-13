@@ -40,9 +40,9 @@ class AndreaCR(AVGECharacterCard):
                             ActionTypes.ATK_1,
                             card,
                             {
-                                "query_label": "andrea_c_r_atk1_reorder",
-                                "target": top_cards,
-                                "display": top_cards
+                                LABEL_FLAG: "andrea_c_r_atk1_reorder",
+                                TARGETS_FLAG: top_cards,
+                                DISPLAY_FLAG: top_cards
                             },
                         )
                     ]
@@ -64,6 +64,9 @@ class AndreaCR(AVGECharacterCard):
 
         opponent = card.player.opponent
         chosen_target = card.env.cache.get(card, AndreaCR._ENERGY_REMOVAL_KEY, None, True)
+        targets = [card for card in opponent.get_cards_in_play() if isinstance(card, AVGECharacterCard) and len(card.energy) > 0]
+        if(len(targets) == 0):
+            return card.generate_response(data={MESSAGE_KEY: "No cards to discard energy from!"})
         if chosen_target is None:
             return card.generate_response(
                 ResponseType.INTERRUPT,
@@ -77,9 +80,9 @@ class AndreaCR(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             {
-                                "query_label": "andrea_c_r_snap_pizz",
-                                "targets": opponent.get_cards_in_play(),
-                                "display": opponent.get_cards_in_play()
+                                LABEL_FLAG: "andrea_c_r_snap_pizz",
+                                TARGETS_FLAG: targets,
+                                DISPLAY_FLAG: opponent.get_cards_in_play()
                             },
                         )
                     ]
@@ -97,16 +100,11 @@ class AndreaCR(AVGECharacterCard):
                 )
             ]
         assert isinstance(chosen_target, AVGECharacterCard) 
-        def discard_energy() -> PacketType:
-            if(len(chosen_target.energy) > 0):
-                return [
-                    AVGEEnergyTransfer(
-                        chosen_target.energy[0], 
-                        chosen_target, 
-                        chosen_target.player, 
-                        ActionTypes.ATK_2, 
-                        card)]
-            return []
-        packet : PacketType = [gen, discard_energy, discard_energy]
+        def gen1() -> PacketType:
+            k : PacketType = []
+            for token in list(chosen_target.energy)[:2]:
+                k.append(AVGEEnergyTransfer(token, chosen_target, chosen_target.env, ActionTypes.ATK_2, card))
+            return k
+        packet : PacketType = [gen, gen1]
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, AndreaCR)))
         return card.generate_response()

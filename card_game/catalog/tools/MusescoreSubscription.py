@@ -15,16 +15,15 @@ class MusescoreSubscription(AVGEToolCard):
 		super().deactivate_card()
 
 		assert self.card_attached is not None
-		self.propose(
-			AVGEPacket([
+		self.extend([
 				AVGECardStatusChange(
 				StatusEffect.ARRANGER,
-				StatusChangeType.REMOVE,
+				StatusChangeType.ERASE,
 				self.card_attached,
-				ActionTypes.NONCHAR,
+				ActionTypes.ENV,
 				self,
 				)
-			], AVGEEngineID(None, ActionTypes.ENV, None))
+			]
 		)
 
 	def play_card(self) -> Response:

@@ -7,9 +7,8 @@ from enum import StrEnum
 from .envcache import EnvironmentCache
 from .AVGEPlayer import AVGEPlayer
 from .AVGECards import *
-from .AVGEEvent import AVGEPacket
+from .AVGEEvent import AVGEPacket, DeferredAVGEPacket
 from ..engine.engine import Engine
-import random
 if TYPE_CHECKING:
     from .AVGECardholder import AVGECardholder
     from . import PacketType
@@ -24,7 +23,7 @@ class GamePhase(StrEnum):
     ATK_PHASE = 'phase_atk'
     TURN_END = 'end'
 class AVGEEnvironment():
-    def __init__(self, p1_deck_dict : dict[Pile, list[Type[AVGECard]]], p2_deck_dict : dict[Pile, list[Type[AVGECard]]], start_turn : PlayerID, starting_stadium : type[AVGEStadiumCard] | None = None, starting_stadium_player : PlayerID | None = None):
+    def __init__(self, p1_deck_dict : dict[Pile, list[Type[AVGECard]]], p2_deck_dict : dict[Pile, list[Type[AVGECard]]], start_turn : PlayerID, starting_stadium : type[AVGEStadiumCard] | None = None, starting_stadium_player : PlayerID | None = None, start_round : int = 0):
         #in standard initialization, all cards should go to the deck
         self._engine : Engine[AVGEEvent] = Engine()
         from card_game.internal_events import TransferCard
@@ -67,8 +66,6 @@ class AVGEEnvironment():
             p1.cardholders[Pile.DECK].add_card(card)
             if(pile != Pile.DECK):
                 if(pile == Pile.STADIUM):
-                    assert isinstance(card, AVGEStadiumCard)
-                    card.original_owner = self.players[PlayerID.P1]
                     packet.append(TransferCard(card,
                                         p1.cardholders[Pile.DECK],
                                         self.stadium_cardholder,
@@ -90,10 +87,9 @@ class AVGEEnvironment():
             if(isinstance(card, AVGECharacterCard)):
                 found_char = True
             p2.cardholders[Pile.DECK].add_card(card)
+            
             if(pile != Pile.DECK):
                 if(pile == Pile.STADIUM):
-                    assert isinstance(card, AVGEStadiumCard)
-                    card.original_owner = self.players[PlayerID.P2]
                     packet.append(TransferCard(card,
                                         p2.cardholders[Pile.DECK],
                                         self.stadium_cardholder,
@@ -113,7 +109,7 @@ class AVGEEnvironment():
         self.winner : AVGEPlayer | None = None
 
         self.game_phase : GamePhase = GamePhase.INIT 
-        self.round_id = 0
+        self.round_id = start_round
 
         self.cache = EnvironmentCache(list(self.cards.keys()))
         self.energy : list[EnergyToken] = []#where energy goes to die
@@ -130,7 +126,7 @@ class AVGEEnvironment():
             setup_response = self.forward()
             if(setup_response.response_type == ResponseType.NO_MORE_EVENTS):
                 break
-            if(setup_response.response_type in [ResponseType.REQUIRES_QUERY, ResponseType.INTERRUPT]):
+            if(setup_response.response_type in [ResponseType.REQUIRES_QUERY]):
                 raise Exception(f"Unexpected interactive setup response: {setup_response.response_type}")
             if(setup_response.response_type in [ResponseType.SKIP, ResponseType.GAME_END]):
                 raise Exception(f"Environment initialization failed: {setup_response.response_type} {setup_response.data}")
@@ -151,6 +147,9 @@ class AVGEEnvironment():
     def propose(self, p : AVGEPacket, priority : int = 0):
         #opens engine in limited manner to cards and players
         self._engine._propose(p, priority=priority)
+    def extend(self, p : list[AVGEEvent | DeferredAVGEPacket]):
+        #opens engine in limited manner to cards and players
+        self._engine._extend(p)
     def add_listener(self, el : AbstractEventListener):
         """
         If you're thinking of using this, you should have a VERY clear update_status invalidation constraint that you can guarantee will fire eventually. 
@@ -161,6 +160,7 @@ class AVGEEnvironment():
     def add_constrainer(self, constrainer : AVGEConstraint):
         #opens engine in limited manner to cards and players
         self._engine.add_constraint(constrainer)
+    
     def add_player(self, player : AVGEPlayer):
         player.attach_to_env(self)
         self.players[player.unique_id] = player
@@ -171,7 +171,7 @@ class AVGEEnvironment():
             return "None"
         return f"{c.unique_id}<{c.__class__.__name__}>"
 
-    def _format_pile(self, player : AVGEPlayer, pile : Pile, preview_count : int = 3) -> str:
+    def _format_pile(self, player : AVGEPlayer, pile : Pile, preview_count : int = 5) -> str:
         holder = player.cardholders[pile]
         count = len(holder)
         cards = list(holder.cards_by_id.values())

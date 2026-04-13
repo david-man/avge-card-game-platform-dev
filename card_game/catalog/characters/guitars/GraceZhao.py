@@ -20,7 +20,7 @@ class _GraceTurnEndReactor(AVGEReactor):
             return False
         if self.owner_card.player is None or self.owner_card.player.opponent is None:
             return False
-        if event.env.player_turn == self.owner_card.player:
+        if event.env.player_turn == self.owner_card.player.opponent:
             return False
 
         opponent = self.owner_card.player.opponent
@@ -63,9 +63,9 @@ class _GraceTurnEndReactor(AVGEReactor):
                             ActionTypes.PASSIVE,
                             self.owner_card,
                             {
-                                "query_label": "grace_zhao_choice",
-                                "targets": candidates,
-                                "display": opponent.get_cards_in_play()
+                                LABEL_FLAG: "grace_zhao_choice",
+                                TARGETS_FLAG: candidates,
+                                DISPLAY_FLAG: opponent.get_cards_in_play()
                             },
                         )
                     ]

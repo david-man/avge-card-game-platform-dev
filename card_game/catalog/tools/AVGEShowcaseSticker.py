@@ -57,7 +57,7 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 							ActionTypes.NONCHAR,
 							self.owner_card,
 							{
-								"query_label": "sticker-coin-flip"},
+								LABEL_FLAG: "sticker-coin-flip"},
 						)
 					]
 				},
@@ -67,15 +67,17 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 			deck = player.cardholders[Pile.DECK]
 			hand = player.cardholders[Pile.HAND]
 			if(len(deck) > 0):
-				self.propose(
-					AVGEPacket([
-						TransferCard(
+				def gen() -> PacketType:
+					return[ TransferCard(
 							deck.peek(),
 							deck,
 							hand,
 							ActionTypes.NONCHAR,
 							self.owner_card,
-						)
+						)]
+				self.propose(
+					AVGEPacket([
+						gen
 					], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, AVGEShowcaseSticker)), 1
 				)
 

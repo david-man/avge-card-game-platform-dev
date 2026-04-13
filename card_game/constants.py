@@ -12,7 +12,7 @@ type Data = dict[str, Any]
 
 cards_per_deck = 30
 initial_hand_size = 5
-max_bench_size = 5
+max_bench_size = 3
 initial_tokens = 100
 kos_to_win = 3
 
@@ -25,6 +25,11 @@ ACTIVE_FLAG = "ACTIVE_FLAG"#will be set to a character card in args if that card
 INTERRUPT_KEY = "INTERRUPT_KEY"
 REVEAL_KEY = "REVEAL"#key for list of cards that should be "revealed" -- both players can see
 MESSAGE_KEY = "MSG"#key for response data that encodes a simple string message
+LABEL_FLAG = "QUERY_LABEL"
+TARGETS_FLAG = "TARGETS"
+DISPLAY_FLAG = "DISPLAY"
+ALLOW_NONE = "ALLOW_NONE"
+ALLOW_REPEAT = "ALLOW_REPEAT"
 SKIP_KEY = "SKIP_KEY"#if an input event gives this key, the receiver should fast forward itself. all users of input events must deal with this. it is guaranteed that if one value is SKIP_KEY in env_cache, all values are SKIP_KEY
 
 class ResponseType(StrEnum):
@@ -138,8 +143,8 @@ class InputType(StrEnum):
     D6 = "D6"#response should be 1-6
     COIN = "COIN"#tails = 0, heads = 1. response can come in a list
     BINARY = "BINARY"#yes/no question
-    SELECTION = "SELECTION"#selection btwn "targets" array.
-    #should be structured like {'query_label':___, 'allow_repeats': True(default False), 'allow_none': True(default False), 'targets': either a list of targets for all keys or each individual key gets a list}
+    SELECTION = "SELECTION"#selection btwn TARGETS_FLAG array.
+    #should be structured like {QUERY_LABEL:___, 'allow_repeats': True(default False), 'allow_none': True(default False), TARGETS_FLAG: either a list of targets for all keys or each individual key gets a list}
     DETERMINISTIC = "DETERMINISTIC"#one-off character-specific deterministic/non-rng player choices. validation function should take in all results AT ONCE(list of results, with one slot per key)
 type_weaknesses = {
     CardType.STRING: CardType.GUITAR,

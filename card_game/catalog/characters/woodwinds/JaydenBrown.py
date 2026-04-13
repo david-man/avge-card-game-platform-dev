@@ -8,6 +8,7 @@ from card_game.engine.engine_constants import EngineGroup
 class JaydenBrown(AVGECharacterCard):
     _D6_ROLL_KEY = "jayden_d6_roll"
     _CHOICE = "jayden_coin_choice"
+    _LAST_ROUND_PASSIVE = "jayden_last_passive"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3)
@@ -29,12 +30,15 @@ class JaydenBrown(AVGECharacterCard):
 
             def event_match(self, event):
                 from card_game.internal_events import InputEvent
-
+                
                 if not isinstance(event, InputEvent):
                     return False
                 if event.input_type != InputType.COIN:
                     return False
                 if owner_card.cardholder is None or owner_card.cardholder.pile_type != Pile.ACTIVE:
+                    return False
+                last_round_used : int | None = owner_card.env.cache.get(owner_card, JaydenBrown._LAST_ROUND_PASSIVE, None)
+                if last_round_used is not None and last_round_used == owner_card.env.round_id:
                     return False
                 return True
 
@@ -58,12 +62,7 @@ class JaydenBrown(AVGECharacterCard):
                 env = owner_card.env
                 event = self.attached_event
                 assert isinstance(event, InputEvent)
-                cache_key_used = f"jayden_coin_flip_used"
-                last_round_used : int | None = env.cache.get(owner_card, cache_key_used, None)
-                if last_round_used is not None and last_round_used== env.round_id:
-                    return self.generate_response()
-
-                env.cache.set(owner_card, cache_key_used, env.round_id)
+                env.cache.set(owner_card, JaydenBrown._LAST_ROUND_PASSIVE, env.round_id)
                 choice = env.cache.get(owner_card, JaydenBrown._CHOICE, None, True)
                 if choice is None:
                     return self.generate_response(
@@ -77,7 +76,7 @@ class JaydenBrown(AVGECharacterCard):
                                     lambda r: True,
                                     ActionTypes.PASSIVE,
                                     owner_card,
-                                    {"query_label": "jayden_brown_coinflip"},
+                                    {LABEL_FLAG: "jayden_brown_coinflip"},
                                 )
                             ]
                         },
@@ -108,7 +107,7 @@ class JaydenBrown(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "jaydenbrown_d6"},
+                            {LABEL_FLAG: "jaydenbrown_d6"},
                         )
                     ]
                 },

@@ -33,7 +33,7 @@ class KevinYang(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {"query_label": "kevin_yang_d6"},
+                            {LABEL_FLAG: "kevin_yang_d6"},
                         )
                     ]
                 },
@@ -75,7 +75,7 @@ class KevinYang(AVGECharacterCard):
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "kevin_yang_4d6"},
+                            {LABEL_FLAG: "kevin_yang_4d6"},
                         )
                     ]
                 },

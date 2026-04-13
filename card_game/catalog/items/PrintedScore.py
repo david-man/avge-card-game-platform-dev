@@ -40,9 +40,9 @@ class PrintedScore(AVGEItemCard):
 							ActionTypes.NONCHAR,
 							card,
 							{
-								"query_label": "printed_score_discard",
-								"targets": opponent_hand,
-								"display": opponent_hand,
+								LABEL_FLAG: "printed_score_discard",
+								TARGETS_FLAG: list(opponent_hand),
+								DISPLAY_FLAG: list(opponent_hand),
 							},
 						)
 					]

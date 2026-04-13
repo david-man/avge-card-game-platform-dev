@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:  
     from .AVGEPlayer import AVGEPlayer
-    from .AVGEEvent import AVGEEvent, AVGEPacket
+    from .AVGEEvent import AVGEEvent, AVGEPacket, DeferredAVGEPacket
     from .AVGEEnvironment import AVGEEnvironment
     from .AVGECardholder import AVGECardholder
     from .AVGEEventListeners import AVGEAbstractEventListener
@@ -57,6 +57,9 @@ class AVGECard():
     def propose(self, packet : AVGEPacket, priority : int = 0):
         assert self.env is not None
         self.env.propose(packet, priority)
+    def extend(self, packet : list[AVGEEvent | DeferredAVGEPacket]):
+        assert self.env is not None
+        self.env.extend(packet)
 class AVGECharacterCard(AVGECard):
     def __init__(self, 
                  unique_id : str,
@@ -140,6 +143,10 @@ class AVGEToolCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
         self.card_attached : AVGECharacterCard | None = None#the character card this AVGE tool card is attached to. None if not attached
+    def attach_to_cardholder(self, cardholder):
+        from .AVGECardholder import AVGEToolCardholder
+        super().attach_to_cardholder(cardholder)
+        self.card_attached = self.cardholder.parent_card if isinstance(self.cardholder, AVGEToolCardholder) else None
     def play_card(self) -> Response:#type: ignore
         #tools cannot have their abilities appropriated, since they're only meant to be played on attachment
         raise NotImplementedError()
@@ -147,11 +154,13 @@ class AVGEToolCard(AVGECard):
 class AVGEStadiumCard(AVGECard):
     def __init__(self ,unique_id):
         super().__init__(unique_id)
-        self.original_owner : AVGEPlayer = None#type: ignore ,last owner of the card before it became the stadium.
     def attach_to_cardholder(self, cardholder):
+        temp = None
+        if(cardholder.player is None):
+            temp = self.player
         super().attach_to_cardholder(cardholder)
-        if(cardholder.player is not None):
-            self.original_owner = cardholder.player
+        if(temp is not None):
+            self.player = temp
     def play_card(self) -> Response:#type: ignore
         #stadiums cannot have their abilities appropriated, since they're only meant to be played on attachment
         raise NotImplementedError()

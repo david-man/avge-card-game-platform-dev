@@ -69,6 +69,13 @@ class Engine(Generic[EV]):
         #gets the main queue
         return [self.packet_running] + self._queue.peek_n(n - 1)
     
+    def external_interrupt(self, packet : Packet[EV]):
+        if(self.event_running is not None):
+            self.packet_running.insert(0, [self.event_running])
+        #put the requested events in front of the existing packet
+        self._queue.insert(packet, -100000)
+        self.event_running = None
+        self.packet_running = Packet([])
     def _propose(self, new_packet : Packet[EV], priority : int = 0):
         #proposes an addition in the standard fashion
         self._queue.propose(new_packet, priority)
@@ -76,6 +83,10 @@ class Engine(Generic[EV]):
     def _ff(self) -> None:#marks the current event to be FF'd on the next forward call
         if(not self.event_running is None):
             self.event_running._ff()
+
+    def _extend(self, packet : list[EV | Gen]):
+        #extends the current running event with this one
+        self.packet_running.append(packet)
         
     def forward(self, args : Data | None = None) -> Response:
         if(args is None):
@@ -135,8 +146,7 @@ class Engine(Generic[EV]):
             elif(response.response_type == ResponseType.FINISHED or response.response_type == ResponseType.FAST_FORWARD):
                 #if an event finished properly
                 #note: this does NOT necessarily mean the packet is complete. only on packet completion are changes truly committed
-                
-                if(self.packet_running is None or len(self.packet_running) == 0):
+                if(len(self.packet_running) == 0):
                     #if the entire packet is done
                     #actualize ALL proposed events that happened during the packet
                     self._queue.flush_buffer()

@@ -44,9 +44,9 @@ class CocoZeng(AVGECharacterCard):
     def atk_2(card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
-        n = len(card.player.cardholders[Pile.HAND])
+        n = len([c for c in card.player.cardholders[Pile.HAND] if isinstance(c, AVGEItemCard)])
         if n == 0:
-            return card.generate_response(data={MESSAGE_KEY: "Nothing in hand!"})
+            return card.generate_response(data={MESSAGE_KEY: "No items in hand!"})
 
         coin_keys = [CocoZeng._ATK2_COIN_BASE + str(i) for i in range(n)]
         vals = [card.env.cache.get(card, key, None, True) for key in coin_keys]
@@ -62,7 +62,7 @@ class CocoZeng(AVGECharacterCard):
                             lambda res: True,
                             ActionTypes.ATK_2,
                             card,
-                            {"query_label": "cocozeng_inventory_management"},
+                            {LABEL_FLAG: "cocozeng_inventory_management"},
                         )
                     ]
                 },

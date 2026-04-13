@@ -80,9 +80,9 @@ class ChristmasKim(AVGECharacterCard):
                                 ActionTypes.ATK_2,
                                 card,
                                 {
-                                    "query_label": "christmas_kim_reorder_top",
-                                    "targets": nonchars,
-                                    "display": char_cards + nonchars,
+                                    LABEL_FLAG: "christmas_kim_reorder_top",
+                                    TARGETS_FLAG: nonchars,
+                                    DISPLAY_FLAG: char_cards + nonchars,
                                 },
                             )
                         ]
@@ -96,13 +96,14 @@ class ChristmasKim(AVGECharacterCard):
                     new_order.remove(cid)
             chosen_order = [choice for choice in order_choice if choice is not None]
             new_order = [choice.unique_id for choice in chosen_order] + new_order
-            packet.append(EmptyEvent(
-                ActionTypes.ATK_2,
-                card,
-                response_data={
-                    REVEAL_KEY: char_cards
-                }
-            ))
+            if(len(char_cards)>0):
+                packet.append(EmptyEvent(
+                    ActionTypes.ATK_2,
+                    card,
+                    response_data={
+                        REVEAL_KEY: char_cards
+                    }
+                ))
             packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card))
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, ChristmasKim)))
         return card.generate_response()
