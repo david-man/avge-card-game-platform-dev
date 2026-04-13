@@ -18,8 +18,10 @@ from .catalog.items import *
 from .catalog.stadiums import *
 from .catalog.supporters import *
 from .catalog.tools import *
-
-
+STEP_LIMIT = 1000
+MAIN_SCREEN_GEOMETRY = "1280x760+1280+80"
+INSPECTOR_GEOMETRY = "520x300+0+0"
+IO_GEOMETRY = "420x140+0+360"
 _HIDDEN_RESPONSE_KEYS = {
     "num_inputs",
     TARGETS_FLAG,
@@ -28,22 +30,22 @@ _HIDDEN_RESPONSE_KEYS = {
     ALLOW_NONE,
     DISPLAY_FLAG,
 }
-start_round = 1 
+start_round = 1
 p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
     Pile.ACTIVE: [KeiWatanabe],
-    Pile.BENCH: [],
+    Pile.BENCH: [RobertoGonzales],
     Pile.HAND: [Lucas, Bucket, AVGETShirt, Richard, Victoria],
-    Pile.DISCARD: [MainHall, AVGEBirb, Johann, AVGEBirb, IceSkates],
-    Pile.DECK: [MainHall, IceSkates, FionaLi, DavidMan, JennieWang,AVGEBirb,AVGEBirb,LukeXu, Johann, DanielYang, AVGEBirb],
+    Pile.DISCARD: [MainHall, Johann, IceSkates],
+    Pile.DECK: [MainHall, AVGEBirb, IceSkates, FionaLi, DavidMan, JennieWang,LukeXu, Johann, DanielYang, ],
     Pile.STADIUM: [],
 }
 
 p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [KeiWatanabe],
-    Pile.BENCH: [FionaLi, DavidMan],
+    Pile.ACTIVE: [MeyaGao],
+    Pile.BENCH: [DavidMan],
     Pile.HAND: [AVGEBirb, SteinertPracticeRoom,  JennieWang, ConcertTicket, FoldingStand],
     Pile.DISCARD: [VideoCamera, JuliaCiacerelli, MaggieLi],
-    Pile.DECK: [JennieWang, JuliaCiacerelli, MaidOutfit, VideoCamera],
+    Pile.DECK: [],
 }
 
 def _filtered_response_data(data: Data | None) -> Data:
@@ -832,8 +834,7 @@ def _wait_for_scanner_enter(root: tk.Tk, stop_event: threading.Event) -> None:
 
         dialog_state["dialog"] = dialog
         dialog.title("Finished")
-        dialog.geometry("420x140+0+360")
-        dialog.minsize(420, 140)
+        dialog.geometry(IO_GEOMETRY)
 
         prompt = tk.Label(
             dialog,
@@ -875,7 +876,7 @@ def _wait_for_scanner_enter(root: tk.Tk, stop_event: threading.Event) -> None:
 def _actuate_inspector_events(env: AVGEEnvironment, event_count : int) -> str:
     """Advance the engine immediately after inspector mutations are queued."""
     steps = 0
-    while(steps < 300):
+    while(steps < STEP_LIMIT):
         resp = env.forward()
         steps += 1
         if(resp.response_type == ResponseType.NO_MORE_EVENTS):
@@ -1161,7 +1162,7 @@ def _inspect_card_with_dir(env: AVGEEnvironment, raw_command: str) -> str:
 def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
     root = tk.Tk()
     root.title("AVGE Scanner")
-    root.geometry("1280x760+240+80")
+    root.geometry(MAIN_SCREEN_GEOMETRY)
     stop_event = threading.Event()
 
     # Force visibility on macOS/desktop managers that may start the window behind other apps.
@@ -1214,8 +1215,7 @@ def run_scanner_ui(env_builder: Callable[[], AVGEEnvironment]) -> None:
 
     inspector = tk.Toplevel(root)
     inspector.title("AVGE Card Inspector")
-    inspector.geometry("520x300+0+0")
-    inspector.minsize(520, 300)
+    inspector.geometry(INSPECTOR_GEOMETRY)
 
     inspector_header = tk.Label(
         inspector,

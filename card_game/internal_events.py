@@ -668,13 +668,17 @@ class PhasePickCard(AVGEEvent):
                                       hand,
                                       ActionTypes.ENV,
                                       None)])
-            self.propose(AVGEPacket([Phase2(top_card.player,
+            self.propose(AVGEPacket([Phase2(self.player,
                                              ActionTypes.ENV,
                                              None)], AVGEEngineID(None, ActionTypes.ENV, None)))
             return self.generate_core_response()
         else:
-            self.player.env.winner = self.player.opponent
-            return self.generate_core_response(ResponseType.GAME_END, {"winner": self.player.opponent, "reason": "no cards left to draw"})
+            self.propose(AVGEPacket([Phase2(self.player,
+                                             ActionTypes.ENV,
+                                             None)], AVGEEngineID(None, ActionTypes.ENV, None)))
+            return self.generate_core_response(data={MESSAGE_KEY: "no cards left in deck to draw. skipping phase."})
+            # self.player.env.winner = self.player.opponent
+            # return self.generate_core_response(ResponseType.GAME_END, {"winner": self.player.opponent, "reason": "no cards left to draw"})
     def invert_core(self, args : Data | None = None):
         raise Exception("A phase should never be canceled")
     def generate_internal_listeners(self):

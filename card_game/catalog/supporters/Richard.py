@@ -18,10 +18,10 @@ class Richard(AVGESupporterCard):
 		discard = card.player.cardholders[Pile.DISCARD]
 		deck = card.player.cardholders[Pile.DECK]
 
-		randomized_discard = list(discard)
+		randomized_discard = [d for d in list(discard)]
 		random.shuffle(randomized_discard)
 
-		randomized_deck = list(deck)
+		randomized_deck = [d for d in list(deck)]
 		random.shuffle(randomized_deck)
 
 		packet = []

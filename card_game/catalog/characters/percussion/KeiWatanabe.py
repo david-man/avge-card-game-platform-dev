@@ -129,5 +129,6 @@ class KeiWatanabe(AVGECharacterCard):
             for token in list(card.energy):
                 packet.append(AVGEEnergyTransfer(token, card, chosen, ActionTypes.ATK_2, card))
             return packet
-        card.propose(AVGEPacket([PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card), generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
+        card.propose(AVGEPacket([PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card)], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)), -1)
         return card.generate_response()

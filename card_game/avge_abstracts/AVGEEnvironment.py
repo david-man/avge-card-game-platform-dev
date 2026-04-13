@@ -124,6 +124,8 @@ class AVGEEnvironment():
         #force engine to run through all packets until everything is set
         while(True):
             setup_response = self.forward()
+            if(setup_response.response_type == ResponseType.NEXT_EVENT):
+                print(setup_response.source)
             if(setup_response.response_type == ResponseType.NO_MORE_EVENTS):
                 break
             if(setup_response.response_type in [ResponseType.REQUIRES_QUERY]):
