@@ -16,26 +16,39 @@ def _log_with_payload(prefix: str, payload: dict[str, Any]) -> None:
     print(f'{prefix} {formatted_fields}'.rstrip())
 
 
-def log_protocol_recv(ack: int, packet_type: str, body_keys: list[str]) -> None:
+def log_protocol_recv(
+    ack: int,
+    packet_type: str,
+    body_keys: list[str],
+    client_slot: str | None = None,
+) -> None:
     _log_with_payload('[PROTOCOL][RECV]', {
         'ack': ack,
         'packet_type': packet_type,
         'body_keys': body_keys,
+        'client_slot': client_slot,
     })
 
 
-def log_protocol_ack_mismatch(ack: int, expected_seq: int, packet_type: str) -> None:
+def log_protocol_ack_mismatch(
+    ack: int,
+    expected_seq: int,
+    packet_type: str,
+    client_slot: str | None = None,
+) -> None:
     _log_with_payload('[PROTOCOL] ack_mismatch', {
         'ack': ack,
         'expected_seq': expected_seq,
         'packet_type': packet_type,
+        'client_slot': client_slot,
     })
 
 
-def log_protocol_send(packets: list[dict[str, Any]]) -> None:
+def log_protocol_send(packets: list[dict[str, Any]], client_slot: str | None = None) -> None:
     _log_with_payload('[PROTOCOL][SEND]', {
         'count': len(packets),
         'packets': [(packet.get('PacketType'), packet.get('SEQ')) for packet in packets],
+        'client_slot': client_slot,
     })
 
 
@@ -43,11 +56,13 @@ def log_protocol_update(
     has_command: bool,
     has_input_response: bool,
     has_notify_response: bool,
+    client_slot: str | None = None,
 ) -> None:
     _log_with_payload('[PROTOCOL][UPDATE]', {
         'has_command': has_command,
         'has_input_response': has_input_response,
         'has_notify_response': has_notify_response,
+        'client_slot': client_slot,
     })
 
 
@@ -55,11 +70,13 @@ def log_protocol_event(
     event_name: str,
     response_data_keys: list[str],
     context_keys: list[str],
+    client_slot: str | None = None,
 ) -> None:
     _log_with_payload('[PROTOCOL][EVENT]', {
         'event_name': event_name,
         'response_data_keys': response_data_keys,
         'context_keys': context_keys,
+        'client_slot': client_slot,
     })
 
 

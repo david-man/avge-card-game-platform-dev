@@ -64,7 +64,7 @@ start_round = 1
 p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
     Pile.ACTIVE: [KeiWatanabe],
     Pile.BENCH: [RobertoGonzales],
-    Pile.HAND: [RobertoGonzales, Lucas, Bucket, AVGETShirt, Richard, Victoria],
+    Pile.HAND: [RobertoGonzales, DavidMan, BenCherekIII, Lucas, Bucket, AVGETShirt, Richard, Victoria],
     Pile.DISCARD: [MainHall, Johann, IceSkates],
     Pile.DECK: [MainHall, AVGEBirb, IceSkates, FionaLi, DavidMan, JennieWang,LukeXu, Johann, DanielYang, ],
     Pile.STADIUM: [],
@@ -140,6 +140,7 @@ class FrontendGameBridge:
         self._pending_engine_input_args: dict[str, Any] | None = None
         self._pending_frontend_events: list[tuple[str, dict[str, Any]]] = []
         self._last_emitted_input_query_signature: tuple[str, str, str] | None = None
+        self._force_environment_sync_pending = False
         self._bootstrap_phase_cycle()
         self._prime_engine_for_frontend_inputs()
         self._last_emitted_phase_token = self._frontend_phase_token(self.env.game_phase)
@@ -311,17 +312,20 @@ class FrontendGameBridge:
                     return {
                         'commands': self._emit_next_command_if_ready(),
                         'setup_payload': environment_to_setup_payload(self.env),
+                        'force_environment_sync': self._consume_force_environment_sync_flag(),
                     }
 
                 return {
                     'commands': [],
                     'setup_payload': environment_to_setup_payload(self.env),
+                    'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
             if event_name in {'setup_loaded', 'surrender_result', 'surrender_timeout'}:
                 return {
                     'commands': [],
                     'setup_payload': environment_to_setup_payload(self.env),
+                    'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
             # Command-level flow control: do not advance engine while waiting for
@@ -338,6 +342,7 @@ class FrontendGameBridge:
                 return {
                     'commands': [],
                     'setup_payload': environment_to_setup_payload(self.env),
+                    'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
             self._enqueue_frontend_event_work(event_name, payload)
@@ -345,6 +350,7 @@ class FrontendGameBridge:
             return {
                 'commands': self._emit_next_command_if_ready(),
                 'setup_payload': environment_to_setup_payload(self.env),
+                'force_environment_sync': self._consume_force_environment_sync_flag(),
             }
 
     def _bootstrap_phase_cycle(self) -> None:
@@ -597,6 +603,11 @@ class FrontendGameBridge:
 
         return False
 
+    def _consume_force_environment_sync_flag(self) -> bool:
+        should_sync = self._force_environment_sync_pending
+        self._force_environment_sync_pending = False
+        return should_sync
+
     def _commands_from_response(self, response: Response) -> list[str]:
         commands: list[str] = []
         response_data = response.data if isinstance(response.data, dict) else {}
@@ -608,9 +619,13 @@ class FrontendGameBridge:
             return commands
 
         if response.response_type == ResponseType.SKIP:
-            commands.extend(self._sync_environment_commands())
             message = response_data.get(MESSAGE_KEY)
-            commands.extend(self._notify_both(message if isinstance(message, str) and message.strip() else 'EVENT SKIPPED'))
+            skip_message = message if isinstance(message, str) and message.strip() else 'EVENT SKIPPED'
+            if bool(getattr(response.source, 'internal', False)):
+                commands.extend(self._notify_current_turn_player(skip_message))
+            else:
+                commands.extend(self._notify_both(skip_message))
+            self._force_environment_sync_pending = True
             return commands
 
         if response.response_type == ResponseType.FAST_FORWARD:
@@ -719,9 +734,9 @@ class FrontendGameBridge:
             return commands
 
         if isinstance(source, TurnEnd):
-            commands.extend(self._sync_environment_commands())
             next_turn = self._player_id_to_frontend(self.env.player_turn.unique_id)
             commands.extend(self._notify_both(f'TURN SWITCHED: {next_turn.upper()}'))
+            self._force_environment_sync_pending = True
             return commands
 
         if isinstance(source, EmptyEvent):
@@ -1024,10 +1039,15 @@ class FrontendGameBridge:
 
     def _notify_both(self, message: str) -> list[str]:
         msg = self._command_token(message)
-        return [
-            f'notify player-1 {msg}',
-            f'notify player-2 {msg}',
-        ]
+        return [f'notify both {msg}']
+
+    def _notify_current_turn_player(self, message: str) -> list[str]:
+        turn_player = getattr(self.env, 'player_turn', None)
+        turn_player_id = getattr(turn_player, 'unique_id', None)
+        if turn_player_id is None:
+            return self._notify_both(message)
+        token = self._player_id_to_frontend(turn_player_id)
+        return [f'notify {token} {self._command_token(message)}']
 
     def _card_type_command_token(self, card_type: Any) -> str:
         lookup = {
