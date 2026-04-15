@@ -37,6 +37,11 @@ class AVGEEnvironment():
         #adds players
         p1 = AVGEPlayer(PlayerID.P1)
         p2 = AVGEPlayer(PlayerID.P2)
+        energy_total = [EnergyToken(f"energy_{i}") for i in range(initial_tokens * 2)]
+        for token in energy_total[:initial_tokens]:
+            token.attach(p1)
+        for token in energy_total[initial_tokens:]:
+            token.attach(p2)
         p1.opponent = p2
         p2.opponent = p1
         self.add_player(p1)

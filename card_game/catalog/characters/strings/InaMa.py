@@ -21,6 +21,8 @@ class InaMa(AVGECharacterCard):
 
     @staticmethod
     def can_play_active(card: AVGECharacterCard) -> bool:
+        if card.env.player_turn != card.player:
+            return False
         already_used = card.env.cache.get(card, InaMa._ACTIVE_USED_KEY, None)
         if card.env.round_id == already_used:
             return False

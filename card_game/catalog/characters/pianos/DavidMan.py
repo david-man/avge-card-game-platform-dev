@@ -62,6 +62,8 @@ class DavidMan(AVGECharacterCard):
 
     @staticmethod
     def can_play_active(card: AVGECharacterCard) -> bool:
+        if card.env.player_turn != card.player:
+            return False
         discard = card.player.cardholders[Pile.DISCARD]
         if len(discard) == 0:
             return False

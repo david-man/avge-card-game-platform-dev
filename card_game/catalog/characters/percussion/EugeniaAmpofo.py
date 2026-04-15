@@ -19,6 +19,8 @@ class EugeniaAmpofo(AVGECharacterCard):
 
     @staticmethod
     def can_play_active(card: AVGECharacterCard) -> bool:
+        if card.env.player_turn != card.player:
+            return False
         if card.cardholder.pile_type != Pile.ACTIVE:
             return False
         if len(card.player.energy) <= 0:

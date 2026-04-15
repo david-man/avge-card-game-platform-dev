@@ -707,7 +707,6 @@ class Phase2(AVGEEvent):
         next_action = args.get('next', "")
 
         if(next_action == 'atk'):
-            print("HERE")
             env.game_phase = GamePhase.ATK_PHASE
             self.propose(AVGEPacket([AtkPhase(self.player,
                                   ActionTypes.PLAYER_CHOICE,
@@ -824,7 +823,8 @@ class Phase2(AVGEEvent):
             attach_to = args.get('attach_to')
             if(isinstance(attach_to, AVGECharacterCard)):
                 if(len(self.player.energy) > 0):
-                    token = self.player.energy[0]
+                    requested_token = args.get('token')
+                    token = requested_token if isinstance(requested_token, EnergyToken) and requested_token in self.player.energy else self.player.energy[0]
                     event = AVGEEnergyTransfer(token,
                                                self.player,
                                                attach_to,

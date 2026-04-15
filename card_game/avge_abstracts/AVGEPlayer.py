@@ -33,9 +33,6 @@ class AVGEPlayer():
 
         self.opponent : AVGEPlayer = self
         self.energy : list[EnergyToken] = []
-        energy = [EnergyToken(f"{unique_id}_energy_token_{i}") for i in range(initial_tokens)]
-        for token in energy:
-            token.attach(self)
     def get_active_card(self) -> AVGECharacterCard:
         assert isinstance(self.cardholders[Pile.ACTIVE].peek(), AVGECharacterCard)
         return cast(AVGECharacterCard, self.cardholders[Pile.ACTIVE].peek())

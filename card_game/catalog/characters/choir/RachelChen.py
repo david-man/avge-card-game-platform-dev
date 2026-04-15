@@ -22,6 +22,8 @@ class RachelChen(AVGECharacterCard):
     def can_play_active(card : AVGECharacterCard) -> bool:
         env = card.env
         # once per turn check
+        if card.env.player_turn != card.player:
+            return False
         last = env.cache.get(card, RachelChen._ACTIVE_USE_KEY, None)
         if last is not None and last == env.round_id:
             return False

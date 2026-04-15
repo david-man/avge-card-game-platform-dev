@@ -11,7 +11,7 @@ class KeiWatanabe(AVGECharacterCard):
     _ATK2_MOVE_KEY = "kei_atk2_move_choice"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 1, 3)
+        super().__init__(unique_id, 100, CardType.PERCUSSION, 0, 1, 3)
         self.has_atk_1 = True
         self.has_atk_2 = True
         self.has_passive = False

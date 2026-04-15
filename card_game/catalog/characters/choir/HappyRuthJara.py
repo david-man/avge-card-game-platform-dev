@@ -21,6 +21,8 @@ class HappyRuthJara(AVGECharacterCard):
     def can_play_active(card : AVGECharacterCard) -> bool:
         # once per turn, must be on bench and have no tools attached
         # on bench
+        if card.env.player_turn != card.player:
+            return False
         if card.cardholder.pile_type != Pile.BENCH:
             return False
         # no tools attached

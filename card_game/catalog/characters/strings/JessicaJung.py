@@ -20,6 +20,8 @@ class JessicaJung(AVGECharacterCard):
 
     @staticmethod
     def can_play_active(card: AVGECharacterCard) -> bool:
+        if card.env.player_turn != card.player:
+            return False
         used = card.env.cache.get(card, JessicaJung._ACTIVE_USED_KEY, None)
         return used != card.env.round_id
 

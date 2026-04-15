@@ -101,8 +101,8 @@ class StatusChangeType(StrEnum):
     REMOVE = "REMOVE"#completely wipes the status
 
 class PlayerID(StrEnum):
-    P1 = 'player1'
-    P2 = 'player2'
+    P1 = 'p1'
+    P2 = 'p2'
 
 class Pile(StrEnum):
     DECK = 'deck'

@@ -1,0 +1,273 @@
+{
+  "roundNumber": 1,
+  "players": {
+    "p1": {
+      "username": "Ash",
+      "attributes": {
+        "ENERGY_ADD_REMAINING_IN_TURN": 1,
+        "KO_COUNT": 0,
+        "SUPPORTER_USES_REMAINING_IN_TURN": 1,
+        "SWAP_REMAINING_IN_TURN": 1,
+        "ATTACKS_LEFT": 1
+      }
+    },
+    "p2": {
+      "username": "Misty",
+      "attributes": {
+        "ENERGY_ADD_REMAINING_IN_TURN": 1,
+        "KO_COUNT": 0,
+        "SUPPORTER_USES_REMAINING_IN_TURN": 1,
+        "SWAP_REMAINING_IN_TURN": 1,
+        "ATTACKS_LEFT": 1
+      }
+    }
+  },
+  "cards": [
+    {
+      "id": "CARD-1",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "STRING",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-2",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-active",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "STRING",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-3",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-4",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-5",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-6",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-7",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-8",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "char character"
+    },
+    {
+      "id": "CARD-9",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-10",
+      "ownerId": "p1",
+      "cardType": "character",
+      "holderId": "p1-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-11",
+      "ownerId": "p1",
+      "cardType": "tool",
+      "holderId": "p1-active",
+      "hasAtk1": false,
+      "hasActive": false,
+      "hasAtk2": false,
+      "hp": 0,
+      "maxHp": 0,
+      "attachedToCardId": "CARD-2",
+      "AVGECardType": "NONE",
+      "AVGECardClass": "tool"
+    },
+    {
+      "id": "CARD-12",
+      "ownerId": "p1",
+      "cardType": "item",
+      "holderId": "p1-hand",
+      "hasAtk1": false,
+      "hasActive": false,
+      "hasAtk2": false,
+      "hp": 0,
+      "maxHp": 0,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "item"
+    },
+    {
+      "id": "CARD-13",
+      "ownerId": "p1",
+      "cardType": "stadium",
+      "holderId": "p1-hand",
+      "hasAtk1": false,
+      "hasActive": false,
+      "hasAtk2": false,
+      "hp": 0,
+      "maxHp": 0,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "stadium"
+    },
+    {
+      "id": "CARD-14",
+      "ownerId": "p2",
+      "cardType": "character",
+      "holderId": "p2-hand",
+      "hasAtk1": true,
+      "hasActive": true,
+      "hasAtk2": true,
+      "hp": 100,
+      "maxHp": 100,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "character"
+    },
+    {
+      "id": "CARD-15",
+      "ownerId": "p2",
+      "cardType": "tool",
+      "holderId": "p2-hand",
+      "hasAtk1": false,
+      "hasActive": false,
+      "hasAtk2": false,
+      "hp": 0,
+      "maxHp": 0,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "tool"
+    },
+    {
+      "id": "CARD-16",
+      "ownerId": "p2",
+      "cardType": "item",
+      "holderId": "p2-hand",
+      "hasAtk1": false,
+      "hasActive": false,
+      "hasAtk2": false,
+      "hp": 0,
+      "maxHp": 0,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "item"
+    },
+    {
+      "id": "CARD-17",
+      "ownerId": "p2",
+      "cardType": "stadium",
+      "holderId": "p2-hand",
+      "hasAtk1": false,
+      "hasActive": false,
+      "hasAtk2": false,
+      "hp": 0,
+      "maxHp": 0,
+      "attachedToCardId": null,
+      "AVGECardType": "NONE",
+      "AVGECardClass": "stadium"
+    }
+  ],
+  "energyTokens": [
+    {
+      "id": "ENERGY-1",
+      "ownerId": "p1",
+      "holderId": "p1-energy",
+      "attachedToCardId": "CARD-2"
+    }
+  ]
+}
