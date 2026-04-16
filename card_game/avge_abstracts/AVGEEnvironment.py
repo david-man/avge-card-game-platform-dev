@@ -57,7 +57,6 @@ class AVGEEnvironment():
         for pile in p2_deck_dict.keys():
             for card in p2_deck_dict[pile]:
                 p2_deck.append((card, pile))
-        assert len(p1_deck) > 5 and len(p2_deck) > 5
         if(starting_stadium is not None and starting_stadium_player is not None):
             deck = p1_deck if starting_stadium_player == PlayerID.P1 else p2_deck
             deck.append((starting_stadium, Pile.STADIUM))

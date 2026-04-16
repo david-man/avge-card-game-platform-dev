@@ -4,6 +4,8 @@ from copy import deepcopy
 from random import randint
 from threading import RLock
 from typing import Any
+import json
+import os
 
 from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ..avge_abstracts.AVGEEnvironment import GamePhase
@@ -69,7 +71,7 @@ p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
     Pile.DECK: [MainHall, AVGEBirb, IceSkates, FionaLi, DavidMan, JennieWang,LukeXu, Johann, DanielYang, ],
     Pile.STADIUM: [],
 }
-
+p1_username = os.getenv("P1_USERNAME", "Ash")
 p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
     Pile.ACTIVE: [MatthewWang],
     Pile.BENCH: [DavidMan],
@@ -77,10 +79,73 @@ p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
     Pile.DISCARD: [VideoCamera, JuliaCiacerelli, MaggieLi],
     Pile.DECK: [AVGEBirb, SteinertPracticeRoom,  JennieWang, ConcertTicket, FoldingStand],
 }
+p2_username = os.getenv("P2_USERNAME", "Misty")
 
+
+def _copy_setup(setup: dict[Pile, list[type[AVGECard]]]) -> dict[Pile, list[type[AVGECard]]]:
+    return {pile: list(cards) for pile, cards in setup.items()}
+
+
+def _resolve_catalog_card_class(card_id: str) -> type[AVGECard] | None:
+    symbol = globals().get(card_id)
+    if not isinstance(symbol, type):
+        return None
+    if not issubclass(symbol, AVGECard):
+        return None
+    return symbol
+
+
+def _selected_cards_from_env(env_name: str) -> list[type[AVGECard]]:
+    raw_payload = os.getenv(env_name, '')
+    if not raw_payload:
+        return []
+
+    try:
+        parsed = json.loads(raw_payload)
+    except Exception:
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    resolved: list[type[AVGECard]] = []
+    for raw_card_id in parsed:
+        if not isinstance(raw_card_id, str) or not raw_card_id.strip():
+            continue
+        resolved_class = _resolve_catalog_card_class(raw_card_id.strip())
+        if resolved_class is not None:
+            resolved.append(resolved_class)
+    return resolved
+
+
+def _apply_selected_cards_to_setup(
+    base_setup: dict[Pile, list[type[AVGECard]]],
+    selected_cards: list[type[AVGECard]],
+) -> dict[Pile, list[type[AVGECard]]]:
+    if not selected_cards:
+        return _copy_setup(base_setup)
+
+    resolved_setup = _copy_setup(base_setup)
+    # Selected deck cards initialize in hand. Keep a valid active character so
+    # engine Phase2 startup does not crash on empty active holder.
+    resolved_setup[Pile.BENCH] = []
+    resolved_setup[Pile.DISCARD] = []
+    resolved_setup[Pile.DECK] = []
+    resolved_setup[Pile.HAND] = list(selected_cards)
+
+    active_cards = resolved_setup.get(Pile.ACTIVE, [])
+    has_active_character = any(issubclass(card, AVGECharacterCard) for card in active_cards)
+    if not has_active_character:
+        first_character = next((card for card in selected_cards if issubclass(card, AVGECharacterCard)), None)
+        if first_character is not None:
+            resolved_setup[Pile.ACTIVE] = [first_character]
+
+    return resolved_setup
+
+
+p1_setup = _apply_selected_cards_to_setup(p1_setup_default, _selected_cards_from_env('P1_DECK_CARDS_JSON'))
+p2_setup = _apply_selected_cards_to_setup(p2_setup_default, _selected_cards_from_env('P2_DECK_CARDS_JSON'))
 # Backwards-compatible aliases for older references.
-p1_setup = p1_setup_default
-p2_setup = p2_setup_default
 
 
 def build_environment_from_default_setups(
@@ -89,10 +154,10 @@ def build_environment_from_default_setups(
     starting_stadium_player: PlayerID | None = None,
     round_number: int = start_round,
 ) -> AVGEEnvironment:
-    """Build an AVGEEnvironment from p1_setup_default and p2_setup_default."""
+    """Build an AVGEEnvironment from configured p1/p2 setups."""
     return AVGEEnvironment(
-        deepcopy(p1_setup_default),
-        deepcopy(p2_setup_default),
+        deepcopy(p1_setup),
+        deepcopy(p2_setup),
         start_turn,
         starting_stadium=starting_stadium,
         starting_stadium_player=starting_stadium_player,
@@ -117,7 +182,16 @@ def build_default_setup_payload_from_environment(
 
 def environment_to_setup_payload(env: AVGEEnvironment) -> dict[str, Any]:
     """Convert an AVGEEnvironment into frontend setup payload format."""
-    return format_environment_to_setup_payload(env)
+    payload = format_environment_to_setup_payload(env)
+    players = payload.get('players')
+    if isinstance(players, dict):
+        p1_payload = players.get('p1')
+        p2_payload = players.get('p2')
+        if isinstance(p1_payload, dict):
+            p1_payload['username'] = p1_username
+        if isinstance(p2_payload, dict):
+            p2_payload['username'] = p2_username
+    return payload
 
 
 def environment_to_setup_json(env: AVGEEnvironment, indent: int = 2) -> str:
@@ -321,7 +395,7 @@ class FrontendGameBridge:
                     'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
-            if event_name in {'setup_loaded', 'surrender_result', 'surrender_timeout'}:
+            if event_name in {'setup_loaded', 'surrender_timeout'}:
                 return {
                     'commands': [],
                     'setup_payload': environment_to_setup_payload(self.env),
@@ -394,6 +468,12 @@ class FrontendGameBridge:
                 commands.extend(self._notify_both('Attack phase skip request received.'))
                 return commands, {'type': ActionTypes.SKIP}
             commands.extend(self._notify_both(f'Ignored attack skip request: backend phase is {self._frontend_phase_token(self.env.game_phase)}'))
+            return commands, None
+
+        if event_name == 'surrender_result':
+            winner_command = self._winner_command_from_surrender_payload(data)
+            if winner_command is not None:
+                commands.append(winner_command)
             return commands, None
 
         if isinstance(running, InputEvent) and event_name == 'input_result':
@@ -542,11 +622,9 @@ class FrontendGameBridge:
                 break
 
             if response.response_type == ResponseType.GAME_END:
-                winner = getattr(self.env.winner, 'unique_id', None)
-                if winner == PlayerID.P1:
-                    commands_to_emit.append('winner player-1')
-                elif winner == PlayerID.P2:
-                    commands_to_emit.append('winner player-2')
+                winner_command = self._winner_command_from_environment()
+                if winner_command is not None:
+                    commands_to_emit.append(winner_command)
                 break
 
             if response.response_type == ResponseType.NO_MORE_EVENTS:
@@ -1048,6 +1126,64 @@ class FrontendGameBridge:
             return self._notify_both(message)
         token = self._player_id_to_frontend(turn_player_id)
         return [f'notify {token} {self._command_token(message)}']
+
+    def _winner_command_from_surrender_payload(self, data: dict[str, Any]) -> str | None:
+        loser_token = self._frontend_player_token(data.get('loser_view'))
+        if loser_token is not None:
+            winner_token = 'player-2' if loser_token == 'player-1' else 'player-1'
+        else:
+            winner_token = self._frontend_player_token(data.get('winner_view'))
+
+        if winner_token is not None:
+            winner_player = self._player_from_frontend_token(winner_token)
+            if winner_player is not None:
+                self.env.winner = winner_player
+            winner_label = self._winner_label_for_token(winner_token)
+            return f'winner {winner_token} {winner_label}'
+
+        fallback_winner = data.get('winner')
+        if isinstance(fallback_winner, str) and fallback_winner.strip():
+            return f'winner {self._normalize_winner_label(fallback_winner)}'
+
+        return None
+
+    def _winner_command_from_environment(self) -> str | None:
+        winner = getattr(self.env, 'winner', None)
+        winner_token = self._frontend_player_token(getattr(winner, 'unique_id', winner))
+        if winner_token is None:
+            return None
+        winner_label = self._winner_label_for_token(winner_token)
+        return f'winner {winner_token} {winner_label}'
+
+    def _frontend_player_token(self, raw: Any) -> str | None:
+        value = str(getattr(raw, 'value', raw)).strip().lower()
+        if value in {'p1', 'player-1', 'player1'}:
+            return 'player-1'
+        if value in {'p2', 'player-2', 'player2'}:
+            return 'player-2'
+        return None
+
+    def _player_from_frontend_token(self, token: str):
+        target_id = 'p1' if token == 'player-1' else 'p2'
+        for player in self.env.players.values():
+            player_id = str(getattr(getattr(player, 'unique_id', None), 'value', getattr(player, 'unique_id', ''))).lower()
+            if player_id == target_id:
+                return player
+        return None
+
+    def _winner_label_for_token(self, token: str) -> str:
+        if token == 'player-1':
+            return self._normalize_winner_label(p1_username)
+        if token == 'player-2':
+            return self._normalize_winner_label(p2_username)
+        player = self._player_from_frontend_token(token)
+        username = getattr(player, 'username', None) if player is not None else None
+        if isinstance(username, str) and username.strip():
+            return self._normalize_winner_label(username)
+        return 'PLAYER 1' if token == 'player-1' else 'PLAYER 2'
+
+    def _normalize_winner_label(self, raw: str) -> str:
+        return ' '.join(raw.strip().split())
 
     def _card_type_command_token(self, card_type: Any) -> str:
         lookup = {
