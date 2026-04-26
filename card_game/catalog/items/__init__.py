@@ -13,8 +13,8 @@ from .DressRehearsalRoster import *
 from .FoldingStand import *
 from .IceSkates import *
 from .MatchaLatte import *
-from .MikuOtomatone import *
-from .Otomatone import *
+from .MikuOtamatone import *
+from .Otamatone import *
 from .PrintedScore import *
 from .RaffleTicket import *
 from .StandardMusescoreFile import *

@@ -18,9 +18,9 @@ class _RobertoGuitarBoost(AVGEModifier):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
-        if not isinstance(event.caller_card, AVGECharacterCard):
+        if not isinstance(event.caller, AVGECharacterCard):
             return False
-        if event.caller_card.player != self.owner_card.player:
+        if event.caller.player != self.owner_card.player:
             return False
         if event.change_type != CardType.GUITAR:
             return False
@@ -35,27 +35,22 @@ class _RobertoGuitarBoost(AVGEModifier):
         if self.owner_card.env.round_id > self.round_active:
             self.invalidate()
 
-    def modify(self, args=None):
-        if args is None:
-            args = {}
+    def modify(self):
         from card_game.internal_events import AVGECardHPChange
 
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(40)
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Notify("Distortion: +40 damage!", all_players, default_timeout))
 
 
 class RobertoGonzales(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.GUITAR, 2, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Guitar Shredding'
+        self.atk_2_name = 'Distortion'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, TransferCard, AVGEEnergyTransfer
 
         opponent = card.player.opponent
@@ -67,39 +62,44 @@ class RobertoGonzales(AVGECharacterCard):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )]
             current_energy = len(card.energy)
             for token in list(card.energy):
-                packet.append(AVGEEnergyTransfer(token, card, card.env, ActionTypes.ATK_1, card))
+                packet.append(AVGEEnergyTransfer(token, card, card.env, ActionTypes.ATK_1, card, None))
             deck = opponent.cardholders[Pile.DECK]
             discard = opponent.cardholders[Pile.DISCARD]
             def transfer_gen() -> PacketType:
-                return [TransferCard(deck.peek(), deck, discard, ActionTypes.ATK_1, card)]
+                p: PacketType = []
+                p.append(TransferCard(deck.peek(), deck, discard, ActionTypes.ATK_1, card, None))
+                return p
             for _ in range(min(current_energy, len(deck))):
                 packet.append(transfer_gen)
             return packet
 
         card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, RobertoGonzales)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_2,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, RobertoGonzales))
         )
         card.add_listener(_RobertoGuitarBoost(card, card.player.get_next_turn()))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

@@ -5,6 +5,7 @@ import random
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import EmptyEvent, InputEvent, Phase2, PhasePickCard, TransferCard
 
 
 class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
@@ -13,7 +14,6 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 		self.owner_card = owner_card
 
 	def event_match(self, event):
-		from card_game.internal_events import PhasePickCard
 		return self.owner_card._is_active_stadium() and isinstance(event, PhasePickCard)
 
 	def event_effect(self) -> bool:
@@ -24,50 +24,54 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 			self.invalidate()
 		
 	def assess(self, args=None):
-		from card_game.internal_events import InputEvent, Phase2, TransferCard, PhasePickCard, EmptyEvent
-
 		event = self.attached_event
 		assert isinstance(event, PhasePickCard)
 		if(event.temp_cache.get(FriedmanHall._TURNBEGIN_OVERRIDE_FLAG, False)):
-			return self.generate_response(ResponseType.FAST_FORWARD)
+			return Response(ResponseType.FAST_FORWARD, Data())
 
-		active_player = event.player
+		active_player = event.env.player_turn
 
 		deck = active_player.cardholders[Pile.DECK]
 		hand = active_player.cardholders[Pile.HAND]
 		if(len(deck) < 2):
-			active_player.env.winner = active_player.opponent
-			return self.generate_response(ResponseType.GAME_END, {"winner": active_player.opponent, "reason": "not enough cards in deck for stadium effect"})
+			return Response(ResponseType.ACCEPT, Data())
 
 		top_two_cards = list(deck.peek_n(2))
 		opponent = active_player.opponent
 		chosen = self.owner_card.env.cache.get(self.owner_card, FriedmanHall._TURNBEGIN_PICK_KEY, None, one_look=True)
 		if(chosen is None):
-			return self.generate_response(
+			return Response(
 				ResponseType.INTERRUPT,
-				{INTERRUPT_KEY: 
-	 					[InputEvent(opponent, 
-				   					[FriedmanHall._TURNBEGIN_PICK_KEY], 
-									InputType.SELECTION, 
-									lambda res: True, 
-									ActionTypes.ENV, 
-									self.owner_card, 
-									{LABEL_FLAG: "friedmanhall_turnbegin_pick", 
-		  							TARGETS_FLAG: top_two_cards,
-									  DISPLAY_FLAG: top_two_cards})]},
+				Interrupt[AVGEEvent]([InputEvent(
+					opponent,
+					[FriedmanHall._TURNBEGIN_PICK_KEY],
+					lambda res: True,
+					ActionTypes.ENV,
+					self.owner_card,
+					CardSelectionQuery('Friedman Hall: Opponent chooses one card for you to keep.', top_two_cards, top_two_cards, False, False)
+				)]),
 			)
+
+		if chosen not in top_two_cards:
+			raise Exception('FriedmanHall: Invalid turn-begin card selection')
 
 		other = top_two_cards[1] if chosen == top_two_cards[0] else top_two_cards[0]
 		event.temp_cache[FriedmanHall._TURNBEGIN_OVERRIDE_FLAG] = True
-		self.propose(AVGEPacket([
-				EmptyEvent(ActionTypes.NONCHAR, self.owner_card, response_data={
-					REVEAL_KEY: top_two_cards
-				}),
-				TransferCard(chosen, deck, hand, ActionTypes.ENV, self.owner_card),
-				TransferCard(other, deck, deck, ActionTypes.ENV, self.owner_card, random.randint(0, len(deck))),
-				Phase2(active_player, ActionTypes.ENV, None),
-			], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FriedmanHall)))
-		return self.generate_response(ResponseType.FAST_FORWARD)
+		packet: PacketType = []
+		packet.extend([
+			EmptyEvent(
+				ActionTypes.NONCHAR,
+				self.owner_card,
+				ResponseType.CORE,
+				RevealCards('Friedman Hall: Top 2 drawn cards', all_players, default_timeout, top_two_cards),
+			),
+			TransferCard(chosen, deck, hand, ActionTypes.ENV, self.owner_card, None),
+			TransferCard(other, deck, hand, ActionTypes.ENV, self.owner_card, None),
+			TransferCard(other, hand, deck, ActionTypes.ENV, self.owner_card, None, random.randint(0, len(deck))),
+			Phase2(event.env, ActionTypes.ENV, event.env),
+		])
+		self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FriedmanHall)))
+		return Response(ResponseType.FAST_FORWARD, Data())
 
 
 class FriedmanHall(AVGEStadiumCard):
@@ -79,4 +83,4 @@ class FriedmanHall(AVGEStadiumCard):
 
 	def play_card(self) -> Response:
 		self.add_listener(FriedmanHallTurnBeginOverrideAssessor(self))
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

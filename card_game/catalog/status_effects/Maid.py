@@ -7,11 +7,11 @@ from card_game.engine.engine_constants import EngineGroup
 
 
 class MaidStatusDamageShieldModifier(AVGEModifier):
-	def __init__(self):
+	def __init__(self, env : AVGEEnvironment):
+		self.env = env
 		super().__init__(
-			identifier=AVGEEngineID(None, ActionTypes.ENV, None),
-			group=EngineGroup.INTERNAL_1,
-			internal = True
+			identifier=AVGEEngineID(env, ActionTypes.ENV, None),
+			group=EngineGroup.INTERNAL_1
 		)
 
 	def _has_maid(self, character: AVGECharacterCard | None) -> bool:
@@ -50,5 +50,4 @@ class MaidStatusDamageShieldModifier(AVGEModifier):
 		from card_game.internal_events import AVGECardHPChange
 		event = self.attached_event
 		assert(isinstance(event, AVGECardHPChange))
-		event.modify_magnitude(-10)
-		return self.generate_response()
+		return Response(ResponseType.FAST_FORWARD, Notify("Maid: This character is immune to all damage <= 10", all_players, default_timeout))

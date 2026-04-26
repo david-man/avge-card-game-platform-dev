@@ -6,11 +6,12 @@ from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 class GoonStatusTransferModifier(AVGEModifier):
-	def __init__(self):
+	def __init__(self, env : AVGEEnvironment):
 		super().__init__(
-			identifier=AVGEEngineID(None, ActionTypes.ENV, None),
+			identifier=AVGEEngineID(env, ActionTypes.ENV, None),
 			group=EngineGroup.EXTERNAL_MODIFIERS_1,
 		)
+		self.env = env
 	def event_match(self, event):
 		from card_game.internal_events import TransferCard
 
@@ -38,12 +39,13 @@ class GoonStatusTransferModifier(AVGEModifier):
 		from card_game.internal_events import TransferCard
 		assert isinstance(self.attached_event, TransferCard)
 		self.attached_event.energy_requirement += 1
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Data())
 
 class GoonStatusChangeReactor(AVGEReactor):
-	def __init__(self):
+	def __init__(self, env : AVGEEnvironment):
+		self.env = env
 		super().__init__(
-			identifier=AVGEEngineID(None, ActionTypes.ENV, None),
+			identifier=AVGEEngineID(self.env, ActionTypes.ENV, None),
 			group=EngineGroup.EXTERNAL_REACTORS,
 		)
 
@@ -74,20 +76,20 @@ class GoonStatusChangeReactor(AVGEReactor):
 		event: AVGECardStatusChange = self.attached_event
 		target = event.target
 		if(not isinstance(target, AVGECharacterCard)):
-			return self.generate_response()
+			return Response(ResponseType.ACCEPT, Data())
 
 		packet : PacketType= []
 
 		if(event.change_type == StatusChangeType.ADD and len(event.target.statuses_attached.get(StatusEffect.GOON, [])) == 1 and event.made_change):
 			packet.extend([
-				AVGECardMaxHPChange(target, 20, AVGEAttributeModifier.ADDITIVE, ActionTypes.ENV, None),
-				AVGECardHPChange(target, 20, AVGEAttributeModifier.ADDITIVE, CardType.ALL, ActionTypes.ENV, None),
+				AVGECardMaxHPChange(target, 20, AVGEAttributeModifier.ADDITIVE, ActionTypes.ENV, None, self.env),
+				AVGECardHPChange(target, 20, AVGEAttributeModifier.ADDITIVE, CardType.ALL, ActionTypes.ENV, None, self.env),
 			])
 		elif(event.change_type in [StatusChangeType.REMOVE, StatusChangeType.ERASE] and len(event.target.statuses_attached.get(StatusEffect.GOON, [])) == 0 and event.made_change):
 			packet.extend([
-				AVGECardMaxHPChange(target, 20, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, None),
+				AVGECardMaxHPChange(target, 20, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, None, self.env),
 			])
 
 		if(len(packet) > 0):
 			self.extend_event(packet)
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Data())

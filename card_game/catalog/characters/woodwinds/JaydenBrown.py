@@ -1,133 +1,131 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts import *
-
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import AVGECardHPChange, InputEvent
+
+
+class JaydenBrownFourLeafCloverReactor(AVGEReactor):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(
+            identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, JaydenBrown),
+            group=EngineGroup.EXTERNAL_REACTORS,
+        )
+        self.owner_card = owner_card
+
+    def event_match(self, event):
+        if not isinstance(event, InputEvent):
+            return False
+        if not isinstance(event.query_data, CoinflipData):
+            return False
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.ACTIVE:
+            return False
+        last_round_used = self.owner_card.env.cache.get(self.owner_card, JaydenBrown._LAST_ROUND_PASSIVE, None)
+        if isinstance(last_round_used, int) and last_round_used == self.owner_card.env.round_id:
+            return False
+        return True
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def make_announcement(self) -> bool:
+        return True
+
+    def package(self):
+        return 'JaydenBrown Four-leaf Clover Reactor'
+
+    def react(self, args=None):
+        if args is None:
+            args = {}
+        event = self.attached_event
+        assert isinstance(event, InputEvent)
+
+        env = self.owner_card.env
+        env.cache.set(self.owner_card, JaydenBrown._LAST_ROUND_PASSIVE, env.round_id)
+        choice = env.cache.get(self.owner_card, JaydenBrown._CHOICE, None, True)
+        if choice is None:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        self.owner_card.player,
+                        [JaydenBrown._CHOICE],
+                        lambda r: True,
+                        ActionTypes.PASSIVE,
+                        self.owner_card,
+                        StrSelectionQuery(
+                            'Four-leaf Clover: Treat this first coin flip as heads?',
+                            ['Yes', 'No'],
+                            ['Yes', 'No'],
+                            False,
+                            False,
+                        ),
+                    )
+                ]),
+            )
+
+        if choice == 'Yes' and len(event.input_keys) > 0:
+            env.cache.set(self.owner_card, event.input_keys[0], 1)
+            return Response(ResponseType.CORE, Notify('Four-leaf Clover! Turned the first coin flip to heads', all_players, default_timeout))
+        return Response(ResponseType.CORE, Data())
 
 class JaydenBrown(AVGECharacterCard):
-    _D6_ROLL_KEY = "jayden_d6_roll"
-    _CHOICE = "jayden_coin_choice"
-    _LAST_ROUND_PASSIVE = "jayden_last_passive"
+    _D6_ROLL_KEY = 'jayden_d6_roll'
+    _CHOICE = 'jayden_coin_choice'
+    _LAST_ROUND_PASSIVE = 'jayden_last_passive'
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
         self.has_passive = True
-        self.has_active = False
+        self.atk_1_name = 'Hyper-Ventilation!'
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        owner_card = card
+    def passive(self) -> Response:
+        self.add_listener(JaydenBrownFourLeafCloverReactor(self))
+        return Response(ResponseType.CORE, Data())
 
-        class _CoinFlipReactor(AVGEReactor):
-            def __init__(self):
-                super().__init__(
-                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, JaydenBrown),
-                    group=EngineGroup.EXTERNAL_REACTORS,
-                )
-
-            def event_match(self, event):
-                from card_game.internal_events import InputEvent
-                
-                if not isinstance(event, InputEvent):
-                    return False
-                if event.input_type != InputType.COIN:
-                    return False
-                if owner_card.cardholder is None or owner_card.cardholder.pile_type != Pile.ACTIVE:
-                    return False
-                last_round_used : int | None = owner_card.env.cache.get(owner_card, JaydenBrown._LAST_ROUND_PASSIVE, None)
-                if last_round_used is not None and last_round_used == owner_card.env.round_id:
-                    return False
-                return True
-
-            def event_effect(self) -> bool:
-                return True
-
-            def update_status(self):
-                return
-
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "JaydenBrown Coin Flip Reactor"
-
-            def react(self, args=None):
-                if args is None:
-                    args = {}
-                from card_game.internal_events import InputEvent
-
-                env = owner_card.env
-                event = self.attached_event
-                assert isinstance(event, InputEvent)
-                env.cache.set(owner_card, JaydenBrown._LAST_ROUND_PASSIVE, env.round_id)
-                choice = env.cache.get(owner_card, JaydenBrown._CHOICE, None, True)
-                if choice is None:
-                    return self.generate_response(
-                        ResponseType.INTERRUPT,
-                        {
-                            INTERRUPT_KEY: [
-                                InputEvent(
-                                    owner_card.player,
-                                    [JaydenBrown._CHOICE],
-                                    InputType.BINARY,
-                                    lambda r: True,
-                                    ActionTypes.PASSIVE,
-                                    owner_card,
-                                    {LABEL_FLAG: "jayden_brown_coinflip"},
-                                )
-                            ]
-                        },
-                    )
-
-                # Force the first coin outcome key for this coin input event.
-                if len(event.input_keys) > 0:
-                    env.cache.set(owner_card, event.input_keys[0], 1)
-                return self.generate_response()
-
-        owner_card.add_listener(_CoinFlipReactor())
-        return owner_card.generate_response()
-
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
-
-        roll = card.env.cache.get(card, JaydenBrown._D6_ROLL_KEY, None, True)
-        if roll is None:
-            return card.generate_response(
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        missing = object()
+        roll = card.env.cache.get(card, JaydenBrown._D6_ROLL_KEY, missing, True)
+        if roll is missing:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [JaydenBrown._D6_ROLL_KEY],
-                            InputType.D6,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {LABEL_FLAG: "jaydenbrown_d6"},
+                            D6Data('Hyper-Ventilation!: Roll a D6.')
                         )
-                    ]
-                },
+                    ]),
             )
 
+        if not isinstance(roll, int):
+            return Response(ResponseType.CORE, Data())
+
         damage = 30 + 10 * int(roll)
+
         def generate_packet() -> PacketType:
             active = card.player.opponent.get_active_card()
+            packet: PacketType = []
             if isinstance(active, AVGECharacterCard):
-                return [
+                packet.append(
                     AVGECardHPChange(
                         active,
                         damage,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.WOODWIND,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
-                ]
-            return []
+                )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JaydenBrown)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

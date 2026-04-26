@@ -9,19 +9,16 @@ from typing import cast
 class DanielYang(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PERCUSSION, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Eight Hands Piano'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        owner_card = card
+    def passive(self) -> Response:
+        owner_card = self
 
         class _NoBrassBoostModifier(AVGEModifier):
             def __init__(self):
                 super().__init__(
-                    identifier=AVGEEngineID(card, ActionTypes.PASSIVE, DanielYang),
+                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, DanielYang),
                     group=EngineGroup.EXTERNAL_MODIFIERS_2,
                 )
 
@@ -32,8 +29,11 @@ class DanielYang(AVGECharacterCard):
                     return False
                 if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
                     return False
-                
-                if event.caller_card != owner_card:
+                if event.change_type == CardType.ALL:
+                    return False
+                if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
+                    return False
+                if event.caller != owner_card:
                     return False
 
                 env = owner_card.env
@@ -50,28 +50,25 @@ class DanielYang(AVGECharacterCard):
             def update_status(self):
                 return
 
-            def modify(self, args=None):
-                if args is None:
-                    args = {}
+            def modify(self):
                 from card_game.internal_events import AVGECardHPChange
 
                 event = self.attached_event
                 assert isinstance(event, AVGECardHPChange)
                 event.modify_magnitude(20)
-                return self.generate_response()
+                return Response(ResponseType.ACCEPT, Notify('Delicate Ears: +20 damage', all_players, default_timeout))
 
-        card.add_listener(_NoBrassBoostModifier())
-        return owner_card.generate_response()
+        self.add_listener(_NoBrassBoostModifier())
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         bench = card.player.cardholders[Pile.BENCH]
         piano_count = sum(1 for c in bench if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PIANO)
 
-        def generate_packet():
-            packet : PacketType = []
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
             packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
@@ -79,6 +76,7 @@ class DanielYang(AVGECharacterCard):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
             )
@@ -91,10 +89,11 @@ class DanielYang(AVGECharacterCard):
                             AVGEAttributeModifier.SUBSTRACTIVE,
                             CardType.PERCUSSION,
                             ActionTypes.ATK_1,
+                            None,
                             card,
                         )
                     )
             return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, DanielYang)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

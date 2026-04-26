@@ -5,129 +5,97 @@ from card_game.constants import *
 from card_game.constants import ActionTypes
 
 class Johann(AVGESupporterCard):
-	_SUPPORTER_PICK_KEY = "johann_discard_supporter_pick"
-	_ITEM_OR_TOOL_PICK_KEY = "johann_discard_item_or_tool_pick"
-	_STADIUM_PICK_KEY = "johann_discard_stadium_pick"
+	_PICK_1_KEY = "johann_discard_pick_1"
+	_PICK_2_KEY = "johann_discard_pick_2"
+	_PICK_3_KEY = "johann_discard_pick_3"
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
 	@staticmethod
-	def play_card(card: AVGECard) -> Response:
+	def _is_valid_pick_set(input_result: list[object]) -> bool:
+		if(len(input_result) != 3):
+			return False
+
+		supporter_count = 0
+		item_or_tool_count = 0
+		stadium_count = 0
+		seen: list[AVGECard] = []
+
+		for selected in input_result:
+			if(selected is None):
+				continue
+			if(not isinstance(selected, AVGECard)):
+				return False
+			if(selected in seen):
+				return False
+			seen.append(selected)
+
+			if(isinstance(selected, AVGESupporterCard)):
+				supporter_count += 1
+			elif(isinstance(selected, AVGEItemCard) or isinstance(selected, AVGEToolCard)):
+				item_or_tool_count += 1
+			elif(isinstance(selected, AVGEStadiumCard)):
+				stadium_count += 1
+			else:
+				return False
+
+			if(supporter_count > 1 or item_or_tool_count > 1 or stadium_count > 1):
+				return False
+
+		return True
+
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard, TurnEnd
 
 		player = card.player
 		discard = player.cardholders[Pile.DISCARD]
 		hand = player.cardholders[Pile.HAND]
 
-		supporters_in_discard = [c for c in discard if isinstance(c, AVGESupporterCard)]
-		items_or_tools_in_discard = [
+		eligible_targets = [
 			c
 			for c in discard
-			if isinstance(c, AVGEItemCard) or isinstance(c, AVGEToolCard)
+			if isinstance(c, AVGESupporterCard)
+			or isinstance(c, AVGEItemCard)
+			or isinstance(c, AVGEToolCard)
+			or isinstance(c, AVGEStadiumCard)
 		]
-		stadiums_in_discard = [c for c in discard if isinstance(c, AVGEStadiumCard)]
 
-		packet = []
 		missing = object()
-		supporter_pick = card.env.cache.get(card, Johann._SUPPORTER_PICK_KEY, missing)
-		item_or_tool_pick = card.env.cache.get(card, Johann._ITEM_OR_TOOL_PICK_KEY, missing)
-		stadium_pick = card.env.cache.get(card, Johann._STADIUM_PICK_KEY, missing, one_look=True)
-		if(supporter_pick is missing):
-			return card.generate_response(ResponseType.INTERRUPT,
-					{INTERRUPT_KEY:[
-						
+		pick_1 = card.env.cache.get(card, Johann._PICK_1_KEY, missing)
+		pick_2 = card.env.cache.get(card, Johann._PICK_2_KEY, missing)
+		pick_3 = card.env.cache.get(card, Johann._PICK_3_KEY, missing, True)
+		if(pick_1 is missing or pick_2 is missing or pick_3 is missing):
+			return Response(
+				ResponseType.INTERRUPT,
+				Interrupt[InputEvent]([
 					InputEvent(
 						player,
-						[Johann._SUPPORTER_PICK_KEY],
-						InputType.SELECTION,
-						lambda res : True,
+						[Johann._PICK_1_KEY, Johann._PICK_2_KEY, Johann._PICK_3_KEY],
+						Johann._is_valid_pick_set,
 						ActionTypes.NONCHAR,
 						card,
-						{
-							LABEL_FLAG: "johann_3card_query_supporter",
-							TARGETS_FLAG: supporters_in_discard,
-							DISPLAY_FLAG: list(discard),
-							ALLOW_NONE: True,
-						},
+						CardSelectionQuery("johann_3card_query", eligible_targets, list(discard), True, False),
 					)
-						
-					]})
-		if(item_or_tool_pick is missing):
-			return card.generate_response(ResponseType.INTERRUPT,
-					{INTERRUPT_KEY:[
-						
-					InputEvent(
-						player,
-						[Johann._ITEM_OR_TOOL_PICK_KEY],
-						InputType.SELECTION,
-						lambda res : True,
-						ActionTypes.NONCHAR,
-						card,
-						{
-							LABEL_FLAG: "johann_3card_query_item",
-							TARGETS_FLAG: items_or_tools_in_discard,
-							DISPLAY_FLAG: list(discard),
-							ALLOW_NONE: True,
-						},
-					)
-						
-					]})
-		
-		if(stadium_pick is missing):
-			return card.generate_response(ResponseType.INTERRUPT,
-					{INTERRUPT_KEY:[
-						
-					InputEvent(
-						player,
-						[Johann._STADIUM_PICK_KEY],
-						InputType.SELECTION,
-						lambda res : True,
-						ActionTypes.NONCHAR,
-						card,
-						{
-							LABEL_FLAG: "johann_3card_query_stadium",
-							TARGETS_FLAG: stadiums_in_discard,
-							DISPLAY_FLAG: list(discard),
-							ALLOW_NONE: True,
-						},
-					)
-						
-					]})
+				]),
+			)
 
-		if(supporter_pick is not None):
+		packet: PacketType = []
+		for selected in [pick_1, pick_2, pick_3]:
+			if(selected is None):
+				continue
+			assert isinstance(selected, AVGECard)
 			packet.append(
 				TransferCard(
-					supporter_pick,
+					selected,
 					discard,
 					hand,
 					ActionTypes.NONCHAR,
 					card,
-				)
-			)
-		if(item_or_tool_pick is not None):
-			packet.append(
-				TransferCard(
-					item_or_tool_pick,
-					discard,
-					hand,
-					ActionTypes.NONCHAR,
-					card,
-				)
-			)
-		if(stadium_pick is not None):
-			packet.append(
-				TransferCard(
-					stadium_pick,
-					discard,
-					hand,
-					ActionTypes.NONCHAR,
-					card,
+					None,
 				)
 			)
 
 		packet.append(TurnEnd(card.env, ActionTypes.NONCHAR, card))
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Johann)))
-		card.env.cache.delete(card, Johann._ITEM_OR_TOOL_PICK_KEY)
-		card.env.cache.delete(card, Johann._SUPPORTER_PICK_KEY)
-		return card.generate_response(ResponseType.CORE)
+		return self.generic_response(card)

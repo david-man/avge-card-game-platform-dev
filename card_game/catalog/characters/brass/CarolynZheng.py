@@ -4,26 +4,7 @@ from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import *
-
-_BUFF_ROUND_KEY = "carolyn-zheng-buff"
-class _CarolynAttackTracker(AVGEAssessor):
-    def __init__(self, owner_card : AVGECharacterCard):
-        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, CarolynZheng), group=EngineGroup.EXTERNAL_PRECHECK_1)
-        self.owner_card = owner_card
-    def event_match(self, event : AVGEEvent):
-        return isinstance(event, PlayCharacterCard) and event.caller_card == self.owner_card and event.card_action in [ActionTypes.ATK_1, ActionTypes.ATK_2]
-    def event_effect(self):
-        return True
-    def update_status(self):
-        return
-    def on_packet_completion(self):
-        return
-    def assess(self, args=None):
-        round = self.owner_card.env.cache.get(self.owner_card, _BUFF_ROUND_KEY, None)
-        if(round is None or round < self.owner_card.player.get_last_turn()):
-            self.owner_card.env.cache.set(self.owner_card, _BUFF_ROUND_KEY, self.owner_card.env.round_id)
-        
-        return self.generate_response()
+from card_game.constants import ActionTypes
 
 class _CarolynAttackModifier(AVGEModifier):
     def __init__(self, owner_card: AVGECharacterCard):
@@ -37,14 +18,37 @@ class _CarolynAttackModifier(AVGEModifier):
             return False
         if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
             return False
-        if event.caller_card != self.owner_card:
+        if event.caller != self.owner_card:
             return False
         if event.target_card.player != self.owner_card.player.opponent:
             return False
-        if(event.magnitude == 0):
+        if event.magnitude == 0:
             return False
-        buff_round = self.owner_card.env.cache.get(self.owner_card, _BUFF_ROUND_KEY, None)
-        return buff_round is not None and buff_round == self.owner_card.env.round_id
+        if self.owner_card.env is None:
+            return False
+
+        previous_round = self.owner_card.player.get_last_turn()
+        # On opening turn there is no previous turn, so this condition should apply.
+        if previous_round < 0:
+            return True
+        _, atk1_idx = self.owner_card.env.check_history(
+            previous_round,
+            PlayCharacterCard,
+            {
+                "caller": self.owner_card,
+                "card_action": ActionTypes.ATK_1
+            },
+        )
+        _, atk2_idx = self.owner_card.env.check_history(
+            previous_round,
+            PlayCharacterCard,
+            {
+                "caller": self.owner_card,
+                "card_action": ActionTypes.ATK_2
+            },
+        )
+        attacked = (atk1_idx != -1) or (atk2_idx != -1)
+        return not attacked
 
     def event_effect(self) -> bool:
         return True
@@ -58,28 +62,23 @@ class _CarolynAttackModifier(AVGEModifier):
     def modify(self, args=None):
         assert(isinstance(self.attached_event, AVGECardHPChange))
         event : AVGECardHPChange = self.attached_event
-        # increase damage by 30 (damage is negative change_amount)
+        # If this character did not attack during the previous turn, deal +30 damage.
         event.modify_magnitude(30)
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Notify("Carolyn Zheng buffed her own attack by 30 damage!", all_players, default_timeout))
 
 
 class CarolynZheng(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.BRASS, 1, 0)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Blast'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card : AVGECharacterCard) -> Response:
-        # attach turn-start reactor to evaluate previous turn
-        card.add_listener(_CarolynAttackTracker(card))
-        card.add_listener(_CarolynAttackModifier(card))
-        return card.generate_response()
+    def passive(self) -> Response:
+        # Static damage modifier checks previous turn history at runtime.
+        self.add_listener(_CarolynAttackModifier(self))
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         def generate_packet() -> PacketType:
             return [AVGECardHPChange(
@@ -88,8 +87,9 @@ class CarolynZheng(AVGECharacterCard):
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.BRASS,
                 ActionTypes.ATK_1,
+                None,
                 card,
             )]
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, CarolynZheng)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 

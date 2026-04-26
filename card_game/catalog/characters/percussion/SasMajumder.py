@@ -4,136 +4,158 @@ from card_game.avge_abstracts import *
 
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange
+
+
+class _SasDiscardReactor(AVGEReactor):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(
+            identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder),
+            group=EngineGroup.EXTERNAL_REACTORS,
+        )
+        self.owner_card = owner_card
+
+    def event_match(self, event):
+        if not isinstance(event, TransferCard):
+            return False
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type not in [Pile.ACTIVE, Pile.BENCH]:
+            return False
+        if self.owner_card.player is None or self.owner_card.player.opponent is None:
+            return False
+        if event.pile_to.pile_type != Pile.DISCARD:
+            return False
+        if event.card.player != self.owner_card.player:
+            return False
+        if event.card == self.owner_card:
+            return False
+
+        env = self.owner_card.env
+        if env.player_turn != self.owner_card.player.opponent:
+            return False
+
+        _, already_prompted_idx = env.check_history(
+            env.round_id,
+            InputEvent,
+            {
+                'caller': self.owner_card,
+                'catalyst_action': ActionTypes.PASSIVE,
+            },
+        )
+        if already_prompted_idx != -1:
+            return False
+        return True
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def react(self, args=None) -> Response:
+        if args is None:
+            args = {}
+        assert isinstance(self.attached_event, TransferCard)
+        event = self.attached_event
+
+        choice = self.owner_card.env.cache.get(self.owner_card, SasMajumder._INPUT_DISCARD, None, True)
+        if choice is None:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                        InputEvent(
+                            self.owner_card.player,
+                            [SasMajumder._INPUT_DISCARD],
+                            lambda r: True,
+                            ActionTypes.PASSIVE,
+                            self.owner_card,
+                            StrSelectionQuery(
+                                f'Cybersecurity: Put {str(event.card)} back on top of your deck?',
+                                ['Yes', 'No'],
+                                ['Yes', 'No'],
+                                False,
+                                False,
+                            )
+                        )
+                    ]),
+            )
+
+        if choice == 'Yes':
+            discard = self.owner_card.player.cardholders[Pile.DISCARD]
+            deck = self.owner_card.player.cardholders[Pile.DECK]
+
+            def transfer_top() -> PacketType:
+                packet: PacketType = []
+                if event.card in discard:
+                    packet.append(
+                        TransferCard(
+                            event.card,
+                            discard,
+                            deck,
+                            ActionTypes.PASSIVE,
+                            self.owner_card,
+                            None,
+                            0,
+                        )
+                    )
+                return packet
+
+            self.owner_card.propose(
+                AVGEPacket([transfer_top], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, SasMajumder))
+            )
+
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class SasMajumder(AVGECharacterCard):
-    _LAST_ROUND_USED_KEY = "sas_passive_last_round"
     _INPUT_DISCARD = "sas_passive_input"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PERCUSSION, 2, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        super().__init__(unique_id, 110, CardType.PERCUSSION, 2, 3)
+        self.atk_1_name = 'Four Mallets'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        owner_card = card
+    def passive(self) -> Response:
+        self.add_listener(_SasDiscardReactor(self))
+        return Response(ResponseType.CORE, Data())
 
-        class _SasDiscardReactor(AVGEReactor):
-            def __init__(self):
-                super().__init__(
-                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder),
-                    group=EngineGroup.EXTERNAL_REACTORS,
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        packet: PacketType = []
+
+        def make_hit():
+            def hit() -> PacketType:
+                p: PacketType = []
+                p.append(
+                    AVGECardHPChange(
+                        card.player.opponent.get_active_card(),
+                        10,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.PERCUSSION,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
                 )
+                return p
+            return hit
 
-            def event_match(self, event):
-                from card_game.internal_events import TransferCard
+        packet.extend([make_hit(), make_hit(), make_hit(), make_hit()])
 
-                if not isinstance(event, TransferCard):
-                    return False
-                if event.pile_to.pile_type != Pile.DISCARD:
-                    return False
-                if event.card.player != owner_card.player:
-                    return False
-
-                env = owner_card.env
-                if env.player_turn != owner_card.player.opponent:
-                    return False
-
-                last_round_used = env.cache.get(owner_card, SasMajumder._LAST_ROUND_USED_KEY, None)
-                if last_round_used is not None and env.round_id == last_round_used:
-                    return False
-                return True
-
-            def event_effect(self) -> bool:
-                return True
-
-            def update_status(self):
-                return
-
-            def react(self, args=None) -> Response:
-                if args is None:
-                    args = {}
-                from card_game.internal_events import TransferCard, InputEvent
-                assert(isinstance(self.attached_event, TransferCard))
-                event: TransferCard = self.attached_event
-                choice = owner_card.env.cache.get(owner_card, SasMajumder._INPUT_DISCARD, None, True)
-                if choice is None:
-                    return owner_card.generate_response(
-                        ResponseType.INTERRUPT,
-                        {
-                            INTERRUPT_KEY: [
-                                InputEvent(
-                                    owner_card.player,
-                                    [SasMajumder._INPUT_DISCARD],
-                                    InputType.BINARY,
-                                    lambda r: True,
-                                    ActionTypes.PASSIVE,
-                                    owner_card,
-                                    {LABEL_FLAG: "sas_majumder_passive"},
-                                )
-                            ]
-                        },
-                    )
-                if choice:
-                    def transfer_top() -> PacketType:
-                        return [
-                            TransferCard(
-                                event.card,
-                                owner_card.cardholder,
-                                owner_card.player.cardholders[Pile.DECK],
-                                ActionTypes.PASSIVE,
-                                owner_card,
-                                0,
-                            )
-                        ]
-                    owner_card.propose(
-                        AVGEPacket([transfer_top], AVGEEngineID(owner_card, ActionTypes.PASSIVE, SasMajumder))
-                    )
-                    owner_card.env.cache.set(owner_card, SasMajumder._LAST_ROUND_USED_KEY, owner_card.env.round_id)
-
-                return self.generate_response()
-
-        owner_card.add_listener(_SasDiscardReactor())
-        return owner_card.generate_response()
-
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import TransferCard, AVGECardHPChange, EmptyEvent
-        def gen_1() -> PacketType:
-            return [AVGECardHPChange(
-                card.player.opponent.get_active_card(),
-                10,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PERCUSSION,
-                ActionTypes.ATK_2,
-                card,
-            )]
-        packet : PacketType = ([gen_1] * 4)
         if len(card.player.cardholders[Pile.DECK]) > 0:
-            def gen_2() -> PacketType:
-                return [
+            def gen_draw() -> PacketType:
+                p: PacketType = []
+                p.append(
                     TransferCard(
                         card.player.cardholders[Pile.DECK].peek(),
                         card.player.cardholders[Pile.DECK],
                         card.player.cardholders[Pile.HAND],
-                        ActionTypes.ATK_2,
+                        ActionTypes.ATK_1,
                         card,
+                        None,
                     )
-                ]
-            packet.append(
-                gen_2
-            )
-        else:
-            packet.append(
-                EmptyEvent(
-                    ActionTypes.ATK_2,
-                    card,
-                    response_data={MESSAGE_KEY: "No more cards to draw from deck"}
                 )
-            )
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SasMajumder)))
+                return p
 
-        return card.generate_response()
+            packet.append(gen_draw)
+
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SasMajumder)))
+        return self.generic_response(card, ActionTypes.ATK_1)

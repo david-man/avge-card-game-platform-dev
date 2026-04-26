@@ -185,6 +185,27 @@ class RouterStorage:
                     (now, session_id),
                 )
 
+    def list_active_session_ids_for_user(self, user_id: str) -> list[str]:
+        now = time.time()
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT session_id
+                    FROM sessions
+                    WHERE user_id = ?
+                      AND revoked_at IS NULL
+                      AND expires_at >= ?
+                    """,
+                    (user_id, now),
+                ).fetchall()
+
+        return [
+            str(row["session_id"])
+            for row in rows
+            if isinstance(row["session_id"], str) and row["session_id"].strip()
+        ]
+
     def create_deck(self, user_id: str, name: str, card_payload_json: str) -> StoredDeck:
         normalized_name = name.strip()[:64]
         if not normalized_name:

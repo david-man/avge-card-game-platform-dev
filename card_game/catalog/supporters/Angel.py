@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardStatusChange, TransferCard
 
 class Angel(AVGESupporterCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	@staticmethod
-	def play_card(card: AVGECard) -> Response:
-		from card_game.catalog.tools.AVGETShirt import AVGETShirt
-		from card_game.internal_events import AVGECardStatusChange
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 
-		def generate_packet():
+		def generate_packet() -> PacketType:
 			player = card.player
 			opponent = player.opponent
+			opponent_discard = opponent.cardholders[Pile.DISCARD]
 
-			packet = []
+			packet: PacketType = []
 			for character in player.get_cards_in_play():
+				if not isinstance(character, AVGECharacterCard):
+					continue
 				packet.append(
 						AVGECardStatusChange(
 							StatusEffect.GOON,
@@ -26,24 +26,25 @@ class Angel(AVGESupporterCard):
 							character,
 							ActionTypes.NONCHAR,
 							card,
+							None,
 						)
 					)
 
 			for character in opponent.get_cards_in_play():
-				has_avget_shirt = any(isinstance(tool, AVGETShirt) for tool in character.tools_attached)
-				if has_avget_shirt:
+				if not isinstance(character, AVGECharacterCard):
 					continue
-
-				packet.append(
-					AVGECardStatusChange(
-						StatusEffect.GOON,
-						StatusChangeType.REMOVE,
-						character,
-						ActionTypes.NONCHAR,
-						card,
+				for tool in list(character.tools_attached):
+					packet.append(
+						TransferCard(
+							tool,
+							character.tools_attached,
+							opponent_discard,
+							ActionTypes.NONCHAR,
+							card,
+							None,
+						)
 					)
-				)
 			return packet	
 		card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.NONCHAR, Angel)))
 
-		return card.generate_response(ResponseType.CORE)
+		return self.generic_response(card)

@@ -1,96 +1,100 @@
 from __future__ import annotations
 
-import random
-
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange, PlayCharacterCard
 
 class JoshuaKou(AVGECharacterCard):
-    _LAST_ATK1_ROUND_KEY = "joshuakou_atk1_last_round"
     _PASSIVE_DRAW_CHOICE_KEY = "joshuakou_passive_draw_choice"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.PIANO, 1, 1)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Separate Hands'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+    def passive(self) -> Response:
+        hand = self.player.cardholders[Pile.HAND]
+        deck = self.player.cardholders[Pile.DECK]
 
-        hand = card.player.cardholders[Pile.HAND]
-        deck = card.player.cardholders[Pile.DECK]
+        if len(hand) >= 4 or len(deck) == 0:
+            return Response(ResponseType.CORE, Data())
 
-        if(len(hand) >= 4 or len(deck) == 0):
-            return card.generate_response()
-
-        draw_choice = card.env.cache.get(card, JoshuaKou._PASSIVE_DRAW_CHOICE_KEY, None, True)
-        if(draw_choice is None):
-            return card.generate_response(
+        draw_choice = self.env.cache.get(self, JoshuaKou._PASSIVE_DRAW_CHOICE_KEY, None, True)
+        if draw_choice is None:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
+                            self.player,
                             [JoshuaKou._PASSIVE_DRAW_CHOICE_KEY],
-                            InputType.BINARY,
                             lambda r: True,
                             ActionTypes.PASSIVE,
-                            card,
-                            {LABEL_FLAG: "joshuakou_passive_draw_until_four"},
+                            self,
+                            StrSelectionQuery(
+                                'Category Theory: Draw until you have four cards in hand?',
+                                ['Yes', 'No'],
+                                ['Yes', 'No'],
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        if(not draw_choice):
-            return card.generate_response()
+        if draw_choice != 'Yes':
+            return Response(ResponseType.CORE, Data())
 
         def draw_until_four() -> PacketType:
-            current_hand = card.player.cardholders[Pile.HAND]
-            current_deck = card.player.cardholders[Pile.DECK]
-            def gen() -> PacketType:
-                if(len(current_deck) == 0 or len(current_hand) >= 4):
-                    return []
-                else:
-                    return [TransferCard(
+            current_hand = self.player.cardholders[Pile.HAND]
+            current_deck = self.player.cardholders[Pile.DECK]
+            draws = min(4 - len(current_hand), len(current_deck))
+            packet: PacketType = []
+            for _ in range(draws):
+                packet.append(
+                    TransferCard(
                         current_deck.peek(),
                         current_deck,
                         current_hand,
                         ActionTypes.PASSIVE,
-                        card,
-                    )]
-            return [gen] * 4
+                        self,
+                        None,
+                    )
+                )
+            return packet
 
-        card.propose(
+        self.propose(
             AVGEPacket([
                 draw_until_four
-            ], AVGEEngineID(card, ActionTypes.PASSIVE, JoshuaKou))
+            ], AVGEEngineID(self, ActionTypes.PASSIVE, JoshuaKou))
         )
-        return card.generate_response()
+        return Response(ResponseType.CORE, Data())
 
-
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-
-        last_round = card.env.cache.get(card, JoshuaKou._LAST_ATK1_ROUND_KEY, None, True)
-        if last_round is None or last_round < card.env.round_id - 1:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        _, used_last_turn_idx = card.env.check_history(
+            card.player.get_last_turn(),
+            PlayCharacterCard,
+            {
+                'card': card,
+                'card_action': ActionTypes.ATK_1,
+                'caller': card,
+            },
+        )
+        if used_last_turn_idx != -1:
             def generate_packet() -> PacketType:
                 active = card.player.opponent.get_active_card()
-                return [
+                packet: PacketType = []
+                packet.append(
                     AVGECardHPChange(
                         active,
                         40,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PIANO,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
-                ]
+                )
+                return packet
 
             card.propose(
                 AVGEPacket([
@@ -98,5 +102,4 @@ class JoshuaKou(AVGECharacterCard):
                 ], AVGEEngineID(card, ActionTypes.ATK_1, JoshuaKou))
             )
 
-        card.env.cache.set(card, JoshuaKou._LAST_ATK1_ROUND_KEY, card.env.round_id)
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

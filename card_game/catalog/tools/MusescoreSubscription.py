@@ -12,8 +12,6 @@ class MusescoreSubscription(AVGEToolCard):
 	def deactivate_card(self):
 		from card_game.internal_events import AVGECardStatusChange
 
-		super().deactivate_card()
-
 		assert self.card_attached is not None
 		self.extend_event([
 				AVGECardStatusChange(
@@ -22,9 +20,11 @@ class MusescoreSubscription(AVGEToolCard):
 				self.card_attached,
 				ActionTypes.ENV,
 				self,
+				None,
 				)
 			]
 		)
+		super().deactivate_card()
 
 	def play_card(self) -> Response:
 		from card_game.internal_events import AVGECardStatusChange
@@ -37,8 +37,9 @@ class MusescoreSubscription(AVGEToolCard):
 				self.card_attached,
 				ActionTypes.NONCHAR,
 				self,
+				None,
 				)
 			], AVGEEngineID(self, ActionTypes.NONCHAR, MusescoreSubscription))
 		)
 
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

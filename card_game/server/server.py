@@ -9,18 +9,24 @@ from time import monotonic
 from typing import Any
 from typing import cast
 import os
+import json
+import urllib.error
+import urllib.request
 
 from flask import Flask, request
 
 try:
-    from flask_socketio import SocketIO, emit
+    from flask_socketio import SocketIO, disconnect, emit
 except ImportError:  # pragma: no cover - optional runtime dependency
     SocketIO = None  # type: ignore[assignment]
+    disconnect = None  # type: ignore[assignment]
     emit = None  # type: ignore[assignment]
 
 from .game_runner import FrontendGameBridge
 from .game_runner import p1_username, p2_username
+from ..constants import max_bench_size
 from .logging import (
+    log_input_trace,
     log_protocol_ack_mismatch,
     log_protocol_event,
     log_protocol_recv,
@@ -57,7 +63,11 @@ frontend_game_bridge = FrontendGameBridge()
 entity_setup_payload: dict[str, Any] = frontend_game_bridge.get_setup_payload()
 protocol_seq = 0
 DISCONNECT_GRACE_SECONDS = 5
-TERMINATE_WHEN_BOTH_DISCONNECTED_SECONDS = 10
+room_stage: str = 'init'
+init_setup_submission_by_slot: dict[PlayerSlot, dict[str, Any] | None] = {
+    'p1': None,
+    'p2': None,
+}
 
 
 pending_command_acks: list[PendingCommandAck] = []
@@ -65,9 +75,7 @@ next_command_id = 1
 first_player_join_seen = False
 winner_announced = False
 winner_main_menu_ack_slots: set[PlayerSlot] = set()
-both_disconnected_termination_timer: Timer | None = None
-both_disconnected_countdown_timer: Timer | None = None
-both_disconnected_shutdown_deadline: float | None = None
+room_finished_notified = False
 termination_requested = False
 disconnect_forfeit_timer_by_slot: dict[PlayerSlot, Timer | None] = {
     'p1': None,
@@ -79,6 +87,8 @@ transport_lock = RLock()
 registration_condition = Condition(transport_lock)
 expected_p1_session_id = os.getenv('P1_SESSION_ID', '').strip()
 expected_p2_session_id = os.getenv('P2_SESSION_ID', '').strip()
+router_base_url = os.getenv('ROUTER_BASE_URL', 'http://127.0.0.1:5600').strip()
+room_id_from_env = os.getenv('ROOM_ID', '').strip()
 
 
 def _expected_slot_for_router_session(session_id: str | None) -> PlayerSlot | None:
@@ -90,6 +100,27 @@ def _expected_slot_for_router_session(session_id: str | None) -> PlayerSlot | No
     if expected_p2_session_id and normalized == expected_p2_session_id:
         return cast(PlayerSlot, 'p2')
     return None
+
+
+def _recover_reconnect_token_for_expected_slot(
+    expected_slot: PlayerSlot | None,
+    provided_reconnect_token: str | None,
+) -> str | None:
+    if isinstance(provided_reconnect_token, str) and provided_reconnect_token.strip():
+        return provided_reconnect_token.strip()
+
+    if expected_slot not in {'p1', 'p2'}:
+        return None
+
+    # If the client can prove slot identity via router session mapping,
+    # recover the reserved reconnect token so grace-window reconnect succeeds
+    # even when browser session storage lost the token.
+    reserved = transport_state.reserved_session_by_slot.get(cast(PlayerSlot, expected_slot))
+    if reserved is None:
+        return None
+    if not isinstance(reserved.reconnect_token, str) or not reserved.reconnect_token.strip():
+        return None
+    return reserved.reconnect_token.strip()
 
 
 def _short_session_id(session_id: str | None) -> str:
@@ -122,96 +153,55 @@ def _schedule_process_termination(reason: str) -> None:
     timer.start()
 
 
-def _cancel_both_disconnected_termination_timer_locked() -> None:
-    global both_disconnected_termination_timer, both_disconnected_countdown_timer, both_disconnected_shutdown_deadline
-    timer = both_disconnected_termination_timer
-    if timer is None:
-        pass
-    else:
-        timer.cancel()
-    both_disconnected_termination_timer = None
-
-    countdown_timer = both_disconnected_countdown_timer
-    if countdown_timer is not None:
-        countdown_timer.cancel()
-    both_disconnected_countdown_timer = None
-    both_disconnected_shutdown_deadline = None
-
-
-def _schedule_next_dual_disconnect_countdown_tick_locked() -> None:
-    global both_disconnected_countdown_timer
-    if termination_requested:
-        return
-    if both_disconnected_shutdown_deadline is None:
-        return
-    if any(transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None for slot in ('p1', 'p2')):
-        return
-    if both_disconnected_countdown_timer is not None:
+def _notify_router_room_finished(reason: str) -> None:
+    if not room_id_from_env:
         return
 
-    def _countdown_tick() -> None:
-        with transport_lock:
-            global both_disconnected_countdown_timer
-            both_disconnected_countdown_timer = None
+    endpoint = f"{router_base_url.rstrip('/')}/rooms/finish"
+    payload = {
+        'room_id': room_id_from_env,
+        'reason': reason,
+    }
+    body = json.dumps(payload).encode('utf-8')
+    request_obj = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(request_obj, timeout=0.8) as response:
+            _ = response.read()
+    except urllib.error.URLError as exc:
+        print(f'[ROOM_FINISH_NOTIFY] failed endpoint={endpoint} reason={reason} error={exc}')
+    except Exception as exc:
+        print(f'[ROOM_FINISH_NOTIFY] failed endpoint={endpoint} reason={reason} error={exc}')
 
-            if termination_requested:
-                return
-            if both_disconnected_shutdown_deadline is None:
-                return
-            if any(transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None for slot in ('p1', 'p2')):
-                return
 
-            seconds_left = max(0, int(both_disconnected_shutdown_deadline - monotonic()))
-            if seconds_left > 0:
-                print(f'[SERVER_SHUTDOWN] dual_disconnect_countdown seconds_left={seconds_left}')
-                _schedule_next_dual_disconnect_countdown_tick_locked()
-
-    both_disconnected_countdown_timer = Timer(1.0, _countdown_tick)
-    both_disconnected_countdown_timer.daemon = True
-    both_disconnected_countdown_timer.start()
+def _mark_room_finished_once(reason: str) -> None:
+    global room_finished_notified
+    if room_finished_notified:
+        return
+    room_finished_notified = True
+    _notify_router_room_finished(reason)
 
 
 def _schedule_both_disconnected_termination_timer_locked() -> None:
-    global both_disconnected_termination_timer, both_disconnected_shutdown_deadline
     if not first_player_join_seen or termination_requested:
         return
+
+    # Simplified policy: if both slots are disconnected at the same time,
+    # immediately finish the room and terminate the room server.
     if any(transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None for slot in ('p1', 'p2')):
-        _cancel_both_disconnected_termination_timer_locked()
-        return
-    if both_disconnected_termination_timer is not None:
         return
 
-    both_disconnected_shutdown_deadline = monotonic() + TERMINATE_WHEN_BOTH_DISCONNECTED_SECONDS
-    print(f'[SERVER_SHUTDOWN] dual_disconnect_countdown seconds_left={int(TERMINATE_WHEN_BOTH_DISCONNECTED_SECONDS)}')
-    _schedule_next_dual_disconnect_countdown_tick_locked()
-
-    def _check_then_terminate() -> None:
-        with transport_lock:
-            global both_disconnected_termination_timer
-            both_disconnected_termination_timer = None
-            still_disconnected = all(
-                transport_state.sid_by_slot[cast(PlayerSlot, slot)] is None
-                for slot in ('p1', 'p2')
-            )
-            should_terminate = first_player_join_seen and still_disconnected and not termination_requested
-
-        if should_terminate:
-            _schedule_process_termination(
-                f'both players disconnected for > {TERMINATE_WHEN_BOTH_DISCONNECTED_SECONDS:.0f}s after first join'
-            )
-
-    both_disconnected_termination_timer = Timer(
-        TERMINATE_WHEN_BOTH_DISCONNECTED_SECONDS,
-        _check_then_terminate,
-    )
-    both_disconnected_termination_timer.daemon = True
-    both_disconnected_termination_timer.start()
+    _mark_room_finished_once('both_players_disconnected')
+    _schedule_process_termination('both players disconnected simultaneously')
 
 
 def _mark_player_join_seen_locked() -> None:
     global first_player_join_seen
     first_player_join_seen = True
-    _cancel_both_disconnected_termination_timer_locked()
 
 
 def _cancel_disconnect_forfeit_timer_locked(slot: PlayerSlot) -> None:
@@ -315,6 +305,173 @@ def _environment_body_for_client(client_slot: str | None) -> dict[str, Any]:
     return body
 
 
+def _other_slot(slot: PlayerSlot) -> PlayerSlot:
+    return cast(PlayerSlot, 'p2') if slot == 'p1' else cast(PlayerSlot, 'p1')
+
+
+def _init_state_body_for_slot(slot: PlayerSlot) -> dict[str, Any]:
+    own_ready = init_setup_submission_by_slot[slot] is not None
+    opponent_slot = _other_slot(slot)
+    opponent_ready = init_setup_submission_by_slot[opponent_slot] is not None
+    ready_slots = [
+        slot_name
+        for slot_name in ('p1', 'p2')
+        if init_setup_submission_by_slot[cast(PlayerSlot, slot_name)] is not None
+    ]
+
+    return {
+        'stage': room_stage,
+        'both_players_connected': transport_state.both_players_connected(),
+        'self_ready': own_ready,
+        'opponent_ready': opponent_ready,
+        'ready_slots': ready_slots,
+    }
+
+
+def _remove_pending_packets_by_type(session: ClientSession, packet_type: str) -> None:
+    session.pending_packets = [
+        packet
+        for packet in session.pending_packets
+        if not (isinstance(packet, dict) and packet.get('PacketType') == packet_type)
+    ]
+
+
+def _enqueue_init_state_for_connected_clients(force: bool = False) -> None:
+    slots_needing_init_state: list[PlayerSlot] = []
+    for slot_name in ('p1', 'p2'):
+        slot = cast(PlayerSlot, slot_name)
+        sid_for_slot = transport_state.sid_by_slot[slot]
+        if sid_for_slot is None:
+            continue
+        session = transport_state.session_by_sid.get(sid_for_slot)
+        if session is None:
+            continue
+        already_has_init_state = any(
+            isinstance(packet, dict) and packet.get('PacketType') == 'init_state'
+            for packet in session.pending_packets
+        )
+        if force or not already_has_init_state:
+            slots_needing_init_state.append(slot)
+
+    if not slots_needing_init_state:
+        return
+
+    for slot in slots_needing_init_state:
+        sid_for_slot = transport_state.sid_by_slot[slot]
+        if sid_for_slot is None:
+            continue
+        session = transport_state.session_by_sid.get(sid_for_slot)
+        if session is None:
+            continue
+        if force:
+            _remove_pending_packets_by_type(session, 'init_state')
+        session.pending_packets.append(
+            _build_packet_blueprint(
+                'init_state',
+                _init_state_body_for_slot(slot),
+                is_response=True,
+            )
+        )
+
+
+def _validate_init_setup_submission(
+    slot: PlayerSlot,
+    body: dict[str, Any],
+) -> tuple[bool, str | None, dict[str, Any] | None]:
+    setup = _current_environment_body()
+    cards_raw = setup.get('cards')
+    if not isinstance(cards_raw, list):
+        return False, 'environment payload missing cards list', None
+
+    active_card_id_raw = body.get('active_card_id')
+    bench_card_ids_raw = body.get('bench_card_ids')
+
+    active_card_id = active_card_id_raw.strip() if isinstance(active_card_id_raw, str) else ''
+    if not active_card_id:
+        return False, 'active_card_id is required', None
+
+    if not isinstance(bench_card_ids_raw, list):
+        return False, 'bench_card_ids must be an array', None
+
+    bench_card_ids: list[str] = []
+    for raw in bench_card_ids_raw:
+        if not isinstance(raw, str) or not raw.strip():
+            return False, 'bench_card_ids must only contain non-empty card ids', None
+        bench_card_ids.append(raw.strip())
+
+    if len(bench_card_ids) > max_bench_size:
+        return False, f'bench_card_ids cannot exceed {max_bench_size} cards', None
+
+    selected_ids = [active_card_id, *bench_card_ids]
+    if len(set(selected_ids)) != len(selected_ids):
+        return False, 'init setup card ids must be unique', None
+
+    allowed_character_ids: set[str] = set()
+    own_slot = cast(str, slot)
+    own_hand = f'{own_slot}-hand'
+    own_bench = f'{own_slot}-bench'
+    own_active = f'{own_slot}-active'
+    for raw_card in cards_raw:
+        if not isinstance(raw_card, dict):
+            continue
+
+        card_id = raw_card.get('id')
+        owner_id = raw_card.get('ownerId')
+        holder_id = raw_card.get('holderId')
+        card_type = raw_card.get('cardType')
+        if not isinstance(card_id, str) or not card_id.strip():
+            continue
+        if owner_id != own_slot:
+            continue
+        if card_type != 'character':
+            continue
+        if holder_id not in {own_hand, own_bench, own_active}:
+            continue
+
+        allowed_character_ids.add(card_id.strip())
+
+    if active_card_id not in allowed_character_ids:
+        return False, 'active_card_id must be one of your visible character cards', None
+
+    for bench_card_id in bench_card_ids:
+        if bench_card_id not in allowed_character_ids:
+            return False, 'bench_card_ids must be your visible character cards', None
+
+    return True, None, {
+        'active_card_id': active_card_id,
+        'bench_card_ids': bench_card_ids,
+    }
+
+
+def _finalize_init_stage_locked() -> tuple[bool, str | None]:
+    global frontend_game_bridge, entity_setup_payload, room_stage, pending_command_acks, next_command_id
+
+    p1_submission = init_setup_submission_by_slot['p1']
+    p2_submission = init_setup_submission_by_slot['p2']
+    if not isinstance(p1_submission, dict) or not isinstance(p2_submission, dict):
+        return False, 'both init submissions are required before finalizing'
+
+    try:
+        frontend_game_bridge = frontend_game_bridge.clone_with_init_setup({
+            'p1': p1_submission,
+            'p2': p2_submission,
+        })
+    except Exception as exc:
+        return False, f'failed to finalize init setup: {exc}'
+
+    entity_setup_payload = frontend_game_bridge.get_setup_payload()
+    pending_command_acks.clear()
+    next_command_id = 1
+    room_stage = 'live'
+    init_setup_submission_by_slot['p1'] = None
+    init_setup_submission_by_slot['p2'] = None
+
+    _enqueue_environment_for_connected_clients(force=True)
+    _enqueue_init_state_for_connected_clients(force=True)
+    registration_condition.notify_all()
+    return True, None
+
+
 def _enqueue_environment_for_connected_clients(force: bool = False) -> None:
     slots_needing_environment: list[PlayerSlot] = []
     for slot_name in ('p1', 'p2'):
@@ -343,6 +500,8 @@ def _enqueue_environment_for_connected_clients(force: bool = False) -> None:
         session = transport_state.session_by_sid.get(sid_for_slot)
         if session is None:
             continue
+        if force:
+            _remove_pending_packets_by_type(session, 'environment')
         session.pending_packets.append(
             _build_packet_blueprint(
                 'environment',
@@ -350,6 +509,30 @@ def _enqueue_environment_for_connected_clients(force: bool = False) -> None:
                 is_response=True,
             )
         )
+
+
+def _emit_pending_packets_to_connected_clients() -> None:
+    if socketio is None:
+        return
+
+    deliveries: list[tuple[PlayerSlot, str, list[dict[str, Any]]]] = []
+    with transport_lock:
+        for slot_name in ('p1', 'p2'):
+            slot = cast(PlayerSlot, slot_name)
+            sid_for_slot = transport_state.sid_by_slot[slot]
+            if sid_for_slot is None:
+                continue
+            session = transport_state.session_by_sid.get(sid_for_slot)
+            if session is None or not session.pending_packets:
+                continue
+            packets = _drain_pending_packets_for_session(session)
+            if not packets:
+                continue
+            deliveries.append((slot, sid_for_slot, packets))
+
+    for slot, sid_for_slot, packets in deliveries:
+        socketio.emit('protocol_packets', {'packets': packets}, to=sid_for_slot)
+        log_protocol_send(packets, slot)
 
 
 def _extract_bridge_commands(bridge_result: dict[str, Any]) -> list[str]:
@@ -406,48 +589,48 @@ def _classify_required_ack_slots(command: str, source_slot: str | None) -> set[P
     )
 
 
+def _blocked_pending_command_for_slot(source_slot: str | None) -> PendingCommandAck | None:
+    normalized_slot = _normalize_client_slot(source_slot)
+    if normalized_slot not in {'p1', 'p2'}:
+        return None
+
+    if len(pending_command_acks) == 0:
+        return None
+
+    head = pending_command_acks[0]
+    awaiting_slots = head.required_slots.difference(head.acked_slots)
+    if len(awaiting_slots) == 0:
+        return None
+
+    slot = cast(PlayerSlot, normalized_slot)
+    if slot in awaiting_slots:
+        return None
+
+    return head
+
+
+def _issue_environment_resync_packet_for_source(
+    source_slot: str | None,
+    session_for_client: ClientSession | None,
+) -> dict[str, Any]:
+    body = _environment_body_for_client(source_slot)
+    if session_for_client is not None:
+        return _issue_backend_packet_for_session(
+            session_for_client,
+            'environment',
+            body,
+            is_response=True,
+        )
+
+    return _issue_backend_packet('environment', body, is_response=True)
+
+
 def _enqueue_bridge_commands(commands: list[str], source_slot: str | None) -> None:
     global next_command_id, winner_announced, winner_main_menu_ack_slots
-    connected_slots: set[PlayerSlot] = {
-        cast(PlayerSlot, slot)
-        for slot in ('p1', 'p2')
-        if transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None
-    }
-
     expanded_commands: list[str] = []
     for command in commands:
         command_text = command.strip()
         if not command_text:
-            continue
-
-        action = command_text.split()[0].lower()
-        required_slots = _classify_required_ack_slots(command_text, source_slot)
-
-        should_wrap_with_remote_lock = (
-            len(required_slots) == 1
-            and len(connected_slots) == 2
-            and action not in {'lock-input', 'lock_input', 'unlock-input', 'unlock_input'}
-        )
-
-        should_wrap_with_shared_lock = (
-            len(required_slots) > 1
-            and len(connected_slots) == 2
-            and action not in {'lock-input', 'lock_input', 'unlock-input', 'unlock_input', 'notify', 'winner'}
-        )
-
-        if should_wrap_with_remote_lock:
-            target_slot = next(iter(required_slots))
-            passive_slot: PlayerSlot = 'p2' if target_slot == 'p1' else 'p1'
-            if passive_slot in connected_slots:
-                expanded_commands.append(f'lock-input {passive_slot}')
-                expanded_commands.append(command_text)
-                expanded_commands.append(f'unlock-input {passive_slot}')
-                continue
-
-        if should_wrap_with_shared_lock:
-            expanded_commands.append('lock-input')
-            expanded_commands.append(command_text)
-            expanded_commands.append('unlock-input')
             continue
 
         expanded_commands.append(command_text)
@@ -455,6 +638,7 @@ def _enqueue_bridge_commands(commands: list[str], source_slot: str | None) -> No
     if any(command.strip().lower().startswith('winner ') for command in expanded_commands):
         winner_announced = True
         winner_main_menu_ack_slots = set()
+        _mark_room_finished_once('winner_declared')
 
     for command in expanded_commands:
         pending_command_acks.append(
@@ -558,6 +742,7 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
     if not isinstance(packet_type_raw, str) or packet_type_raw not in {
         'ready',
         'register_client',
+        'init_setup_done',
         'request_environment',
         'update_frontend',
         'frontend_event',
@@ -624,10 +809,14 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
             requested_slot = expected_slot
 
         with transport_lock:
+            recovered_reconnect_token = _recover_reconnect_token_for_expected_slot(
+                expected_slot,
+                reconnect_token,
+            )
             session = transport_state.assign_slot(
                 sid=client_id,
                 requested_slot=requested_slot,
-                reconnect_token=reconnect_token,
+                reconnect_token=recovered_reconnect_token,
             )
 
             if session is None:
@@ -638,15 +827,11 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
 
             both_connected = transport_state.both_players_connected()
 
-            # Initialization barrier: hold registration until both player slots
-            # are filled. This avoids client-side registration loops/polling.
-            while not both_connected:
-                registration_condition.wait()
-                both_connected = transport_state.both_players_connected()
-
-            if both_connected:
-                _enqueue_environment_for_connected_clients()
-                registration_condition.notify_all()
+            # Always prime newly connected clients with current state, even if
+            # the opponent is still disconnected.
+            _enqueue_environment_for_connected_clients()
+            _enqueue_init_state_for_connected_clients(force=True)
+            registration_condition.notify_all()
 
         print(
             '[SLOT_BIND] transport=http '
@@ -668,6 +853,50 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
             'reconnect_token': session.reconnect_token,
             'both_players_connected': True,
             'waiting_for_opponent': False,
+            'waiting_for_init': room_stage == 'init',
+        }, 200
+
+    if packet_type_raw == 'init_setup_done':
+        if session_for_client is None or source_slot not in {'p1', 'p2'}:
+            return {'ok': False, 'error': 'init_setup_done requires an assigned player slot.'}, 400
+
+        slot = cast(PlayerSlot, source_slot)
+        finalized_now = False
+        with transport_lock:
+            if room_stage != 'init':
+                return {'ok': False, 'error': 'Init setup is already finalized.'}, 409
+
+            ok, error_message, normalized_submission = _validate_init_setup_submission(slot, body)
+            if not ok or normalized_submission is None:
+                return {'ok': False, 'error': error_message or 'invalid init setup payload'}, 400
+
+            init_setup_submission_by_slot[slot] = normalized_submission
+            _enqueue_init_state_for_connected_clients(force=True)
+
+            should_finalize = (
+                init_setup_submission_by_slot['p1'] is not None
+                and init_setup_submission_by_slot['p2'] is not None
+            )
+            finalize_error: str | None = None
+            if should_finalize:
+                finalized_ok, finalize_error = _finalize_init_stage_locked()
+                if not finalized_ok:
+                    return {'ok': False, 'error': finalize_error or 'failed to finalize init setup'}, 500
+                finalized_now = True
+
+            if session_for_client.pending_packets:
+                packets.extend(_drain_pending_packets_for_session(session_for_client))
+
+        if finalized_now:
+            _emit_pending_packets_to_connected_clients()
+
+        log_protocol_send(packets, source_slot)
+        return {
+            'ok': True,
+            'packets': packets,
+            'init_stage': room_stage,
+            'self_ready': init_setup_submission_by_slot[slot] is not None,
+            'opponent_ready': init_setup_submission_by_slot[_other_slot(slot)] is not None,
         }, 200
 
     if packet_type_raw == 'request_environment':
@@ -707,10 +936,44 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
         log_protocol_send(packets, source_slot)
         return {'ok': True, 'packets': packets}, 200
 
+    if room_stage == 'init' and packet_type_raw == 'frontend_event':
+        # During INIT we ignore gameplay frontend events, but winner-flow
+        # packets must still be accepted so disconnect-forfeit can complete.
+        # Note: update_frontend packets must pass through in INIT so query
+        # responses (input/notify) are never dropped.
+        raw_event_type = body.get('event_type')
+        normalized_event_type = (
+            str(raw_event_type).strip().lower().replace('-', '_').replace(' ', '_')
+            if isinstance(raw_event_type, str)
+            else ''
+        )
+        is_winner_event = normalized_event_type == 'winner'
+
+        if not is_winner_event:
+            with transport_lock:
+                if session_for_client is not None and session_for_client.pending_packets:
+                    packets.extend(_drain_pending_packets_for_session(session_for_client))
+            log_protocol_send(packets, source_slot)
+            return {'ok': True, 'packets': packets}, 200
+
     if packet_type_raw == 'update_frontend':
         command = body.get('command')
         input_response = body.get('input_response')
         notify_response = body.get('notify_response')
+
+        blocked_pending_command = _blocked_pending_command_for_slot(source_slot)
+        if blocked_pending_command is not None and (
+            isinstance(input_response, dict) or isinstance(notify_response, dict)
+        ):
+            packets.append(_issue_environment_resync_packet_for_source(source_slot, session_for_client))
+            log_protocol_send(packets, source_slot)
+            return {
+                'ok': True,
+                'packets': packets,
+                'rejected': True,
+                'error': 'input blocked: awaiting response from the other client',
+                'blocked_command': blocked_pending_command.command,
+            }, 200
 
         log_protocol_update(
             isinstance(command, str) and bool(command.strip()),
@@ -720,20 +983,34 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
         )
 
         if isinstance(input_response, dict):
+            log_input_trace(
+                'server_received_input_response',
+                client_slot=source_slot,
+                room_stage=room_stage,
+                command=command if isinstance(command, str) else None,
+                payload_keys=sorted(input_response.keys()),
+                payload=input_response,
+            )
             bridge_result = frontend_game_bridge.handle_frontend_event(
                 'input_result',
                 input_response,
                 {},
             )
-            _enqueue_bridge_commands(_extract_bridge_commands(bridge_result), source_slot)
-            if _bridge_requests_force_environment_sync(bridge_result):
+            bridge_commands = _extract_bridge_commands(bridge_result)
+            force_sync = _bridge_requests_force_environment_sync(bridge_result)
+            log_input_trace(
+                'server_processed_input_response',
+                client_slot=source_slot,
+                bridge_commands=bridge_commands,
+                force_environment_sync=force_sync,
+            )
+            _enqueue_bridge_commands(bridge_commands, source_slot)
+            if force_sync:
                 _force_environment_sync_for_connected_clients()
 
         if isinstance(command, str) and command.strip():
             ack_completed, acked_command = _acknowledge_head_command(command, source_slot)
             if ack_completed and isinstance(acked_command, str) and acked_command.strip():
-                if acked_command.strip().lower().startswith('notify '):
-                    _enqueue_bridge_commands(['unlock-input'], source_slot)
                 bridge_result = frontend_game_bridge.handle_frontend_event(
                     'terminal_log',
                     {
@@ -763,6 +1040,24 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
         return {'ok': False, 'error': 'frontend_event requires event_type.'}, 400
 
     normalized_event_name = str(event_name).strip().lower().replace('-', '_').replace(' ', '_')
+    blocked_pending_command = _blocked_pending_command_for_slot(source_slot)
+    if blocked_pending_command is not None:
+        packets.append(_issue_environment_resync_packet_for_source(source_slot, session_for_client))
+        log_protocol_event(
+            'frontend_event_rejected_pending_peer_ack',
+            [normalized_event_name],
+            ['blocked_command'],
+            source_slot,
+        )
+        log_protocol_send(packets, source_slot)
+        return {
+            'ok': True,
+            'packets': packets,
+            'rejected': True,
+            'error': 'input blocked: awaiting response from the other client',
+            'blocked_command': blocked_pending_command.command,
+        }, 200
+
     normalized_source_slot = _normalize_client_slot(source_slot)
     should_terminate_for_winner_menu = False
     if normalized_event_name == 'winner' and normalized_source_slot in {'p1', 'p2'} and winner_announced:
@@ -789,6 +1084,7 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
     log_protocol_send(packets, source_slot)
 
     if should_terminate_for_winner_menu:
+        _mark_room_finished_once('winner_main_menu_ack')
         _schedule_process_termination('both players confirmed main menu after winner')
 
     return {'ok': True, 'packets': packets}, 200
@@ -866,6 +1162,72 @@ def scanner_input() -> tuple[dict[str, Any], int]:
     }, 200
 
 
+@app.route('/room/replace-session', methods=['POST', 'OPTIONS'])
+def room_replace_session() -> tuple[dict[str, Any], int]:
+    if request.method == 'OPTIONS':
+        return {'ok': True}, 204
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return {'ok': False, 'error': 'Body must be a JSON object.'}, 400
+
+    old_session_raw = payload.get('old_session_id')
+    new_session_raw = payload.get('new_session_id')
+    old_session_id = old_session_raw.strip() if isinstance(old_session_raw, str) else ''
+    new_session_id = new_session_raw.strip() if isinstance(new_session_raw, str) else ''
+
+    if not old_session_id or not new_session_id:
+        return {'ok': False, 'error': 'old_session_id and new_session_id are required.'}, 400
+
+    replaced_slot: PlayerSlot | None = None
+    evicted_sid: str | None = None
+
+    global expected_p1_session_id, expected_p2_session_id
+    with transport_lock:
+        if old_session_id == expected_p1_session_id:
+            expected_p1_session_id = new_session_id
+            replaced_slot = cast(PlayerSlot, 'p1')
+        elif old_session_id == expected_p2_session_id:
+            expected_p2_session_id = new_session_id
+            replaced_slot = cast(PlayerSlot, 'p2')
+        else:
+            return {'ok': False, 'error': 'old_session_id not assigned to this room.'}, 404
+
+        # Session takeover intentionally suppresses normal disconnect-forfeit flow.
+        _cancel_disconnect_forfeit_timer_locked(replaced_slot)
+        _reset_delivery_state_for_slot(replaced_slot)
+
+        sid = transport_state.sid_by_slot[replaced_slot]
+        if isinstance(sid, str) and sid:
+            evicted_sid = sid
+            transport_state.release_sid(sid)
+
+        # Whether the old client was connected or already gone, remove grace-slot
+        # reservation so the replacement client can bind this seat immediately.
+        transport_state.clear_reserved_slot(replaced_slot)
+
+        registration_condition.notify_all()
+
+    if evicted_sid and socketio is not None:
+        socketio.emit('session_replaced', {
+            'ok': True,
+            'slot': replaced_slot,
+            'reason': 'session_superseded',
+            'message': 'Signed out: account opened on another client.',
+        }, to=evicted_sid)
+        if disconnect is not None:
+            try:
+                disconnect(sid=evicted_sid)
+            except Exception:
+                pass
+
+    return {
+        'ok': True,
+        'slot': replaced_slot,
+        'evicted': evicted_sid is not None,
+    }, 200
+
+
 if socketio is not None:
     @socketio.on('connect')
     def socket_connect() -> None:
@@ -894,10 +1256,14 @@ if socketio is not None:
         sid = _socket_sid()
 
         with transport_lock:
+            recovered_reconnect_token = _recover_reconnect_token_for_expected_slot(
+                expected_slot,
+                reconnect_token if isinstance(reconnect_token, str) else None,
+            )
             session = transport_state.assign_slot(
                 sid=sid,
                 requested_slot=requested_slot if isinstance(requested_slot, str) else None,
-                reconnect_token=reconnect_token if isinstance(reconnect_token, str) else None,
+                reconnect_token=recovered_reconnect_token,
             )
 
             if session is None:
@@ -911,9 +1277,12 @@ if socketio is not None:
             _mark_player_join_seen_locked()
 
             both_connected = transport_state.both_players_connected()
-            if both_connected:
-                _enqueue_environment_for_connected_clients()
-                registration_condition.notify_all()
+
+            # Always queue environment/init state for connected clients so a
+            # lone reconnect lands back in-game view immediately.
+            _enqueue_environment_for_connected_clients()
+            _enqueue_init_state_for_connected_clients(force=True)
+            registration_condition.notify_all()
 
         print(
             '[SLOT_BIND] transport=ws '
@@ -929,8 +1298,17 @@ if socketio is not None:
             'slot': session.slot,
             'reconnect_token': session.reconnect_token,
             'both_players_connected': both_connected,
+            'waiting_for_init': room_stage == 'init',
             'pending_replay_count': len(session.pending_commands),
         })
+
+        # Deliver any immediately available packets to the registering client,
+        # including the latest environment snapshot.
+        if socketio is not None:
+            session_packets = _drain_pending_packets_for_session(session)
+            if session_packets:
+                socketio.emit('protocol_packets', {'packets': session_packets}, to=sid)
+                log_protocol_send(session_packets, session.slot)
 
         if both_connected:
             assert socketio is not None
@@ -939,30 +1317,17 @@ if socketio is not None:
                 peer_sid = transport_state.sid_by_slot[slot_name]
                 if peer_sid is None:
                     continue
+                if peer_sid == sid:
+                    continue
                 connected_sids.append(peer_sid)
                 session_for_slot = transport_state.session_by_sid.get(peer_sid)
                 if session_for_slot is None:
                     continue
-                env_packet = None
-                if session_for_slot.pending_packets:
-                    for idx, candidate in enumerate(session_for_slot.pending_packets):
-                        if isinstance(candidate, dict) and candidate.get('PacketType') == 'environment':
-                            packet_type = candidate.get('PacketType')
-                            body = candidate.get('Body')
-                            is_response = candidate.get('IsResponse', True)
-                            if isinstance(packet_type, str) and isinstance(body, dict):
-                                env_packet = _issue_backend_packet_for_session(
-                                    session_for_slot,
-                                    packet_type,
-                                    body,
-                                    bool(is_response),
-                                )
-                            session_for_slot.pending_packets.pop(idx)
-                            break
-                if env_packet is None:
+                peer_packets = _drain_pending_packets_for_session(session_for_slot)
+                if not peer_packets:
                     continue
-                socketio.emit('protocol_packets', {'packets': [env_packet]}, to=peer_sid)
-                log_protocol_send([env_packet], slot_name)
+                socketio.emit('protocol_packets', {'packets': peer_packets}, to=peer_sid)
+                log_protocol_send(peer_packets, slot_name)
 
             for peer_sid in connected_sids:
                 socketio.emit('opponent_reconnected', {
@@ -994,6 +1359,29 @@ if socketio is not None:
         emit('protocol_packets', {'packets': response.get('packets', [])})
 
 
+    @socketio.on('request_environment')
+    def socket_request_environment(payload: Any) -> None:
+        if emit is None:
+            return
+
+        data = payload if isinstance(payload, dict) else {}
+        sid = _socket_sid()
+        with transport_lock:
+            client_slot = transport_state.slot_for_sid(sid)
+
+        packet = {
+            'ACK': data.get('ACK'),
+            'PacketType': 'request_environment',
+            'Body': data.get('Body') if isinstance(data.get('Body'), dict) else {},
+            'client_id': sid,
+        }
+        response, status = _process_protocol_packet(packet, client_slot)
+        if status != 200:
+            emit('protocol_error', response)
+            return
+        emit('protocol_packets', {'packets': response.get('packets', [])})
+
+
     @socketio.on('update_frontend')
     def socket_update_frontend(payload: Any) -> None:
         if emit is None:
@@ -1007,6 +1395,29 @@ if socketio is not None:
         packet = {
             'ACK': data.get('ACK'),
             'PacketType': 'update_frontend',
+            'Body': data.get('Body') if isinstance(data.get('Body'), dict) else data,
+            'client_id': sid,
+        }
+        response, status = _process_protocol_packet(packet, client_slot)
+        if status != 200:
+            emit('protocol_error', response)
+            return
+        emit('protocol_packets', {'packets': response.get('packets', [])})
+
+
+    @socketio.on('init_setup_done')
+    def socket_init_setup_done(payload: Any) -> None:
+        if emit is None:
+            return
+
+        data = payload if isinstance(payload, dict) else {}
+        sid = _socket_sid()
+        with transport_lock:
+            client_slot = transport_state.slot_for_sid(sid)
+
+        packet = {
+            'ACK': data.get('ACK'),
+            'PacketType': 'init_setup_done',
             'Body': data.get('Body') if isinstance(data.get('Body'), dict) else data,
             'client_id': sid,
         }
@@ -1090,6 +1501,7 @@ if socketio is not None:
                 )
 
         if should_terminate_for_winner_menu:
+            _mark_room_finished_once('winner_main_menu_ack_disconnect')
             _schedule_process_termination('both players exited after winner (disconnect path)')
 
 

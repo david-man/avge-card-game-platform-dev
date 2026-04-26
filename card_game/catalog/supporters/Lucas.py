@@ -11,8 +11,7 @@ class Lucas(AVGESupporterCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	@staticmethod
-	def play_card(card: AVGECard) -> Response:
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
 		player = card.player
 		deck = player.cardholders[Pile.DECK]
@@ -34,71 +33,75 @@ class Lucas(AVGESupporterCard):
 			if isinstance(card, AVGECharacterCard)
 			and card.card_type not in board_types
 		]
-		if(len(deck) == 0):
-			return card.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: "No cards in deck!"})
+
 		missing = object()
 		top_deck_card = card.env.cache.get(card, Lucas._CARD_DECK_KEY, missing)
 		hand_card = card.env.cache.get(card, Lucas._CARD_HAND_KEY, missing, True)
 		if(top_deck_card is missing):
-			return card.generate_response(ResponseType.INTERRUPT,
-								 {
-									 INTERRUPT_KEY:[
-										 InputEvent(
-											card.player,
-											[Lucas._CARD_DECK_KEY],
-											InputType.SELECTION,
-											lambda res : True,
-											ActionTypes.NONCHAR,
-											card,
-											{LABEL_FLAG: "lucas_choice_top",
-											TARGETS_FLAG: eligible_deck_characters,
-											DISPLAY_FLAG: list(deck)}
-										)
-									]
-								 }
-				)
+			return Response(
+				ResponseType.INTERRUPT,
+				Interrupt[InputEvent]([
+					InputEvent(
+						card.player,
+						[Lucas._CARD_DECK_KEY],
+						lambda res: True,
+						ActionTypes.NONCHAR,
+						card,
+						CardSelectionQuery("lucas_choice_top", eligible_deck_characters, eligible_deck_characters, True, False),
+					)
+				]),
+			)
 		if(top_deck_card is not None):
-			assert isinstance(top_deck_card, AVGECard)
+			assert isinstance(top_deck_card, AVGECharacterCard)
 			eligible_deck_characters = [
 				card
 				for card in eligible_deck_characters
-				if not isinstance(card, type(top_deck_card))
+				if card != top_deck_card and card.card_type != top_deck_card.card_type
 			]
 		if(hand_card is missing):
-			return card.generate_response(ResponseType.INTERRUPT,
-								 {
-									 INTERRUPT_KEY:[
-										 InputEvent(
-											card.player,
-											[Lucas._CARD_HAND_KEY],
-											InputType.SELECTION,
-											lambda res : True,
-											ActionTypes.NONCHAR,
-											card,
-											{LABEL_FLAG: "lucas_choice_hand",
-											TARGETS_FLAG: eligible_deck_characters,
-											DISPLAY_FLAG: list(deck)}
-										)
-									]
-								 }
-				)
+			return Response(
+				ResponseType.INTERRUPT,
+				Interrupt[InputEvent]([
+					InputEvent(
+						card.player,
+						[Lucas._CARD_HAND_KEY],
+						lambda res: True,
+						ActionTypes.NONCHAR,
+						card,
+						CardSelectionQuery("lucas_choice_hand", eligible_deck_characters, eligible_deck_characters, True, False),
+					)
+				]),
+			)
 
-		packet = []
+		packet: PacketType = []
 		if top_deck_card is not None:
-			packet.append(TransferCard(top_deck_card,
-							  deck,
-							  deck,
-							  ActionTypes.NONCHAR,
-							  card,
-							  0))
+			assert isinstance(top_deck_card, AVGECharacterCard)
+			packet.append(
+				TransferCard(
+					top_deck_card,
+					deck,
+					deck,
+					ActionTypes.NONCHAR,
+					card,
+					RevealCards("Lucas: Selected top-deck character", all_players, default_timeout, [top_deck_card]),
+					0,
+				)
+			)
 		if hand_card is not None:
-			packet.append(TransferCard(hand_card,
-							  deck,
-							  hand,
-							  ActionTypes.NONCHAR,
-							  card))
-
+			assert isinstance(hand_card, AVGECharacterCard)
+			packet.append(
+				TransferCard(
+					hand_card,
+					deck,
+					hand,
+					ActionTypes.NONCHAR,
+					card,
+					RevealCards("Lucas: Selected hand character", all_players, default_timeout, [hand_card]),
+				)
+			)
 
 		if(len(packet) > 0):
 			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Lucas)))
-		return card.generate_response(ResponseType.CORE)
+		card.env.cache.delete(card, Lucas._CARD_DECK_KEY)
+		card.env.cache.delete(card, Lucas._CARD_HAND_KEY)
+		return self.generic_response(card)

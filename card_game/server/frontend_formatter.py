@@ -112,6 +112,19 @@ def _format_card_class_name(card: AVGECard) -> str:
     return name
 
 
+def _character_has_active(card: AVGECharacterCard) -> bool:
+    """Safely evaluate whether a character currently has an active ability available."""
+    if getattr(card, 'active_name', None) is None:
+        return False
+    can_play_active = getattr(card, 'can_play_active', None)
+    if not callable(can_play_active):
+        return False
+    try:
+        return bool(can_play_active())
+    except Exception:
+        return False
+
+
 def _sorted_cards(env: AVGEEnvironment) -> list[AVGECard]:
     """
     Deterministic card ordering:
@@ -163,8 +176,8 @@ def _energy_holder_and_attachment(env: AVGEEnvironment, token: Any) -> tuple[str
     Return (ownerId, holderId, attachedToCardId) for a token.
 
     holderId mapping:
-    - token on player -> "{player_id}-energy"
-    - token on character card -> "{card_owner_id}-energy" and attachedToCardId is that card id
+    - token on player -> "shared-energy"
+    - token on character card -> "shared-energy" and attachedToCardId is that card id
     - token in env energy pool -> "energy-discard"
     """
     holder = token.holder
@@ -172,22 +185,22 @@ def _energy_holder_and_attachment(env: AVGEEnvironment, token: Any) -> tuple[str
     # Token attached to a character card.
     if isinstance(holder, AVGECharacterCard):
         owner_id = _to_strenum_value(holder.player.unique_id)
-        return owner_id, f"{owner_id}-energy", holder.unique_id
+        return owner_id, 'shared-energy', holder.unique_id
 
     # Token in a player's energy reserve/pile.
     if hasattr(holder, "unique_id") and _to_strenum_value(getattr(holder, "unique_id", "")) in env.players:
         owner_id = _to_strenum_value(holder.unique_id)
-        return owner_id, f"{owner_id}-energy", None
+        return owner_id, 'shared-energy', None
 
     # Token detached/voided into environment.
     if holder is env or holder is None:
-        return "p1", "energy-discard", None
+        return 'shared', 'energy-discard', None
 
     # Fallback for unexpected custom holder shapes.
-    owner_id = "p1"
+    owner_id = 'shared'
     if hasattr(holder, "player") and getattr(holder, "player") is not None:
         owner_id = _to_strenum_value(holder.player.unique_id)
-    return owner_id, f"{owner_id}-energy", None
+    return owner_id, 'shared-energy', None
 
 
 def environment_to_setup_payload(env: AVGEEnvironment) -> dict[str, Any]:
@@ -217,6 +230,17 @@ def environment_to_setup_payload(env: AVGEEnvironment) -> dict[str, Any]:
     for card in _sorted_cards(env):
         card_type_str = _card_type_from_instance(card)
         is_character = isinstance(card, AVGECharacterCard)
+        has_atk_1 = bool(getattr(card, 'atk_1_name', None) is not None if is_character else False)
+        has_active = bool(_character_has_active(card) if is_character else False)
+        has_passive = bool(getattr(card, 'has_passive', False) if is_character else False)
+        has_atk_2 = bool(getattr(card, 'atk_2_name', None) is not None if is_character else False)
+        retreat_cost = int(getattr(card, 'retreat_cost', 0)) if is_character else 0
+        atk1_cost = max(0, int(getattr(card, 'atk_1_cost', 0))) if has_atk_1 else 0
+        atk2_cost = max(0, int(getattr(card, 'atk_2_cost', 0))) if has_atk_2 else 0
+
+        atk1_name = str(getattr(card, 'atk_1_name', None)) if has_atk_1 else None
+        active_name = str(getattr(card, 'active_name', None)) if has_active else None
+        atk2_name = str(getattr(card, 'atk_2_name', None)) if has_atk_2 else None
 
         cards_payload.append(
             {
@@ -224,9 +248,16 @@ def environment_to_setup_payload(env: AVGEEnvironment) -> dict[str, Any]:
                 "ownerId": _owner_id_for_card(card),
                 "cardType": card_type_str,
                 "holderId": _holder_id_for_card(env, card),
-                "hasAtk1": bool(card.has_atk_1 if isinstance(card, AVGECharacterCard) else False),
-                "hasActive": bool(card.has_active and card.can_play_active(card) if isinstance(card, AVGECharacterCard) else False),
-                "hasAtk2": bool(card.has_atk_2 if isinstance(card, AVGECharacterCard) else False),
+                "hasAtk1": has_atk_1,
+                "hasActive": has_active,
+                "hasPassive": has_passive,
+                "hasAtk2": has_atk_2,
+                "atk1Name": atk1_name,
+                "activeName": active_name,
+                "atk2Name": atk2_name,
+                "atk1Cost": atk1_cost,
+                "atk2Cost": atk2_cost,
+                "retreatCost": retreat_cost,
                 "hp": int(getattr(card, "hp", 0)) if is_character else 0,
                 "maxHp": int(getattr(card, "max_hp", 0)) if is_character else 0,
                 "attachedToCardId": _attached_to_card_id(card),

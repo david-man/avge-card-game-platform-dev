@@ -1,6 +1,6 @@
 from __future__ import annotations
 from enum import Enum, StrEnum
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Callable, TypeVar, Sequence
 from dataclasses import dataclass
 if TYPE_CHECKING:
     from card_game.engine.event import Event
@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from card_game.avge_abstracts.AVGECards import AVGECard, AVGECharacterCard
     from card_game.avge_abstracts.AVGEPlayer import AVGEPlayer
     from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
-type Data = dict[str, Any]
 
 cards_per_deck = 30
 initial_hand_size = 5
@@ -21,17 +20,66 @@ per_turn_supporter = 1
 per_turn_swaps = 1
 per_turn_atks = 1
 
-ACTIVE_FLAG = "ACTIVE_FLAG"#will be set to a character card in args if that card's active ability is activated. if card can use active ability, the PlayCharacterCard will be put to the front
-INTERRUPT_KEY = "INTERRUPT_KEY"
-REVEAL_KEY = "REVEAL"#key for list of cards that should be "revealed" -- both players can see
-MESSAGE_KEY = "MSG"#key for response data that encodes a simple string message
-LABEL_FLAG = "QUERY_LABEL"
-TARGETS_FLAG = "TARGETS"
-DISPLAY_FLAG = "DISPLAY"
-ALLOW_NONE = "ALLOW_NONE"
-ALLOW_REPEAT = "ALLOW_REPEAT"
-SKIP_KEY = "SKIP_KEY"#if an input event gives this key, the receiver should fast forward itself. all users of input events must deal with this. it is guaranteed that if one value is SKIP_KEY in env_cache, all values are SKIP_KEY
+default_timeout = 5
 
+ACTIVE_FLAG = 'active_flag'
+
+@dataclass
+class Data():
+    pass
+@dataclass
+class Notify(Data):
+    message : str
+    players : list[PlayerID]
+    timeout : int | None #None if message should not automatically be accepted after some num of seconds.
+@dataclass
+class RevealCards(Notify):
+    cards : list[AVGECard]
+@dataclass
+class RevealStr(Notify):
+    items : list[str]
+@dataclass
+class Interrupt[EV](Data):
+    type Gen = Callable[[], list[EV] | list[Gen] | list[EV | Gen]]
+    insertion : list[EV] | list[Gen] | list[EV | Gen]
+@dataclass
+class CardSelectionQuery(Data):
+    header_msg : str
+    targets : Sequence[AVGECard]
+    display : Sequence[AVGECard]
+    allows_none : bool
+    allows_repeat : bool
+@dataclass
+class StrSelectionQuery(Data):
+    header_msg : str
+    targets : list[str]
+    display : list[str]
+    allows_none : bool
+    allows_repeat : bool
+@dataclass
+class OrderingQuery(Data):
+    unordered_listeners : list[AbstractEventListener]
+@dataclass
+class GameEnd(Data):
+    winner : PlayerID
+    reason : str
+@dataclass
+class Phase2Data(Data):
+    player : PlayerID
+@dataclass
+class AtkPhaseData(Data):
+    player : PlayerID
+@dataclass
+class IntegerInputData(Data):
+    header_msg : str
+    min_num : int#inclusive
+    max_num : int#inclusive
+@dataclass
+class CoinflipData(Data):
+    header_msg : str
+@dataclass
+class D6Data(Data):
+    header_msg : str
 class ResponseType(StrEnum):
     SKIP = "SKIP"#something in the list went awry/was rejected, undo the whole packet
     ACCEPT = 'ACCEPT'#accept and move to the next step
@@ -47,21 +95,21 @@ class ResponseType(StrEnum):
     NEXT_EVENT = "NEXT_EVENT"
     NEXT_PACKET = 'NEXT_PACKET'
 
-@dataclass
-class AVGEEngineID():
-    caller_card : AVGECard | None
-    action_type : ActionTypes
-    header_class : type[AVGECard] | None
+EV = TypeVar('EV', bound='Event')
 class Response():
     def __init__(self, 
-                 source : Event | AbstractEventListener | AVGECard | None,#None source reserved for very edge-case circumstances.
-                 response_type : ResponseType = ResponseType.ACCEPT, 
-                 data : Data | None = {}):
+                 response_type : ResponseType, 
+                 data : Data):
         self.response_type = response_type
-        if(data is None):
-            data = {}
         self.data = data
-        self.source = source
+
+@dataclass
+class AVGEEngineID():
+    caller : AVGECard | AVGEPlayer | AVGEEnvironment
+    action_type : ActionTypes
+    header_class : type[AVGECard] | None
+
+
 
 class AVGEAttributeModifier(StrEnum):
     ADDITIVE = 'additive'
@@ -103,7 +151,7 @@ class StatusChangeType(StrEnum):
 class PlayerID(StrEnum):
     P1 = 'p1'
     P2 = 'p2'
-
+all_players : list[PlayerID] = [PlayerID.P1, PlayerID.P2]
 class Pile(StrEnum):
     DECK = 'deck'
     HAND = 'hand'

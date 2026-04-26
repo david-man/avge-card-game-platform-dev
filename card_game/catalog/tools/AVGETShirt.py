@@ -20,6 +20,7 @@ class AVGETShirt(AVGEToolCard):
 				self.card_attached,
 				ActionTypes.ENV,
 				self,
+				None,
 				)
 			]
 		)
@@ -36,8 +37,9 @@ class AVGETShirt(AVGEToolCard):
 				self.card_attached,
 				ActionTypes.NONCHAR,
 				self,
+				None,
 				)
 			], AVGEEngineID(self, ActionTypes.NONCHAR, AVGETShirt))
 		)
 
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

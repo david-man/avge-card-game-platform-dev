@@ -22,7 +22,7 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 		if(self.owner_card.card_attached is None or self.owner_card.card_attached.player is None):
 			return False
 		return (
-			event.player == self.owner_card.card_attached.player
+			event.env.player_turn == self.owner_card.card_attached.player
 			and self.owner_card.card_attached.player.get_active_card() == self.owner_card.card_attached
 		)
 
@@ -42,25 +42,20 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 	def react(self, args=None):
 		from card_game.internal_events import InputEvent, TransferCard
 		player = self.owner_card.player
-		coin_val = self.owner_card.env.cache.get(self.owner_card, AVGEShowcaseSticker._COIN_RESULT_KEY, None, one_look=True)
+		coin_val = self.owner_card.env.cache.get(self.owner_card, AVGEShowcaseSticker._COIN_RESULT_KEY, None)
 		if(coin_val is None):
-
-			return self.generate_response(
+			return Response(
 				ResponseType.INTERRUPT,
-				{
-					INTERRUPT_KEY: [
+				Interrupt[InputEvent]([
 						InputEvent(
 							player,
 							[AVGEShowcaseSticker._COIN_RESULT_KEY],
-							InputType.COIN,
 							lambda r: True,
-							ActionTypes.NONCHAR,
+							ActionTypes.PASSIVE,
 							self.owner_card,
-							{
-								LABEL_FLAG: "sticker-coin-flip"},
+							CoinflipData("AVGE Ambassador: Flip a coin."),
 						)
-					]
-				},
+				]),
 			)
 
 		if(int(coin_val) == 1):
@@ -68,20 +63,22 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 			hand = player.cardholders[Pile.HAND]
 			if(len(deck) > 0):
 				def gen() -> PacketType:
-					return[ TransferCard(
+					return [TransferCard(
 							deck.peek(),
 							deck,
 							hand,
-							ActionTypes.NONCHAR,
+							ActionTypes.PASSIVE,
 							self.owner_card,
+							None,
 						)]
 				self.propose(
 					AVGEPacket([
 						gen
-					], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, AVGEShowcaseSticker)), 1
+					], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, AVGEShowcaseSticker)), 1
 				)
 
-		return self.generate_response()
+		self.owner_card.env.cache.delete(self.owner_card, AVGEShowcaseSticker._COIN_RESULT_KEY)
+		return Response(ResponseType.ACCEPT, Data())
 
 
 class AVGEShowcaseSticker(AVGEToolCard):
@@ -93,4 +90,4 @@ class AVGEShowcaseSticker(AVGEToolCard):
 
 	def play_card(self) -> Response:
 		self.add_listener(AVGEShowcaseStickerTurnStartReactor(self))
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts import *
-from card_game.avge_abstracts.AVGECards import AVGEStadiumCard
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import PlayCharacterCard
 
 
 class LindemannReducedAttackCostModifier(AVGEModifier):
@@ -24,8 +24,6 @@ class LindemannReducedAttackCostModifier(AVGEModifier):
 		return True
 
 	def event_match(self, event):
-		from card_game.internal_events import PlayCharacterCard
-
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, PlayCharacterCard)):
@@ -56,12 +54,10 @@ class LindemannReducedAttackCostModifier(AVGEModifier):
 		return "LindemannPracticeRoom Reduced Attack Cost"
 
 	def modify(self, args=None):
-		from card_game.internal_events import PlayCharacterCard
-
 		event = self.attached_event
 		assert isinstance(event, PlayCharacterCard)
 		event.energy_requirement = max(0, event.energy_requirement - 1)
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Data())
 
 
 class LindemannPracticeRoom(AVGEStadiumCard):
@@ -72,4 +68,4 @@ class LindemannPracticeRoom(AVGEStadiumCard):
 		owner_card = self
 
 		owner_card.add_listener(LindemannReducedAttackCostModifier(owner_card))
-		return owner_card.generate_response()
+		return Response(ResponseType.CORE, Data())

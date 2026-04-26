@@ -9,54 +9,58 @@ class BenCherekIII(AVGECharacterCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.GUITAR, 2, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Feedback Loop'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        yn = card.env.cache.get(card, BenCherekIII._YES_NO_KEY, None, True)
+    def passive(self) -> Response:
+        if self.cardholder is None or self.cardholder.pile_type != Pile.BENCH:
+            return Response(ResponseType.CORE, Data())
+        if len(self.player.cardholders[Pile.ACTIVE]) == 0:
+            return Response(ResponseType.CORE, Data())
+
+        yn = self.env.cache.get(self, BenCherekIII._YES_NO_KEY, None, True)
         if yn is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
+                            self.player,
                             [BenCherekIII._YES_NO_KEY],
-                            InputType.BINARY,
                             lambda r: True,
                             ActionTypes.PASSIVE,
-                            card,
-                            {LABEL_FLAG: "ben_cherek_yn_key"},
+                            self,
+                            StrSelectionQuery("Loudmouth: Do you want to immediately set Ben Cherek as active?",
+                                              ["Yes", "No"],
+                                              ["Yes", "No"],
+                                              False,
+                                              False)
                         )
-                    ]
-                },
+                    ]),
             )
         if yn:
             def gen() -> PacketType:
                 return [TransferCard(
-                    card,
-                    card.cardholder,
-                    card.player.cardholders[Pile.ACTIVE],
+                    self,
+                    self.cardholder,
+                    self.player.cardholders[Pile.ACTIVE],
                     ActionTypes.PASSIVE,
-                    card,
+                    self,
+                    None,
                 ),
                 TransferCard(
-                    card.player.get_active_card(),
-                    card.player.cardholders[Pile.ACTIVE],
-                    card.player.cardholders[Pile.BENCH],
+                    self.player.get_active_card(),
+                    self.player.cardholders[Pile.ACTIVE],
+                    self.player.cardholders[Pile.BENCH],
                     ActionTypes.PASSIVE,
-                    card,
+                    self,
+                    None,
                 )]
-            card.propose(AVGEPacket([
+            self.propose(AVGEPacket([
                 gen,
-            ], AVGEEngineID(card, ActionTypes.PASSIVE, BenCherekIII)))
-        return card.generate_response()
+            ], AVGEEngineID(self, ActionTypes.PASSIVE, BenCherekIII)))
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         packet : PacketType= []
@@ -67,6 +71,7 @@ class BenCherekIII(AVGECharacterCard):
                 AVGEAttributeModifier.SUBSTRACTIVE,
                 CardType.GUITAR,
                 ActionTypes.ATK_1,
+                None,
                 card,
             )]
         packet.append(gen)
@@ -81,9 +86,10 @@ class BenCherekIII(AVGECharacterCard):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.GUITAR,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
                 )
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BenCherekIII)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

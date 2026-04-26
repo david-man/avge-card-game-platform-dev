@@ -3,7 +3,6 @@ from . import event_listener
 from typing import TYPE_CHECKING, Callable, Generic, TypeVar, cast
 from card_game.constants import *
 from . import engine_constants
-
 if TYPE_CHECKING:
     from . import engine
     from . import constrainer
@@ -14,6 +13,7 @@ class Packet(Generic[EV]):
     type Generator = Callable[[], list[EV | Generator]]
     def __init__(self, element : list[EV | Generator]):
         self.element : list[EV | Packet.Generator] = element
+        self.full_packet : list[EV | Packet.Generator] = []#full_packet tracks all the events in the packet that eventually will be taken out. useful only for packet listeners
     def insert(self, i : int, e : list[EV | Generator]):
         if(isinstance(self.element, list)):
             self.element[i:i] = e
@@ -54,7 +54,8 @@ class Packet(Generic[EV]):
                     self.element = next_seq + self.element
                     return self.get_next_event()
                 else:
-                    x._check_internal()
+                    x._initialize()
+                    self.full_packet.append(x)
                     return x
 
 class Event():
@@ -64,18 +65,17 @@ class Event():
         self.group_on = engine_constants.EngineGroup(0)
         self.groups_ordered : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
         self.groups_constrained : dict[engine_constants.EngineGroup, bool] = {group : False for group in engine_constants.EngineGroup}
-        self.core_args : Data = {}
+
+        self.core_args : dict = {}
         self.core_ran : bool = False
-
-        self.generate_internal_listeners()
         self._external_listeners_attached = False
-
         self._kwargs = kwargs
         self.fast_forward = False
         self.skip_forward = False
         self.initiated = False
-    def _check_internal(self):
+    def _initialize(self):
         if(not self.initiated):
+            self.generate_internal_listeners()
             self.initiated = True
             for group in self.event_listener_groups.values():
                 for listener in group:
@@ -89,7 +89,7 @@ class Event():
             for listener in group:
                 if(constraint.match(listener)):
                     listener.invalidate()
-    def core_wrapper(self, args : Data | None = None) -> Response:
+    def core_wrapper(self, args : dict | None = None) -> Response:
         if(args is None):
             args = {}
         r = self.core(args)
@@ -98,13 +98,13 @@ class Event():
             self.core_ran = True
         return r
     
-    def core(self, args :Data | None = None) ->Response:
+    def core(self, args : dict | None = None) ->Response:
         if(args is None):
             args = {}
         #you should override this!
         #note that, in place of ACCEPT, you should return CORE 
         raise NotImplementedError()
-    def invert_core(self, args : Data | None = None) -> None:
+    def invert_core(self, args : dict | None = None) -> None:
         if(args is None):
             args = {}
         #this will only be relevant once core() is successfully run
@@ -115,12 +115,6 @@ class Event():
         #you should override this! this function should simply populate the event_listeners_groups
         raise NotImplementedError()
     
-    def generate_core_response(self, 
-                          response_type : ResponseType =ResponseType.CORE,
-                          data :Data = {}) ->Response:
-        #Helper function to generate a response packet for core() easier
-        return Response(self, response_type, data)
-
     def attach_to_engine(self, engine : engine.Engine):
         self.engine = engine
         #must update current listeners too
@@ -155,17 +149,17 @@ class Event():
         self.fast_forward = True
     def _skip(self):#forces this event to return a skip on the next call
         self.skip_forward = True
-    def forward(self, constraints : list[constrainer.Constraint], args :Data | None = None) ->Response:
+    def forward(self, constraints : list[constrainer.Constraint], args : dict | None = None) ->Response:
         if(args is None):
             args = {}
         if(self.fast_forward):
-            return Response(self, ResponseType.FAST_FORWARD, {})
+            return Response(ResponseType.FAST_FORWARD, Data())
         if(self.skip_forward):
-            return Response(self, ResponseType.SKIP, {})
+            return Response(ResponseType.SKIP, Data())
         if(self.group_on.value == engine_constants.MAX_GROUP
            and len(self.event_listener_groups[self.group_on]) == 0):
             #case 1: there's nothing left to run
-            return Response(self, ResponseType.FINISHED, {})
+            return Response(ResponseType.FINISHED, Data())
         elif(self.group_on == engine_constants.EngineGroup.CORE):
             #case 2: we're running the core function
             response = self.core_wrapper(args)
@@ -176,7 +170,7 @@ class Event():
         elif(len(self.event_listener_groups[self.group_on]) == 0):
             #case 3: we're on a group that's not the last and not core,
             #and we're done with the listeners in it
-            response = Response(self, ResponseType.ACCEPT, {})
+            response = Response(ResponseType.ACCEPT, Data())
             self.group_on = self.group_on.succ()
             return response
         else:
@@ -189,7 +183,7 @@ class Event():
                         if(constraint._should_attach(listener)):
                             listener.detach_from_event()
                             self.event_listener_groups[self.group_on].remove(listener)
-                            return Response(self, ResponseType.ACCEPT, data = {'constrained_by': constraint})
+                            return Response(ResponseType.ACCEPT, data = constraint.response_data_on_attach(listener))
             #if all event listeners constrained, we can mark the group as constrained
             self.groups_constrained[self.group_on] = True
             #step 2: consider ordering if must be
@@ -201,26 +195,25 @@ class Event():
                         if(self._validate_ordering(self.group_on, group_ordering)):
                             self.event_listener_groups[self.group_on] = group_ordering
                             self.groups_ordered[self.group_on] = True
-                            return Response(self, ResponseType.ACCEPT, {})
-                    return Response(self, ResponseType.REQUIRES_QUERY,
-                                        {"query_type": "ordering", 'unordered_groups': self.event_listener_groups[self.group_on]})
+                            return Response(ResponseType.ACCEPT, Data())
+                    return Response(ResponseType.REQUIRES_QUERY, OrderingQuery(self.event_listener_groups[self.group_on]))
 
             self.groups_ordered[self.group_on] = True
             #step 3: question whether to go through with the listener
             next_listener = self.event_listener_groups[self.group_on].pop(0)
             if(next_listener._invalidated or not bool(next_listener.event_effect())):
                 #skip if invalidated
-                return Response(self, ResponseType.ACCEPT)
+                return Response(ResponseType.ACCEPT, Data())
             else:
-                response = Response(self, ResponseType.ACCEPT)
+                response = Response(ResponseType.ACCEPT, Data())
                 if(isinstance(next_listener, event_listener.AssessorEventListener)):
-                    response = next_listener.assess(args)
+                    response = next_listener.assess()
                 elif(isinstance(next_listener, event_listener.PostCheckEventListener)):
-                    response = next_listener.assess(args)
+                    response = next_listener.assess()
                 elif(isinstance(next_listener, event_listener.ModifierEventListener)):
-                    response = next_listener.modify(args)
+                    response = next_listener.modify()
                 elif(isinstance(next_listener, event_listener.ReactorEventListener)):
-                    response = next_listener.react(args)
+                    response = next_listener.react()
                 
                 if(response.response_type ==ResponseType.REQUIRES_QUERY):
                     #if requires query, we need to wait for args next time and try to run the same listener again -- since we used pop, we now need to insert back

@@ -30,34 +30,36 @@ class _PascalDelayedReactor(AVGEReactor):
         if args is None:
             args = {}
         from card_game.internal_events import AVGECardHPChange
+
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     self.owner_card.player.opponent.get_active_card(),
                     70,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.PASSIVE,
+                    None,
                     self.owner_card,
                 )
-            ]
+            )
+            return packet
+
         self.owner_card.propose(
-            AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PascalKim), ), 1
+            AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PascalKim)), 1
         )
         self.invalidate()
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class PascalKim(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Ragebaited'
+        self.atk_2_name = 'Ominous Chimes'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         hp = card.hp
@@ -67,43 +69,55 @@ class PascalKim(AVGECharacterCard):
             dmg = 50
         else:
             dmg = 20
+
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     dmg,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
+
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, PascalKim))
         )
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import TransferCard, ReorderCardholder
 
         deck = card.player.cardholders[Pile.DECK]
         packet : PacketType = []
 
         src = card.cardholder
+        assert src is not None
         packet.append(TransferCard(card, src, deck, ActionTypes.ATK_2, card, None))
+
         def gen() -> PacketType:
-            return [ReorderCardholder(
-                deck,
-                random.sample(deck.get_order(), len(deck)),
-                ActionTypes.ATK_2,
-                card,
-            )]
+            p: PacketType = []
+            p.append(
+                ReorderCardholder(
+                    deck,
+                    random.sample(deck.get_order(), len(deck)),
+                    ActionTypes.ATK_2,
+                    card,
+                    None,
+                )
+            )
+            return p
+
         packet.append(gen)
 
         trigger_round = card.player.opponent.get_next_turn()
         card.env.add_listener(_PascalDelayedReactor(card, trigger_round))
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, PascalKim)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

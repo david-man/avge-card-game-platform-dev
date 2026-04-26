@@ -2,140 +2,157 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import InputEvent, PlayNonCharacterCard, EmptyEvent, AVGECardHPChange
 
 class _JuliaAtk2KnockoutReactor(AVGEReactor):
-    _ACTIVE = "juliaatk2bouncing"
+    _PENDING_HITS_KEY = 'julia_ricochet_pending_hits'
+
     def __init__(self, owner_card: AVGECharacterCard):
         super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.ATK_2, JuliaCiacerelli), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
-        self.owner_card.env.cache.set(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, 1)
+        # Start armed for the initial 50-damage hit from Ricochet.
+        self.owner_card.env.cache.set(self.owner_card, _JuliaAtk2KnockoutReactor._PENDING_HITS_KEY, 1)
+
+    def _get_pending_hits(self) -> int:
+        pending = self.owner_card.env.cache.get(self.owner_card, _JuliaAtk2KnockoutReactor._PENDING_HITS_KEY, 0)
+        if isinstance(pending, int):
+            return pending
+        return 0
+
+    def _set_pending_hits(self, value: int):
+        self.owner_card.env.cache.set(self.owner_card, _JuliaAtk2KnockoutReactor._PENDING_HITS_KEY, value)
 
     def event_match(self, event):
-        from card_game.internal_events import AVGECardHPChange
-
         if not isinstance(event, AVGECardHPChange):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
-        if event.caller_card != self.owner_card:
+        if event.caller != self.owner_card:
             return False
         if event.catalyst_action != ActionTypes.ATK_2:
             return False
-        
-        return isinstance(event.target_card, AVGECharacterCard)
+        if not isinstance(event.target_card, AVGECharacterCard):
+            return False
+        if event.target_card.player != self.owner_card.player.opponent:
+            return False
+        return self._get_pending_hits() > 0
 
     def event_effect(self) -> bool:
         return True
 
     def update_status(self):
-        if(self.owner_card.env.cache.get(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, 1) == 0):
+        if self._get_pending_hits() <= 0:
+            self.owner_card.env.cache.delete(self.owner_card, _JuliaAtk2KnockoutReactor._PENDING_HITS_KEY)
             self.invalidate()
 
     def react(self, args=None):
-        from card_game.internal_events import AVGECardHPChange
-
+        if args is None:
+            args = {}
         assert isinstance(self.attached_event, AVGECardHPChange)
         assert isinstance(self.attached_event.final_change, int)
         owner = self.owner_card
-        
-        if(self.attached_event.final_change == 0):
+        self._set_pending_hits(self._get_pending_hits() - 1)
+
+        if self.attached_event.final_change == 0:
+            knocked_out = self.attached_event.target_card
+
             def splash_remaining() -> PacketType:
-                s = cast(int, self.owner_card.env.cache.get(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, 1))
-                self.owner_card.env.cache.set(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, s - 1)
+                packet: PacketType = []
                 targets = [
                     target
                     for target in owner.player.opponent.get_cards_in_play()
-                    if isinstance(target, AVGECharacterCard) and target.hp > 0
+                    if isinstance(target, AVGECharacterCard) and target.hp > 0 and target != knocked_out
                 ]
-                splashes_left = self.owner_card.env.cache.get(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, 1)
-                assert isinstance(splashes_left, int)
-                self.owner_card.env.cache.set(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, splashes_left + len(targets))
-                return [
-                    AVGECardHPChange(
-                        target,
-                        30,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.STRING,
-                        ActionTypes.ATK_2,
-                        owner,
+                for target in targets:
+                    packet.append(
+                        AVGECardHPChange(
+                            target,
+                            30,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.STRING,
+                            ActionTypes.ATK_2,
+                            None,
+                            owner,
+                        )
                     )
-                    for target in targets
-                ]
+                self._set_pending_hits(self._get_pending_hits() + len(packet))
+                return packet
 
             self.propose(AVGEPacket([splash_remaining], AVGEEngineID(owner, ActionTypes.ATK_2, JuliaCiacerelli)))
-        else:
-            s = cast(int, self.owner_card.env.cache.get(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, 1))
-            self.owner_card.env.cache.set(self.owner_card, _JuliaAtk2KnockoutReactor._ACTIVE, s - 1)
-        return self.generate_response()
+            return Response(ResponseType.ACCEPT, Notify('Ricochet: Knockout confirmed, 30 damage to each remaining opposing character.', all_players, default_timeout))
+
+        return Response(ResponseType.ACCEPT, Data())
 
 class JuliaCiacerelli(AVGECharacterCard):
     _ATK1_ITEM_KEY = "julia_atk1_item"
-    _ENERGY_REMOVAL_KEY = "julia_energy_removal_target"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Photograph'
+        self.atk_2_name = 'Ricochet'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, PlayNonCharacterCard, EmptyEvent
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         opp_hand = card.player.opponent.cardholders[Pile.HAND]
         items = [c for c in opp_hand if isinstance(c, AVGEItemCard)]
 
         missing = object()
         chosen = card.env.cache.get(card, JuliaCiacerelli._ATK1_ITEM_KEY, missing, True)
         if chosen is missing:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
+                        EmptyEvent(
+                            ActionTypes.ATK_1,
+                            card,
+                            ResponseType.CORE,
+                            RevealCards(
+                                'Photograph: Opponent hand',
+                                [card.player.unique_id],
+                                default_timeout,
+                                list(opp_hand),
+                            ),
+                        ),
                         InputEvent(
                             card.player,
                             [JuliaCiacerelli._ATK1_ITEM_KEY],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {
-                                LABEL_FLAG: "julia_ciacerelli_atk1",
-                                TARGETS_FLAG: items,
-                                DISPLAY_FLAG: list(opp_hand),
-                                ALLOW_NONE: True
-                            },
+                            CardSelectionQuery(
+                                'Photograph: Choose an item to copy as this attack (or None).',
+                                items,
+                                list(opp_hand),
+                                True,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
-        if(chosen is not None):
-            card.propose(
-                AVGEPacket([
-                    PlayNonCharacterCard(chosen, ActionTypes.ATK_1, card)
-                ], AVGEEngineID(card, ActionTypes.ATK_1, JuliaCiacerelli))
-            )
-        return card.generate_response()
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+        if chosen is not None and isinstance(chosen, AVGEItemCard) and chosen in opp_hand:
+            card.propose(AVGEPacket([PlayNonCharacterCard(chosen, ActionTypes.ATK_1, card)], AVGEEngineID(card, ActionTypes.ATK_1, JuliaCiacerelli)))
+        return self.generic_response(card, ActionTypes.ATK_1)
 
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         card.add_listener(_JuliaAtk2KnockoutReactor(card))
 
         def atk() -> PacketType:
-            return [
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_2,
-                    card,
+            packet: PacketType = []
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        50,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.STRING,
+                        ActionTypes.ATK_2,
+                        None,
+                        card,
+                    )
                 )
-            ]
+            return packet
 
         card.propose(AVGEPacket([atk], AVGEEngineID(card, ActionTypes.ATK_2, JuliaCiacerelli)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

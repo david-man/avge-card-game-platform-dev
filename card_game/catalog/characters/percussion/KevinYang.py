@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, AVGECardHPChange
 
 
 class KevinYang(AVGECharacterCard):
@@ -11,91 +11,94 @@ class KevinYang(AVGECharacterCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Rimshot'
+        self.atk_2_name = 'Stickshot'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
-
-        roll = card.env.cache.get(card, KevinYang._D6_KEY, None, True)
-        if roll is None:
-            return card.generate_response(
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        missing = object()
+        roll = card.env.cache.get(card, KevinYang._D6_KEY, missing, True)
+        if roll is missing:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [KevinYang._D6_KEY],
-                            InputType.D6,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {LABEL_FLAG: "kevin_yang_d6"},
+                            D6Data('Rimshot: Roll a dice!')
                         )
-                    ]
-                },
+                    ]),
             )
+
+        if not isinstance(roll, int):
+            return self.generic_response(card, ActionTypes.ATK_1)
 
         val = int(roll)
         if val <= 4:
             def gen() -> PacketType:
-                return [
+                packet: PacketType = []
+                packet.append(
                     AVGECardHPChange(
                         card.player.opponent.get_active_card(),
-                        70,
+                        60,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PERCUSSION,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
-                ]
+                )
+                return packet
             card.propose(
                 AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, KevinYang))
             )
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
-
-        rolls = [card.env.cache.get(card, key, None, True) for key in KevinYang._D6_KEYS_4]
-        if rolls[0] is None:
-            return card.generate_response(
+    def atk_2(self, card: AVGECharacterCard) -> Response:
+        missing = object()
+        rolls = [card.env.cache.get(card, key, missing, True) for key in KevinYang._D6_KEYS_4]
+        if any(r is missing for r in rolls):
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             KevinYang._D6_KEYS_4,
-                            InputType.D6,
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {LABEL_FLAG: "kevin_yang_4d6"},
+                            D6Data('Stickshot: Roll a dice four times!')
                         )
-                    ]
-                },
+                    ]),
             )
 
-        lowest = min(int(v) for v in rolls if v is not None)
+        if not all(isinstance(v, int) for v in rolls):
+            return self.generic_response(card, ActionTypes.ATK_2)
+
+        int_rolls = [int(v) for v in rolls if isinstance(v, int)]
+        lowest = min(int_rolls)
         damage = 40 * lowest
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_2,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, KevinYang))
         )
 
-        return card.generate_response()
+        return Response(ResponseType.CORE, Notify(
+            f"{str(card)} used Stickshot and rolled a {lowest} as his lowest roll", all_players, default_timeout
+        ))

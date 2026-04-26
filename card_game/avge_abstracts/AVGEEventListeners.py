@@ -18,16 +18,33 @@ class ActionTypes(StrEnum):
     PASSIVE = "PASSIVE"#an action type exclusively used for stuff like follow-up atks
     NONCHAR = 'NONCHAR'#any non-character card's event listener
 
-class AVGEAbstractEventListener(AbstractEventListener[AVGEEvent]):
+class AVGEPacketListener(AbstractPacketListener[AVGEEvent]):
     def __init__(self, 
-                 identifier : AVGEEngineID,
-                 group : EngineGroup, 
-                 internal : bool = False,
-                 requires_runtime_info : bool = False):
-        super().__init__(group,internal,requires_runtime_info)
+                 identifier : AVGEEngineID):
+        super().__init__()
         self.identifier= identifier
     def __str__(self):
         return type(self).__name__
+    def react(self, p : AVGEPacket) -> Response:#type: ignore
+        raise NotImplementedError()
+    def packet_match(self, packet : AVGEPacket, packet_finish_status : ResponseType) -> bool:#type: ignore
+        """
+        Function that checks whether the given packet should be attached onto.
+        Packet match is called AFTER the packet has COMPLETED, meaning that full_packet will have been fully constructed by then
+        """
+        raise NotImplementedError()
+class AVGEAbstractEventListener(AbstractEventListener[AVGEEvent]):
+    def __init__(self, 
+                 identifier : AVGEEngineID,
+                 group : EngineGroup,
+                 requires_runtime_info : bool = False):
+        super().__init__(group,requires_runtime_info)
+        self.identifier= identifier
+    def __str__(self):
+        return type(self).__name__
+    def propose(self, e : AVGEPacket, priority : int = 0):#type: ignore
+        assert self.engine is not None
+        self.engine._propose(e, priority)
 
 class AVGEModifier(AVGEAbstractEventListener, ModifierEventListener[AVGEEvent]):
     pass

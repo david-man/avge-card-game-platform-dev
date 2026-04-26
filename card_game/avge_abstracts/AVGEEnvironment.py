@@ -8,6 +8,7 @@ from .envcache import EnvironmentCache
 from .AVGEPlayer import AVGEPlayer
 from .AVGECards import *
 from .AVGEEvent import AVGEPacket, DeferredAVGEPacket
+from .AVGEEventListeners import AVGEPacketListener, AVGEAbstractEventListener
 from ..engine.engine import Engine
 if TYPE_CHECKING:
     from .AVGECardholder import AVGECardholder
@@ -23,7 +24,7 @@ class GamePhase(StrEnum):
     ATK_PHASE = 'phase_atk'
     TURN_END = 'end'
 class AVGEEnvironment():
-    def __init__(self, p1_deck_dict : dict[Pile, list[Type[AVGECard]]], p2_deck_dict : dict[Pile, list[Type[AVGECard]]], start_turn : PlayerID, starting_stadium : type[AVGEStadiumCard] | None = None, starting_stadium_player : PlayerID | None = None, start_round : int = 0):
+    def __init__(self, p1_deck_dict : dict[Pile, list[Type[AVGECard]]], p2_deck_dict : dict[Pile, list[Type[AVGECard]]], start_turn : PlayerID, p1_username : str = "", p2_username : str = "", starting_stadium : type[AVGEStadiumCard] | None = None, starting_stadium_player : PlayerID | None = None, start_round : int = 0):
         #in standard initialization, all cards should go to the deck
         self._engine : Engine[AVGEEvent] = Engine()
         from card_game.internal_events import TransferCard
@@ -35,15 +36,18 @@ class AVGEEnvironment():
         self.cards : dict[str, AVGECard] = {}
         self.players : dict[str, AVGEPlayer] = {}
         #adds players
-        p1 = AVGEPlayer(PlayerID.P1)
-        p2 = AVGEPlayer(PlayerID.P2)
-        energy_total = [EnergyToken(f"energy_{i}") for i in range(initial_tokens * 2)]
-        for token in energy_total[:initial_tokens]:
-            token.attach(p1)
-        for token in energy_total[initial_tokens:]:
-            token.attach(p2)
+        p1 = AVGEPlayer(PlayerID.P1, p1_username)
+        p2 = AVGEPlayer(PlayerID.P2, p2_username)
+        self.energy : list[EnergyToken] = []#where energy goes to die
+        energy_total = [EnergyToken(f"energy_{i}") for i in range(initial_tokens)]
+        for token in energy_total:
+            token.attach(self)
         p1.opponent = p2
         p2.opponent = p1
+        #FOR NOW
+        p1.energy = self.energy
+        p2.energy = self.energy
+
         self.add_player(p1)
         self.add_player(p2)
         #assigns card_ids
@@ -74,13 +78,13 @@ class AVGEEnvironment():
                                         p1.cardholders[Pile.DECK],
                                         self.stadium_cardholder,
                                         ActionTypes.ENV,
-                                        None))
+                                        self,None))
                 else:
                     packet.append(TransferCard(card,
                                             p1.cardholders[Pile.DECK],
                                             p1.cardholders[pile],
                                             ActionTypes.ENV,
-                                            None))
+                                            self,None))
             id_on+=1
         if(not found_char):
             raise Exception("Player 1's deck is invalid; need at least 1 char")
@@ -98,13 +102,13 @@ class AVGEEnvironment():
                                         p2.cardholders[Pile.DECK],
                                         self.stadium_cardholder,
                                         ActionTypes.ENV,
-                                        None))
+                                        self,None))
                 else:
                     packet.append(TransferCard(card,
                                             p2.cardholders[Pile.DECK],
                                             p2.cardholders[pile],
                                             ActionTypes.ENV,
-                                            None))
+                                            self,None))
             id_on+=1
         if(not found_char):
             raise Exception("Player 2's deck is invalid; need at least 1 char")
@@ -116,20 +120,19 @@ class AVGEEnvironment():
         self.round_id = start_round
 
         self.cache = EnvironmentCache(list(self.cards.keys()))
-        self.energy : list[EnergyToken] = []#where energy goes to die
 
         #status-based listeners
-        self.add_listener(GoonStatusTransferModifier())
-        self.add_listener(GoonStatusChangeReactor())
-        self.add_listener(ArrangerStatusReactor())
+        self.add_listener(GoonStatusTransferModifier(self))
+        self.add_listener(GoonStatusChangeReactor(self))
+        self.add_listener(ArrangerStatusReactor(self))
 
         if(len(packet) > 0):
-            self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
+            self.propose(AVGEPacket(packet, AVGEEngineID(self, ActionTypes.ENV, None)))
         #force engine to run through all packets until everything is set
         while(True):
             setup_response = self.forward()
             if(setup_response.response_type == ResponseType.NEXT_EVENT):
-                print(setup_response.source)
+                print(self._engine.event_running)
             if(setup_response.response_type == ResponseType.NO_MORE_EVENTS):
                 break
             if(setup_response.response_type in [ResponseType.REQUIRES_QUERY]):
@@ -156,16 +159,22 @@ class AVGEEnvironment():
     def extend(self, p : list[AVGEEvent | DeferredAVGEPacket]):
         #opens engine in limited manner to cards and players
         self._engine._extend(p)
+    def check_history(self, round_num : int, event_type : type[AVGEEvent], kwargs : dict[str, Any], index_to_start : int = 0) -> tuple[AVGEEvent | None, int]:
+        return self._engine.event_history.search(round_num, event_type, kwargs, index_to_start)
     def extend_event(self, p : list[AVGEEvent | DeferredAVGEPacket]):
         #opens engine in limited manner to cards and players
         self._engine._extend_event(p)
-    def add_listener(self, el : AbstractEventListener):
+    def add_listener(self, el : AVGEAbstractEventListener):
         """
         If you're thinking of using this, you should have a VERY clear update_status invalidation constraint that you can guarantee will fire eventually. 
         """
-        el.internal = False
         #opens engine in limited manner to cards and players
         self._engine.add_listener(el)
+    def add_packet_listener(self, listener : AVGEPacketListener):
+        """
+        If you're thinking of using this, you should have a VERY clear update_status invalidation constraint that you can guarantee will fire eventually. 
+        """
+        self._engine.add_packet_listener(listener)
     def add_constrainer(self, constrainer : AVGEConstraint):
         #opens engine in limited manner to cards and players
         self._engine.add_constraint(constrainer)
@@ -203,9 +212,9 @@ class AVGEEnvironment():
                 f"energy: {len(c.energy)}",
                 f"tools: {len(c.tools_attached)}",
             ]
-            if(c.has_atk_1):
+            if(c.atk_1_name is not None):
                 details.append(f"atk_1_cost: {c.atk_1_cost}")
-            if(c.has_atk_2):
+            if(c.atk_2_name is not None):
                 details.append(f"atk_2_cost: {c.atk_2_cost}")
             statuses = []
             for status_effect, attached_cards in c.statuses_attached.items():
@@ -271,14 +280,14 @@ class AVGEEnvironment():
     def get_active_card(self, player_id : PlayerID):
         return self.players[player_id].cardholders[Pile.ACTIVE].peek()
 
-    def forward(self, args : Data | None = None) -> Response:
+    def forward(self, args : dict | None = None) -> Response:
         if(args is None):
             args = {}
         if(args.get(ACTIVE_FLAG, None) is not None):
             from . import PacketType
             card = args[ACTIVE_FLAG]
-            if(isinstance(card, AVGECharacterCard) and card.has_active and
-               card.can_play_active(card)):
+            if(isinstance(card, AVGECharacterCard) and card.active_name is not None and
+               card.can_play_active()):
                 event_running = self._engine.event_running
                 if(isinstance(event_running, (Phase2, AtkPhase))):
                     event_running._ff()
@@ -287,10 +296,11 @@ class AVGEEnvironment():
                         card,
                         ActionTypes.ACTIVATE_ABILITY,
                         ActionTypes.ENV,
-                        card
+                        card,
+                        default_timeout
                     )
                 ]
-                self.propose(AVGEPacket(p, AVGEEngineID(None, ActionTypes.ENV, None)), 10)#act as soon as this packet is done.
+                self.propose(AVGEPacket(p, AVGEEngineID(self, ActionTypes.ENV, None)), 10)#act as soon as this packet is done.
                 
         resp = self._engine.forward(args)
         if(resp.response_type == ResponseType.GAME_END):

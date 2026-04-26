@@ -2,89 +2,109 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardHPChange, InputEvent
 
 class HarperAitken(AVGECharacterCard):
-    _TARGET_1_SELECTION_KEY = "harperaitken_target_1_selection"
-    _TARGET_2_SELECTION_KEY = "harperaitken_target_2_selection"
+    _TARGET_1_SELECTION_KEY = 'harperaitken_target_1_selection'
+    _TARGET_2_SELECTION_KEY = 'harperaitken_target_2_selection'
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.WOODWIND, 2, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Overblow'
+        self.atk_2_name = 'Wipeout'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         def gen() -> PacketType:
-            return [
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                ),
+            packet: PacketType = []
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        50,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
+                )
+            packet.append(
                 AVGECardHPChange(
                     card,
                     10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
                     ActionTypes.ATK_1,
+                    None,
                     card,
-                ),
-            ]
-        packet : PacketType = [gen]
-        card.propose(
-            AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HarperAitken))
-        )
-        return card.generate_response()
+                )
+            )
+            return packet
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
+        card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, HarperAitken)))
+        return self.generic_response(card, ActionTypes.ATK_1)
 
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         opponent = card.player.opponent
-        chars_in_play = opponent.get_cards_in_play()
+        chars_in_play = [c for c in opponent.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
 
-        target_1 = card.env.cache.get(card, HarperAitken._TARGET_1_SELECTION_KEY, None, True)
-        target_2 = card.env.cache.get(card, HarperAitken._TARGET_2_SELECTION_KEY, None, True)
-        if target_1 is None:
-            return card.generate_response(
+        missing = object()
+        target_1 = card.env.cache.get(card, HarperAitken._TARGET_1_SELECTION_KEY, missing, True)
+        target_2 = card.env.cache.get(card, HarperAitken._TARGET_2_SELECTION_KEY, missing, True)
+        if target_1 is missing:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [HarperAitken._TARGET_1_SELECTION_KEY, HarperAitken._TARGET_2_SELECTION_KEY],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {
-                                LABEL_FLAG: "harperaitken_wipeout",
-                                TARGETS_FLAG: chars_in_play,
-                                DISPLAY_FLAG: chars_in_play,
-                                ALLOW_REPEAT: True
-                            },
+                            CardSelectionQuery(
+                                'Wipeout: Choose up to two different targets in opponent\'s play area.',
+                                chars_in_play,
+                                chars_in_play,
+                                True,
+                                True,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        packet : PacketType = [
-            AVGECardHPChange(
-                target,
-                80,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_2,
-                card,
-            )
-            for target in [target_1, target_2, card]
-        ]
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, HarperAitken)))
-        return card.generate_response()
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            if(isinstance(target_1, AVGECharacterCard)):
+                packet.append(AVGECardHPChange(
+                    target_1,
+                    80,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    None,
+                    card,
+                ))
+            if(isinstance(target_2, AVGECharacterCard)):
+                packet.append(AVGECardHPChange(
+                    target_2,
+                    80,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    None,
+                    card,
+                ))
+            packet.append(AVGECardHPChange(
+                    card,
+                    80,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.WOODWIND,
+                    ActionTypes.ATK_2,
+                    None,
+                    card,
+                ))
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, HarperAitken)))
+        return self.generic_response(card, ActionTypes.ATK_2)

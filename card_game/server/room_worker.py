@@ -93,6 +93,10 @@ class RoomWorker:
                 stderr=subprocess.STDOUT,
                 text=True,
             )
+            print(
+                f"[ROOM_WORKER] process_started room_id={self.room_id} "
+                f"pid={self._process.pid} log={self._log_path}"
+            )
 
             self._monitor_thread.start()
 

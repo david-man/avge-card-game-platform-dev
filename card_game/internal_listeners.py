@@ -10,10 +10,9 @@ if TYPE_CHECKING:
     
 
 class AVGETokenTransferAssessment(AVGEAssessor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
                          requires_runtime_info=False)
     def update_status(self):
         return
@@ -26,19 +25,18 @@ class AVGETokenTransferAssessment(AVGEAssessor):
         assert(isinstance(event, AVGEEnergyTransfer))
         assert(isinstance(event.token, EnergyToken))
         if(event.token not in event.source.energy):
-            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'Token doesn\'t exist in source. Skipping.'})
+            return Response(ResponseType.SKIP, Data())
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
-            if(isinstance(event.target, AVGECharacterCard) and isinstance(event.source, AVGEPlayer)):
-                if(event.source.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
-                    return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'Can\'t add any more tokens this turn'})
-        return self.generate_response()
+            if(isinstance(event.target, AVGECharacterCard) and isinstance(event.identifier.caller, AVGEPlayer)):
+                if(event.identifier.caller.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
+                    return Response(ResponseType.SKIP, Data())
+        return Response(ResponseType.ACCEPT, Data())
         
         
 class AVGEHPChangeAssessment(AVGEAssessor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
                          requires_runtime_info=False)
     def update_status(self):
         return
@@ -51,14 +49,14 @@ class AVGEHPChangeAssessment(AVGEAssessor):
         assert(isinstance(event, AVGECardHPChange))
         assert(not event.target_card.cardholder is None)
         if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE] and event.catalyst_action != ActionTypes.ENV):
-            return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: 'HP Changes should only be directed at BENCH, ACTIVE cards. This packet is likely a lingering packet'})
-        return self.generate_response()
+            return Response(ResponseType.FAST_FORWARD, Data())
+        return Response(ResponseType.ACCEPT, Data())
     
 class AVGEMaxHPChangeAssessment(AVGEAssessor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
+                         
                          requires_runtime_info=False)
     def update_status(self):
         return
@@ -71,52 +69,49 @@ class AVGEMaxHPChangeAssessment(AVGEAssessor):
         assert(isinstance(event, AVGECardMaxHPChange))
         assert(not event.target_card.cardholder is None)
         if(event.target_card.cardholder.pile_type not in [Pile.BENCH, Pile.ACTIVE] and event.catalyst_action != ActionTypes.ENV):
-            return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: 'MAXHP Changes should only be directed at BENCH, ACTIVE cards. This packet is likely a lingering packet'})
-        return self.generate_response()
+            return Response(ResponseType.FAST_FORWARD, Data())
+        return Response(ResponseType.ACCEPT, Data())
 
 class AVGEWeaknessModifier(AVGEModifier):
     _CRIT_KEY = "global_crit_key"
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
                          requires_runtime_info=False)
     def update_status(self):
         return
     def event_match(self, event):
         from .internal_events import AVGECardHPChange
-        return isinstance(event, AVGECardHPChange) and isinstance(event.caller_card, AVGECharacterCard) and not event.change_type==CardType.ALL and event.modifier_type==AVGEAttributeModifier.SUBSTRACTIVE
+        return isinstance(event, AVGECardHPChange) and isinstance(event.caller, AVGECharacterCard) and not event.change_type==CardType.ALL and event.modifier_type==AVGEAttributeModifier.SUBSTRACTIVE
     def modify(self, args = None) -> Response:
         from .internal_events import AVGECardHPChange, InputEvent
         event = self.attached_event
         assert(isinstance(event, AVGECardHPChange))
-        assert(not event.caller_card is None)
-        if(type_weaknesses[event.target_card.card_type]) == event.change_type:
-            coin_toss = event.caller_card.env.cache.get(event.caller_card, AVGEWeaknessModifier._CRIT_KEY,
+        assert(not event.caller is None)
+        if(type_weaknesses[event.target_card.card_type]) == event.change_type and isinstance(event.caller, AVGECharacterCard):
+            coin_toss = event.caller.env.cache.get(event.caller, AVGEWeaknessModifier._CRIT_KEY,
                                                         None, True)
             if coin_toss is None:
-                return self.generate_response(ResponseType.INTERRUPT,{
-                    INTERRUPT_KEY:[
-                        InputEvent(
-                            event.caller_card.player,
-                            [AVGEWeaknessModifier._CRIT_KEY],
-                            InputType.COIN,
-                            lambda r : True,
-                            ActionTypes.ENV,
-                            event.caller_card,
-                            {LABEL_FLAG: "global-crit-coinflip"}
-                        )
-                    ]
-                })
+                return Response(ResponseType.INTERRUPT,
+                                Interrupt[InputEvent](
+                                    [InputEvent(
+                                        event.caller.player,
+                                        [AVGEWeaknessModifier._CRIT_KEY],
+                                        lambda r : True,
+                                        ActionTypes.ENV,
+                                        event.caller,
+                                        CoinflipData("Critical! Flip a coin and get heads to double the damage!")
+                                    )]
+                                ))
             if(coin_toss == 1):
                 event.modify_magnitude(event.magnitude)
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Data())
 
 class AVGEPlayerAttributeChangePostChecker(AVGEPostcheck):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_3,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
+                         
                           requires_runtime_info=False)
     def update_status(self):
         return
@@ -130,14 +125,14 @@ class AVGEPlayerAttributeChangePostChecker(AVGEPostcheck):
         if(event.attribute == AVGEPlayerAttribute.KO_COUNT and event.target_player.attributes[AVGEPlayerAttribute.KO_COUNT] >= 3):
             env : AVGEEnvironment = event.target_player.env
             env.winner = event.target_player
-            return self.generate_response(ResponseType.GAME_END, {"winner": env.winner, "reason": "player hit 3 KO's"})
-        return self.generate_response()
+            return Response(ResponseType.GAME_END, GameEnd(env.winner.unique_id, "player hit 3 KO's"))
+        return Response(ResponseType.ACCEPT, Data())
 
 class AVGETransferValidityCheck(AVGEAssessor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
+                         
                           requires_runtime_info=False)
     def update_status(self):
         return
@@ -149,30 +144,31 @@ class AVGETransferValidityCheck(AVGEAssessor):
         assert(isinstance(self.attached_event, TransferCard))
         event : TransferCard = self.attached_event
         if(not (event.card in event.pile_from)):#if this case happens, something wonk has happened
-            return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: 'Card transfer from cardholder that doesn\'t contain it. This is likely a dead packet'})
+            return Response(ResponseType.FAST_FORWARD, Data())
         if(event.pile_to.pile_type in [Pile.BENCH, Pile.ACTIVE] and not isinstance(event.card, AVGECharacterCard)):
-            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'Can\'t move non-character cards here!'})
+            return Response(ResponseType.SKIP, Data())
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE and 
            event.pile_from.pile_type == Pile.HAND and 
            event.pile_to.pile_type == Pile.BENCH):#tried to add a card to the bench but bench is full / card isn't character
             bench = event.pile_to
+            player_responsible = event.card.env.player_turn
             if(not isinstance(event.card, AVGECharacterCard) or len(bench) == max_bench_size):
-                return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'Can\'t add this card to bench since bench is full!'})
+                return Response(ResponseType.SKIP, Notify("Can't add this card to the bench b/c the bench is full!", [player_responsible.unique_id], default_timeout))
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE and 
            isinstance(event.card, AVGECharacterCard) and
            event.pile_from.pile_type == Pile.BENCH and 
            event.pile_to.pile_type == Pile.ACTIVE and
            event.card.player.attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
-            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'no more swaps this turn!'})
+           return Response(ResponseType.SKIP, Notify("Can't add this card to the bench b/c the bench is full!", [event.card.player.unique_id], default_timeout))
         if(isinstance(event.card, AVGECharacterCard) and event.energy_requirement > len(event.card.energy)):
-            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'not enough energy to perform this transfer!'})
-        return self.generate_response()
+            return Response(ResponseType.SKIP, Notify("Not enough energy to perform this transfer!", [event.card.player.unique_id], default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 class AVGETransferEnergyRequirementReactor(AVGEReactor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_3,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
+                         
                           requires_runtime_info=False)
     def update_status(self):
         return
@@ -194,16 +190,17 @@ class AVGETransferEnergyRequirementReactor(AVGEReactor):
                     card,
                     card.env,
                     ActionTypes.ENV,
+                    card.env,
                     None
                 ))
-        self.propose(AVGEPacket(packet, AVGEEngineID(None, ActionTypes.ENV, None)))
-        return self.generate_response()
+        self.propose(AVGEPacket(packet, AVGEEngineID(card.env, ActionTypes.ENV, None)))
+        return Response(ResponseType.ACCEPT, Data())
 
 class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
+                         
                          requires_runtime_info=False)
     def update_status(self):
         return
@@ -215,27 +212,39 @@ class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):
         assert(isinstance(self.attached_event, PlayCharacterCard))
         event : PlayCharacterCard = self.attached_event
         if(event.card_action == ActionTypes.ATK_1):
-            if(not event.card.has_atk_1):
-                return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'no atk 1 to play!'})
+            if(event.card.atk_1_name is None):
+                players = [PlayerID.P1, PlayerID.P2]
+                if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+                    players = [event.card.env.player_turn.unique_id]
+                return Response(ResponseType.SKIP, Notify("Tried to use an attack that doesn't exist!", players, default_timeout))
         elif(event.card_action == ActionTypes.ATK_2):
-            if(not event.card.has_atk_2):
-                return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'no atk 2 to play!'})
+            if(event.card.atk_2_name is None):
+                players = [PlayerID.P1, PlayerID.P2]
+                if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+                    players = [event.card.env.player_turn.unique_id]
+                return Response(ResponseType.SKIP, Notify("Tried to use an attack that doesn't exist!", players, default_timeout))
         elif(event.card_action == ActionTypes.ACTIVATE_ABILITY):
-            if(not isinstance(event.caller_card, AVGECharacterCard) or not event.card.has_active or not event.card.can_play_active(event.caller_card)):
-                return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'cannot play ability right now!'})
+            if(not isinstance(event.caller, AVGECharacterCard) or event.card.active_name is None or not event.card.can_play_active()):
+                players = [PlayerID.P1, PlayerID.P2]
+                if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+                    players = [event.card.env.player_turn.unique_id]
+                return Response(ResponseType.SKIP, Notify("Tried to use an ability that can't be played now!", players, default_timeout))
         elif(event.card_action == ActionTypes.PASSIVE):
             if(not event.card.has_passive):
-                return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'cannot play ability right now!'})
+                return Response(ResponseType.SKIP, Data())
             
         if(event.energy_requirement > len(event.card.energy)):
-            return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'not enough energy!'})
-        return self.generate_response()
+            players = [PlayerID.P1, PlayerID.P2]
+            if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+                players = [event.card.env.player_turn.unique_id]
+            return Response(ResponseType.SKIP, Notify("Not enough energy to play this move!", players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
     
 class AVGEPlayNonCharacterCardValidityCheck(AVGEAssessor):
-    def __init__(self):
+    def __init__(self, env : AVGEEnvironment):
         super().__init__(group = EngineGroup.INTERNAL_1,
-                         identifier = AVGEEngineID(None, ActionTypes.ENV, None),
-                         internal = True,
+                         identifier = AVGEEngineID(env, ActionTypes.ENV, None),
+                         
                          requires_runtime_info=False)
     def update_status(self):
         return
@@ -251,5 +260,5 @@ class AVGEPlayNonCharacterCardValidityCheck(AVGEAssessor):
                 card : AVGESupporterCard = event.card
                 player : AVGEPlayer = card.player
                 if(player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] == 0):
-                    return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: 'cannot use any more supporter cards this turn!'})
-        return self.generate_response()
+                    return Response(ResponseType.SKIP, Notify("No more supporter uses left this turn!", [player.unique_id], default_timeout))
+        return Response(ResponseType.ACCEPT, Data())

@@ -13,7 +13,7 @@ class _RossPassiveAssessor(AVGEAssessor):
 
     def event_match(self, event):
         return isinstance(event, AtkPhase) and \
-            event.player == self.owner_card.player and \
+            event.env.player_turn == self.owner_card.player and \
             self.owner_card.cardholder.pile_type == Pile.BENCH and \
             len(self.owner_card.player.get_active_card().energy) >= 2
 
@@ -32,34 +32,37 @@ class _RossPassiveAssessor(AVGEAssessor):
         active: AVGECharacterCard = self.owner_card.player.get_active_card()
         chosen = self.owner_card.env.cache.get(self.owner_card, RossWilliams._PASSIVE_KEY, None, True)
         if chosen is None:
-            return self.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[InputEvent]([
                         InputEvent(
                             self.owner_card.player,
                             [RossWilliams._PASSIVE_KEY],
-                            InputType.BINARY,
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             self.owner_card,
-                            {LABEL_FLAG: "ross_use_atk1"},
+                            StrSelectionQuery(
+                                "I Am Become Ross: Use Ross's attack?",
+                                ["Yes", "No"],
+                                ["Yes", "No"],
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        if not chosen:
-            return self.generate_response()
+        if not chosen == 'Yes':
+            return Response(ResponseType.ACCEPT, Data())
 
         packet = [
             PlayCharacterCard(self.owner_card, ActionTypes.ATK_1, ActionTypes.PASSIVE, active),
-            AVGEPlayerAttributeChange(self.owner_card.player, AVGEPlayerAttribute.ATTACKS_LEFT, 1, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, None),
+            AVGEPlayerAttributeChange(self.owner_card.player, AVGEPlayerAttribute.ATTACKS_LEFT, 1, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, self.owner_card.env, None),
         ]
         self.owner_card.propose(
             AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RossWilliams))
         )
-        return self.generate_response(ResponseType.FAST_FORWARD)
+        return Response(ResponseType.FAST_FORWARD, Notify(str(self.owner_card.player.get_active_card()) + " used Ross's attack!", all_players, default_timeout))
 
 
 class RossWilliams(AVGECharacterCard):
@@ -68,18 +71,14 @@ class RossWilliams(AVGECharacterCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.CHOIR, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Ross Attack!'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        card.add_listener(_RossPassiveAssessor(card))
-        return card.generate_response()
+    def passive(self: AVGECharacterCard) -> Response:
+        self.add_listener(_RossPassiveAssessor(self))
+        return Response(ResponseType.ACCEPT, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         player = card.player
@@ -89,7 +88,7 @@ class RossWilliams(AVGECharacterCard):
         opp_has = any(isinstance(c, RossWilliams) for c in opponent.cardholders[Pile.BENCH])
 
         if player_has and opp_has:
-            return card.generate_response()
+            return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack, but it did nothing...", all_players, default_timeout))
 
         if player_has and not opp_has:
             deck = player.cardholders[Pile.DECK]
@@ -97,7 +96,7 @@ class RossWilliams(AVGECharacterCard):
             def generate_packet() -> PacketType:
                 if(len(deck) == 0):
                     return []
-                return [TransferCard(deck.peek(), deck, hand, ActionTypes.ATK_1, card)]
+                return [TransferCard(deck.peek(), deck, hand, ActionTypes.ATK_1, card, None)]
 
             card.propose(
                 AVGEPacket(
@@ -105,31 +104,24 @@ class RossWilliams(AVGECharacterCard):
                     AVGEEngineID(card, ActionTypes.ATK_1, RossWilliams),
                 )
             )
-            return card.generate_response()
+            return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack!", all_players, default_timeout))
 
         if opp_has and not player_has:
             targets = opponent.get_cards_in_play()
             target = player.env.cache.get(card, RossWilliams._ATTACK_KEY, None, True)
             if target is None:
-                return card.generate_response(
+                return Response(
                     ResponseType.INTERRUPT,
-                    {
-                        INTERRUPT_KEY: [
+                    Interrupt[InputEvent]([
                             InputEvent(
                                 card.player,
                                 [RossWilliams._ATTACK_KEY],
-                                InputType.SELECTION,
                                 lambda r: True,
                                 ActionTypes.ATK_1,
                                 card,
-                                {
-                                    LABEL_FLAG: "ross_atk1_target",
-                                    TARGETS_FLAG: targets,
-                                    DISPLAY_FLAG: targets
-                                },
+                                CardSelectionQuery("Ross Attack!: Choose a card to attack", targets, targets, False, False)
                             )
-                        ]
-                    },
+                        ]),
                 )
             card.propose(
                 AVGEPacket(
@@ -140,6 +132,7 @@ class RossWilliams(AVGECharacterCard):
                             AVGEAttributeModifier.SUBSTRACTIVE,
                             CardType.CHOIR,
                             ActionTypes.ATK_1,
+                            None,
                             card,
                         )
                     ],
@@ -147,4 +140,4 @@ class RossWilliams(AVGECharacterCard):
                 )
             )
 
-        return card.generate_response()
+        return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack!", all_players, default_timeout))

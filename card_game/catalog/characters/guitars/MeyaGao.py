@@ -18,9 +18,9 @@ class _MeyaGuitarBoost(AVGEModifier):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
-        if not isinstance(event.caller_card, AVGECharacterCard):
+        if not isinstance(event.caller, AVGECharacterCard):
             return False
-        if event.caller_card.player != self.owner_card.player:
+        if event.caller.player != self.owner_card.player:
             return False
         if event.change_type != CardType.GUITAR:
             return False
@@ -35,15 +35,13 @@ class _MeyaGuitarBoost(AVGEModifier):
         if self.owner_card.env.round_id > self.round_active:
             self.invalidate()
 
-    def modify(self, args=None):
-        if args is None:
-            args = {}
+    def modify(self):
         from card_game.internal_events import AVGECardHPChange
 
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(40)
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Notify("Distortion: +40 damage!", all_players, default_timeout))
 
 
 class _MeyaAttackBlockAssessor(AVGEAssessor):
@@ -61,7 +59,7 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
             return False
         if not isinstance(event.card, AVGECharacterCard):
             return False
-        if event.caller_card != self.card_blocked:
+        if event.caller != self.card_blocked:
             return False
         if self.card_blocked.env.round_id != self.round_active:
             return False
@@ -71,10 +69,8 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
         if self.card_blocked.env.round_id > self.round_active:
             self.invalidate()
 
-    def assess(self, args=None) -> Response:
-        if args is None:
-            args = {}
-        return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot attack this round due to MeyaGao passive"})
+    def assess(self) -> Response:
+        return Response(ResponseType.SKIP, Notify("Cannot attack this round due to Meya Gao's I See Your Soul!", all_players, default_timeout))
 
 
 class _MeyaDamageReactor(AVGEReactor):
@@ -89,7 +85,7 @@ class _MeyaDamageReactor(AVGEReactor):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
-        return event.target_card == self.owner_card and isinstance(event.caller_card, AVGECharacterCard)
+        return event.target_card == self.owner_card and isinstance(event.caller, AVGECharacterCard)
 
     def event_effect(self) -> bool:
         return True
@@ -97,52 +93,51 @@ class _MeyaDamageReactor(AVGEReactor):
     def update_status(self):
         return
 
-    def react(self, args=None) -> Response:
-        if args is None:
-            args = {}
+    def react(self) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
-        assert isinstance(event.caller_card, AVGECharacterCard)
-        attacker: AVGECharacterCard = event.caller_card
+        assert isinstance(event.caller, AVGECharacterCard)
+        attacker: AVGECharacterCard = event.caller
 
         self.owner_card.add_listener(_MeyaAttackBlockAssessor(self.owner_card, self.owner_card.player.get_next_turn()))
         attacker.add_listener(_MeyaAttackBlockAssessor(attacker, attacker.player.get_next_turn()))
 
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class MeyaGao(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 120, CardType.GUITAR, 2, 2, 0)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Distortion'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        card.add_listener(_MeyaDamageReactor(card))
-        return card.generate_response()
+    def passive(self) -> Response:
+        self.add_listener(_MeyaDamageReactor(self))
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
+
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
+
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, MeyaGao))
         )
         card.add_listener(_MeyaGuitarBoost(card, card.player.get_next_turn()))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

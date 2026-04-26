@@ -44,9 +44,11 @@ def _normalize_rm(energy_id: str) -> str:
 
 
 def _normalize_energy_target(raw_target: str) -> str:
-    normalized_lower = raw_target
-    if normalized_lower in {'p1-energy', 'p2-energy', 'energy-discard'}:
-        return normalized_lower
+    normalized_lower = raw_target.strip().lower()
+    if normalized_lower in {'p1-energy', 'p2-energy', 'shared-energy'}:
+        return 'shared-energy'
+    if normalized_lower == 'energy-discard':
+        return 'energy-discard'
     return raw_target
 
 
@@ -110,8 +112,15 @@ def _normalize_changetype(card_id: str, avge_card_type: str) -> str:
     return f'changetype {card_id} {avge_card_type}'
 
 
-def _normalize_notify(target_player: str, message: str) -> str:
-    return f'notify {target_player} {message}'
+def _normalize_notify_target(raw_value: str) -> str:
+    value = raw_value
+    if value == 'both':
+        return 'both'
+    return _normalize_player(value, 'notify target')
+
+
+def _normalize_notify(target_player: str, message: str, timeout: int) -> str:
+    return f'notify {target_player} {message} {int(timeout)}'
 
 
 def _normalize_winner(target_player: str) -> str:
@@ -174,7 +183,7 @@ def rm(tokens: list[str]) -> str:
 
 def mv_energy(tokens: list[str]) -> str:
     if len(tokens) != 2:
-        raise ValueError('Usage: mv-energy [energyid] [target_card_id|p1-energy|p2-energy|energy-discard]')
+        raise ValueError('Usage: mv-energy [energyid] [target_card_id|shared-energy|energy-discard]')
     energy_id = tokens[0]
     target_id = tokens[1]
     return _normalize_mv_energy(energy_id, target_id)
@@ -298,11 +307,22 @@ def changetype(tokens: list[str]) -> str:
 
 
 def notify(tokens: list[str]) -> str:
-    if len(tokens) < 2:
-        raise ValueError('Usage: notify [player-1|player-2] [msg]')
-    target_player = _normalize_player(tokens[0], 'notify target')
-    message = ' '.join(tokens[1:])
-    return _normalize_notify(target_player, message)
+    if len(tokens) < 3:
+        raise ValueError('Usage: notify [player-1|player-2|both] [msg] [timeout]')
+
+    target_player = _normalize_notify_target(tokens[0])
+    try:
+        timeout = int(tokens[-1])
+    except ValueError as exc:
+        raise ValueError('notify timeout must be an integer') from exc
+
+    message_tokens = tokens[1:-1]
+
+    message = ' '.join(message_tokens).strip()
+    if not message:
+        raise ValueError('notify message must not be empty')
+
+    return _normalize_notify(target_player, message, timeout=timeout)
 
 
 def winner(tokens: list[str]) -> str:

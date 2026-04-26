@@ -1,13 +1,81 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import dataclass
+from typing import Any, cast
 
-from card_game.constants import ResponseType, INTERRUPT_KEY
+from card_game.constants import Data, Interrupt, OrderingQuery, Response, ResponseType
 from card_game.engine.constrainer import Constraint
-from card_game.engine.engine import Engine
+from card_game.engine.engine import Engine, EngineHistory, HistoryState
 from card_game.engine.engine_constants import EngineGroup, QueueStatus
 from card_game.engine.event import Event, Packet
-from card_game.engine.event_listener import AssessorEventListener, ModifierEventListener, ReactorEventListener
+from card_game.engine.event_listener import AbstractEventListener, AbstractPacketListener, AssessorEventListener, ModifierEventListener, ReactorEventListener
+
+
+@dataclass
+class QueryData(Data):
+    query_type: str
+
+
+@dataclass
+class ConstraintAnnouncement(Data):
+    constrainer_announced: str
+
+
+def _coerce_response_data(response_type: ResponseType, payload: dict[str, Any] | Data | None):
+    if isinstance(payload, Data):
+        return payload
+
+    payload_dict = payload if isinstance(payload, dict) else {}
+
+    if response_type == ResponseType.INTERRUPT:
+        insertion = payload_dict.get("INTERRUPT_KEY", [])
+        return Interrupt[Event](insertion=insertion)
+
+    if response_type == ResponseType.REQUIRES_QUERY:
+        query_type = payload_dict.get("query_type")
+        if query_type == "ordering":
+            unordered = payload_dict.get("unordered_groups", payload_dict.get("unordered_listeners", []))
+            return OrderingQuery(unordered_listeners=unordered)
+        return QueryData(query_type=query_type or "legacy_query")
+
+    return Data()
+
+
+class TestAssessor(AssessorEventListener[Event]):
+    def generate_response(self, response_type: ResponseType = ResponseType.ACCEPT, payload: dict[str, Any] | Data | None = None):
+        return Response(response_type, _coerce_response_data(response_type, payload))
+
+
+class TestModifier(ModifierEventListener[Event]):
+    def generate_response(self, response_type: ResponseType = ResponseType.ACCEPT, payload: dict[str, Any] | Data | None = None):
+        return Response(response_type, _coerce_response_data(response_type, payload))
+
+
+class TestReactor(ReactorEventListener[Event]):
+    def generate_response(self, response_type: ResponseType = ResponseType.ACCEPT, payload: dict[str, Any] | Data | None = None):
+        return Response(response_type, _coerce_response_data(response_type, payload))
+
+
+def response_query_type(response) -> str | None:
+    if isinstance(response.data, OrderingQuery):
+        return "ordering"
+    return getattr(response.data, "query_type", None)
+
+
+def response_unordered_groups(response):
+    if isinstance(response.data, OrderingQuery):
+        return response.data.unordered_listeners
+    return getattr(response.data, "unordered_groups", [])
+
+
+def response_data_value(response, key: str, default=None):
+    if hasattr(response.data, key):
+        return getattr(response.data, key)
+    getter = getattr(response.data, "get", None)
+    if callable(getter):
+        return getter(key, default)
+    return default
 
 
 class MutableState:
@@ -16,6 +84,9 @@ class MutableState:
 
 
 class BaseEvent(Event):
+    def generate_core_response(self, response_type: ResponseType = ResponseType.CORE, payload: dict[str, Any] | Data | None = None):
+        return Response(response_type, _coerce_response_data(response_type, payload))
+
     def get_kwargs(self):
         return {}
 
@@ -35,10 +106,10 @@ class BaseEvent(Event):
         return
 
 
-class CountingExternalListener(AssessorEventListener[Event]):
+class CountingExternalListener(TestAssessor):
     def __init__(self, identifier: str, should_effect: bool = True, ttl_events: int | None = None):
         self.identifier = identifier
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.call_count = 0
         self.should_effect = should_effect
         self.ttl_events = ttl_events
@@ -67,10 +138,10 @@ class CountingExternalListener(AssessorEventListener[Event]):
         return "counting-external-listener"
 
 
-class SkipListener(AssessorEventListener[Event]):
+class SkipListener(TestAssessor):
     def __init__(self, group: EngineGroup):
         self.identifier = "skip-listener"
-        super().__init__(group=group, internal=True)
+        super().__init__(group=group, )
 
     def event_match(self, event: Event) -> bool:
         return True
@@ -91,10 +162,10 @@ class SkipListener(AssessorEventListener[Event]):
         return "skip-listener"
 
 
-class CountingInternalListener(AssessorEventListener[Event]):
+class CountingInternalListener(TestAssessor):
     def __init__(self, identifier: str, group: EngineGroup = EngineGroup.INTERNAL_1):
         self.identifier = identifier
-        super().__init__(group=group, internal=True)
+        super().__init__(group=group, )
         self.call_count = 0
         self.invalidated_after_first = False
 
@@ -119,11 +190,12 @@ class CountingInternalListener(AssessorEventListener[Event]):
         return "counting-internal-listener"
 
 
-class QueryListener(AssessorEventListener[Event]):
+class QueryListener(TestAssessor):
     def __init__(self):
         self.identifier = "query-listener"
-        super().__init__(group=EngineGroup.INTERNAL_1, internal=True)
+        super().__init__(group=EngineGroup.INTERNAL_1, )
         self.call_count = 0
+        self.approved = False
 
     def event_match(self, event: Event) -> bool:
         return True
@@ -133,8 +205,8 @@ class QueryListener(AssessorEventListener[Event]):
 
     def assess(self, args={}):
         self.call_count += 1
-        if not args.get("approved", False):
-            return self.generate_response(ResponseType.REQUIRES_QUERY, {"query_type": "approval"})
+        if not self.approved:
+            return self.generate_response(ResponseType.REQUIRES_QUERY, QueryData("approval"))
         return self.generate_response(ResponseType.ACCEPT)
 
     def update_status(self):
@@ -147,10 +219,10 @@ class QueryListener(AssessorEventListener[Event]):
         return "query-listener"
 
 
-class CountingModifierListener(ModifierEventListener[Event]):
+class CountingModifierListener(TestModifier):
     def __init__(self, identifier: str, should_effect: bool = True):
         self.identifier = identifier
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.call_count = 0
         self.should_effect = should_effect
 
@@ -186,6 +258,9 @@ class TagConstraint(Constraint[Event]):
 
     def constrain_listener(self, listener: AssessorEventListener[Event]):
         return True
+
+    def response_data_on_attach(self, attached_to: AbstractEventListener[Event]) -> Data:
+        return ConstraintAnnouncement(constrainer_announced=self.package())
 
     def update_status(self):
         return
@@ -252,12 +327,57 @@ class DeltaEvent(BaseEvent):
         self.state.value -= self.delta
 
 
+class PacketStatusProbeListener(AbstractPacketListener[Event]):
+    def __init__(
+        self,
+        attach_on: set[ResponseType],
+        response_type: ResponseType = ResponseType.ACCEPT,
+        state: MutableState | None = None,
+        propose_delta: int | None = None,
+        propose_priority: int = 0,
+        invalidate_after_react: bool = False,
+    ):
+        super().__init__()
+        self.attach_on = attach_on
+        self.response_type = response_type
+        self.state = state
+        self.propose_delta = propose_delta
+        self.propose_priority = propose_priority
+        self.invalidate_after_react = invalidate_after_react
+        self.react_count = 0
+        self.seen_statuses: list[ResponseType] = []
+
+    def packet_match(self, packet: Packet[Event], packet_finish_status: ResponseType) -> bool:
+        self.seen_statuses.append(packet_finish_status)
+        return packet_finish_status in self.attach_on
+
+    def update_status(self):
+        return
+
+    def react(self, p: Packet[Event]) -> Response:
+        self.react_count += 1
+        if self.state is not None and self.propose_delta is not None:
+            self.propose(Packet([DeltaEvent(self.state, self.propose_delta)]), self.propose_priority)
+        if self.invalidate_after_react:
+            self.invalidate()
+        return Response(self.response_type, Data())
+
+
+class ExplicitSkipEvent(BaseEvent):
+    def core(self, args={}):
+        return self.generate_core_response(ResponseType.SKIP)
+
+    def get_kwargs(self):
+        return {}
+
+
 class AddListenerEvent(BaseEvent):
     def __init__(self, listener: CountingExternalListener):
         self.listener = listener
         super().__init__(listener=listener)
 
     def core(self, args={}):
+        assert self.engine is not None
         self.engine.add_listener(self.listener)
         return self.generate_core_response()
 
@@ -271,6 +391,7 @@ class AddConstraintEvent(BaseEvent):
         super().__init__(constraint=constraint)
 
     def core(self, args={}):
+        assert self.engine is not None
         self.engine.add_constraint(self.constraint)
         return self.generate_core_response()
 
@@ -368,10 +489,12 @@ class AssemblyTimingDeltaEvent(BaseEvent):
         }
 
     def core(self, args={}):
+        assert self.delta is not None
         self.state.value += self.delta
         return self.generate_core_response()
 
     def invert_core(self, args={}) -> None:
+        assert self.delta is not None
         self.state.value -= self.delta
 
 
@@ -449,7 +572,7 @@ class UpdatePacketInputEvent(BaseEvent):
         self.core_calls += 1
         input_result = args.get("input_result")
         if not isinstance(input_result, list) or len(input_result) != 1:
-            return self.generate_core_response(ResponseType.REQUIRES_QUERY, {"query_type": "card_query"})
+            return self.generate_core_response(ResponseType.REQUIRES_QUERY, QueryData("card_query"))
         self.cache.set(self.input_key, input_result[0])
         return self.generate_core_response()
 
@@ -465,10 +588,10 @@ class UpdatePacketReplayEvent(BaseEvent):
         super().__init__(cache=cache, touch_key=touch_key, input_key=input_key)
 
 
-class CacheTouchModifier(ModifierEventListener[Event]):
+class CacheTouchModifier(TestModifier):
     def __init__(self, cache: RollbackCache, touch_key: str, metrics: dict[str, int]):
         self.identifier = "touch-mod"
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.cache = cache
         self.touch_key = touch_key
         self.metrics = metrics
@@ -494,10 +617,10 @@ class CacheTouchModifier(ModifierEventListener[Event]):
         return "cache-touch-modifier"
 
 
-class RequestInputModifier(ModifierEventListener[Event]):
+class RequestInputModifier(TestModifier):
     def __init__(self, cache: RollbackCache, input_key: str, metrics: dict[str, int]):
         self.identifier = "input-mod"
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.cache = cache
         self.input_key = input_key
         self.metrics = metrics
@@ -513,9 +636,7 @@ class RequestInputModifier(ModifierEventListener[Event]):
             self.metrics["modifier2_update_requests"] += 1
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [UpdatePacketInputEvent(self.cache, self.input_key)]
-                },
+                Interrupt[Event]([UpdatePacketInputEvent(self.cache, self.input_key)]),
             )
         self.metrics["modifier2_passes"] += 1
         return self.generate_response(ResponseType.ACCEPT)
@@ -530,10 +651,10 @@ class RequestInputModifier(ModifierEventListener[Event]):
         return "request-input-modifier"
 
 
-class DownstreamBlockAssessor(AssessorEventListener[Event]):
+class DownstreamBlockAssessor(TestAssessor):
     def __init__(self, cache: RollbackCache, input_key: str, metrics: dict[str, int]):
         self.identifier = "downstream-block"
-        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_2, )
         self.cache = cache
         self.input_key = input_key
         self.metrics = metrics
@@ -577,10 +698,10 @@ class InterruptChainReplayEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class listdInterruptModifier(ModifierEventListener[Event]):
+class listdInterruptModifier(TestModifier):
     def __init__(self, identifier: str, cache: RollbackCache, input_key: str):
         self.identifier = identifier
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.cache = cache
         self.input_key = input_key
         self.interrupt_count = 0
@@ -597,9 +718,7 @@ class listdInterruptModifier(ModifierEventListener[Event]):
             self.interrupt_count += 1
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [UpdatePacketInputEvent(self.cache, self.input_key)],
-                },
+                Interrupt[Event]([UpdatePacketInputEvent(self.cache, self.input_key)]),
             )
         self.pass_count += 1
         return self.generate_response(ResponseType.ACCEPT)
@@ -653,10 +772,10 @@ class ForceFastForwardEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class ForceFastForwardAssessor(AssessorEventListener[Event]):
+class ForceFastForwardAssessor(TestAssessor):
     def __init__(self, metrics: dict[str, int]):
         self.identifier = "force-ff-assessor"
-        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, )
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -681,10 +800,10 @@ class ForceFastForwardAssessor(AssessorEventListener[Event]):
         return "force-fast-forward-assessor"
 
 
-class ForceFastForwardDownstreamModifier(ModifierEventListener[Event]):
+class ForceFastForwardDownstreamModifier(TestModifier):
     def __init__(self, metrics: dict[str, int]):
         self.identifier = "force-ff-downstream"
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -707,10 +826,10 @@ class ForceFastForwardDownstreamModifier(ModifierEventListener[Event]):
         return "force-fast-forward-downstream-modifier"
 
 
-class InterruptThenFastForwardAssessor(AssessorEventListener[Event]):
+class InterruptThenFastForwardAssessor(TestAssessor):
     def __init__(self, metrics: dict[str, int]):
         self.identifier = "interrupt-then-ff"
-        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, )
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -724,9 +843,7 @@ class InterruptThenFastForwardAssessor(AssessorEventListener[Event]):
             self.metrics["interrupts"] += 1
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [InterruptPayloadEvent(self.metrics)],
-                },
+                Interrupt[Event]([InterruptPayloadEvent(self.metrics)]),
             )
         self.metrics["fast_forwards"] += 1
         assert self.attached_event is not None
@@ -743,10 +860,10 @@ class InterruptThenFastForwardAssessor(AssessorEventListener[Event]):
         return "interrupt-then-fast-forward-assessor"
 
 
-class DownstreamOverrideModifier(ModifierEventListener[Event]):
+class DownstreamOverrideModifier(TestModifier):
     def __init__(self, metrics: dict[str, int]):
         self.identifier = "downstream-override-mod"
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -769,10 +886,10 @@ class DownstreamOverrideModifier(ModifierEventListener[Event]):
         return "downstream-override-modifier"
 
 
-class InterruptThenAcceptAssessor(AssessorEventListener[Event]):
+class InterruptThenAcceptAssessor(TestAssessor):
     def __init__(self, metrics: dict[str, int]):
         self.identifier = "interrupt-then-accept"
-        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, )
         self.metrics = metrics
 
     def event_match(self, event: Event) -> bool:
@@ -786,9 +903,7 @@ class InterruptThenAcceptAssessor(AssessorEventListener[Event]):
             self.metrics["interrupts"] += 1
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [InterruptPayloadEvent(self.metrics)],
-                },
+                Interrupt[Event]([InterruptPayloadEvent(self.metrics)]),
             )
         self.metrics["accepts"] += 1
         return self.generate_response(ResponseType.ACCEPT)
@@ -829,10 +944,10 @@ class OrderedInterruptCandidateEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class OrderedInterruptAssessor(AssessorEventListener[Event]):
+class OrderedInterruptAssessor(TestAssessor):
     def __init__(self, order: list[str]):
         self.identifier = "ordered-interrupt"
-        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_PRECHECK_1, )
         self.order = order
         self.did_interrupt = False
 
@@ -848,9 +963,7 @@ class OrderedInterruptAssessor(AssessorEventListener[Event]):
             self.order.append("interrupt")
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)],
-                },
+                Interrupt[Event]([OrderedInterruptPayloadEvent(self.order)]),
             )
         self.order.append("resume")
         return self.generate_response(ResponseType.ACCEPT)
@@ -880,7 +993,7 @@ class OrderedCoreInterruptEvent(BaseEvent):
             self.order.append("core_interrupt")
             return self.generate_core_response(
                 ResponseType.INTERRUPT,
-                {INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)]},
+                Interrupt[Event]([OrderedInterruptPayloadEvent(self.order)]),
             )
         self.order.append("core_resume")
         return self.generate_core_response()
@@ -899,10 +1012,10 @@ class OrderedModifierInterruptCandidateEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class OrderedInterruptModifier(ModifierEventListener[Event]):
+class OrderedInterruptModifier(TestModifier):
     def __init__(self, order: list[str]):
         self.identifier = "ordered-interrupt-modifier"
-        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_MODIFIERS_2, )
         self.order = order
         self.did_interrupt = False
 
@@ -918,7 +1031,7 @@ class OrderedInterruptModifier(ModifierEventListener[Event]):
             self.order.append("modifier_interrupt")
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)]},
+                Interrupt[Event]([OrderedInterruptPayloadEvent(self.order)]),
             )
         self.order.append("modifier_resume")
         return self.generate_response(ResponseType.ACCEPT)
@@ -946,10 +1059,10 @@ class OrderedReactorInterruptCandidateEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class OrderedInterruptReactor(ReactorEventListener[Event]):
+class OrderedInterruptReactor(TestReactor):
     def __init__(self, order: list[str]):
         self.identifier = "ordered-interrupt-reactor"
-        super().__init__(group=EngineGroup.EXTERNAL_REACTORS, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_REACTORS, )
         self.order = order
         self.did_interrupt = False
 
@@ -965,7 +1078,7 @@ class OrderedInterruptReactor(ReactorEventListener[Event]):
             self.order.append("reactor_interrupt")
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {INTERRUPT_KEY: [OrderedInterruptPayloadEvent(self.order)]},
+                Interrupt[Event]([OrderedInterruptPayloadEvent(self.order)]),
             )
         self.order.append("reactor_resume")
         return self.generate_response(ResponseType.ACCEPT)
@@ -1013,10 +1126,10 @@ class PriorityBaselineProposalEvent(BaseEvent):
         return self.generate_core_response()
 
 
-class PriorityEscalatingReactor(ReactorEventListener[Event]):
+class PriorityEscalatingReactor(TestReactor):
     def __init__(self, order: list[str]):
         self.identifier = "priority-escalating-reactor"
-        super().__init__(group=EngineGroup.EXTERNAL_REACTORS, internal=False)
+        super().__init__(group=EngineGroup.EXTERNAL_REACTORS, )
         self.order = order
 
     def event_match(self, event: Event) -> bool:
@@ -1062,10 +1175,10 @@ class InterruptInsertedPayloadEvent(BaseEvent):
         self.state.value -= 10
 
 
-class InterruptThenSkipAssessor(AssessorEventListener[Event]):
+class InterruptThenSkipAssessor(TestAssessor):
     def __init__(self, owner_event: Event, state: MutableState, metrics: dict[str, int]):
         self.identifier = "interrupt-then-skip-assessor"
-        super().__init__(group=EngineGroup.INTERNAL_1, internal=True)
+        super().__init__(group=EngineGroup.INTERNAL_1, )
         self.owner_event = owner_event
         self.state = state
         self.metrics = metrics
@@ -1084,7 +1197,7 @@ class InterruptThenSkipAssessor(AssessorEventListener[Event]):
             self.metrics["interrupts"] += 1
             return self.generate_response(
                 ResponseType.INTERRUPT,
-                {INTERRUPT_KEY: [InterruptInsertedPayloadEvent(self.state, self.metrics)]},
+                Interrupt[Event]([InterruptInsertedPayloadEvent(self.state, self.metrics)]),
             )
         return self.generate_response(ResponseType.ACCEPT)
 
@@ -1128,10 +1241,10 @@ class InterruptThenSkipEvent(BaseEvent):
         self.state.value -= 1
 
 
-class AttachTracingModifier(ModifierEventListener[Event]):
+class AttachTracingModifier(TestModifier):
     def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
         self.identifier = identifier
-        super().__init__(group=group, internal=False)
+        super().__init__(group=group, )
         self.trace = trace
         self.attach_count = 0
         self.detach_count = 0
@@ -1181,10 +1294,10 @@ class AttachStateConstraint(TagConstraint):
         return getattr(obj, "identifier", None) == self.identifier
 
 
-class AttachTracingAssessor(AssessorEventListener[Event]):
+class AttachTracingAssessor(TestAssessor):
     def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
         self.identifier = identifier
-        super().__init__(group=group, internal=False)
+        super().__init__(group=group, )
         self.trace = trace
         self.attach_count = 0
         self.detach_count = 0
@@ -1221,10 +1334,10 @@ class AttachTracingAssessor(AssessorEventListener[Event]):
         return "attach-tracing-assessor"
 
 
-class AttachTracingReactor(ReactorEventListener[Event]):
+class AttachTracingReactor(TestReactor):
     def __init__(self, identifier: str, group: EngineGroup, trace: list[tuple]):
         self.identifier = identifier
-        super().__init__(group=group, internal=False)
+        super().__init__(group=group, )
         self.trace = trace
         self.attach_count = 0
         self.detach_count = 0
@@ -1320,24 +1433,36 @@ class IndefiniteCacheToggleInterruptEvent(BaseEvent):
         if self.cache.get(self.key) is None:
             return self.generate_core_response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [ToggleCacheSetEvent(self.cache, self.key, self.metrics)],
-                },
+                Interrupt[Event]([ToggleCacheSetEvent(self.cache, self.key, self.metrics)]),
             )
         return self.generate_core_response(
             ResponseType.INTERRUPT,
-            {
-                INTERRUPT_KEY: [ToggleCacheEraseEvent(self.cache, self.key, self.metrics)],
-            },
+            Interrupt[Event]([ToggleCacheEraseEvent(self.cache, self.key, self.metrics)]),
         )
 
 
 class EngineEdgeCaseTests(unittest.TestCase):
     def make_engine(self) -> Engine[Event]:
         eng = Engine[Event]()
-        if not hasattr(eng, "_reset_constraints"):
-            eng._reset_constraints = lambda: None
+        eng._packet_reactors = []
+
+        # History API now raises on empty chapter updates. For event packets that
+        # produce no history entries (e.g., constrained/no-op flows), treat these
+        # transitions as no-op history updates in tests.
+        history_update = eng.event_history.set_unformalized_changes
+
+        def safe_set_unformalized_changes(new_state: HistoryState):
+            try:
+                return history_update(new_state)
+            except IndexError:
+                return []
+
+        eng.event_history.set_unformalized_changes = safe_set_unformalized_changes
         return eng
+
+    def add_packet_listener(self, eng: Engine[Event], listener: AbstractPacketListener[Event]):
+        listener.engine = eng
+        eng._packet_reactors.append(listener)
 
     def drain_engine(self, eng: Engine[Event], max_steps: int = 200):
         last = None
@@ -1379,6 +1504,107 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng._propose(Packet([DeltaEvent(state, 3)]))
         last_after = self.drain_engine(eng)
         self.assertEqual(last_after.response_type, ResponseType.NO_MORE_EVENTS)
+        self.assertEqual(state.value, 3)
+
+    def test_packet_listener_attaches_by_finished_packet_or_skip_status(self):
+        eng = self.make_engine()
+        state = MutableState()
+        finished_listener = PacketStatusProbeListener({ResponseType.FINISHED_PACKET})
+        skip_listener = PacketStatusProbeListener({ResponseType.SKIP})
+        self.add_packet_listener(eng, finished_listener)
+        self.add_packet_listener(eng, skip_listener)
+
+        eng._propose(Packet([DeltaEvent(state, 1)]))
+        self.drain_engine(eng)
+
+        self.assertEqual(finished_listener.react_count, 1)
+        self.assertEqual(skip_listener.react_count, 0)
+
+        eng._propose(Packet([ExplicitSkipEvent()]))
+        self.drain_engine(eng)
+
+        self.assertEqual(finished_listener.react_count, 1)
+        self.assertEqual(skip_listener.react_count, 1)
+        self.assertIn(ResponseType.FINISHED_PACKET, finished_listener.seen_statuses)
+        self.assertIn(ResponseType.SKIP, skip_listener.seen_statuses)
+
+    def test_packet_listener_can_propose_events_even_on_skip(self):
+        eng = self.make_engine()
+        state = MutableState()
+        skip_listener = PacketStatusProbeListener(
+            {ResponseType.SKIP},
+            response_type=ResponseType.ACCEPT,
+            state=state,
+            propose_delta=5,
+            invalidate_after_react=True,
+        )
+        self.add_packet_listener(eng, skip_listener)
+
+        eng._propose(Packet([ExplicitSkipEvent()]))
+        self.drain_engine(eng)
+
+        self.assertEqual(skip_listener.react_count, 1)
+        self.assertEqual(state.value, 5)
+
+    def test_multiple_packet_listeners_can_attach_and_propose_together(self):
+        eng = self.make_engine()
+        state = MutableState()
+        listener_a = PacketStatusProbeListener(
+            {ResponseType.FINISHED_PACKET},
+            response_type=ResponseType.ACCEPT,
+            state=state,
+            propose_delta=2,
+            propose_priority=1,
+            invalidate_after_react=True,
+        )
+        listener_b = PacketStatusProbeListener(
+            {ResponseType.FINISHED_PACKET},
+            response_type=ResponseType.ACCEPT,
+            state=state,
+            propose_delta=3,
+            propose_priority=0,
+            invalidate_after_react=True,
+        )
+        self.add_packet_listener(eng, listener_a)
+        self.add_packet_listener(eng, listener_b)
+
+        eng._propose(Packet([BaseEvent()]))
+        self.drain_engine(eng)
+
+        self.assertEqual(listener_a.react_count, 1)
+        self.assertEqual(listener_b.react_count, 1)
+        self.assertEqual(state.value, 5)
+
+    def test_packet_listener_skip_after_finished_packet_keeps_engine_progressing(self):
+        eng = self.make_engine()
+        state = MutableState()
+        skip_on_finish_listener = PacketStatusProbeListener(
+            {ResponseType.FINISHED_PACKET},
+            response_type=ResponseType.SKIP,
+            invalidate_after_react=True,
+        )
+        self.add_packet_listener(eng, skip_on_finish_listener)
+
+        eng._propose(Packet([DeltaEvent(state, 1)]))
+
+        saw_skip = False
+        final_response = None
+        for _ in range(50):
+            response = eng.forward({})
+            if response.response_type == ResponseType.SKIP:
+                saw_skip = True
+            if response.response_type == ResponseType.NO_MORE_EVENTS:
+                final_response = response
+                break
+
+        self.assertTrue(saw_skip)
+        self.assertIsNotNone(final_response)
+        self.assertEqual(state.value, 1)
+        self.assertEqual(skip_on_finish_listener.react_count, 1)
+
+        eng._propose(Packet([DeltaEvent(state, 2)]))
+        post_response = self.drain_engine(eng)
+        self.assertEqual(post_response.response_type, ResponseType.NO_MORE_EVENTS)
         self.assertEqual(state.value, 3)
 
     def test_skip_after_core_reverts_current_and_prior_events_in_packet(self):
@@ -1454,8 +1680,8 @@ class EngineEdgeCaseTests(unittest.TestCase):
         query_listener = QueryListener()
 
         class QueryEvent(BaseEvent):
-            def generate_internal_listeners(self_nonlocal):
-                self_nonlocal.event_listener_groups[EngineGroup.INTERNAL_1].append(query_listener)
+            def generate_internal_listeners(self):
+                self.event_listener_groups[EngineGroup.INTERNAL_1].append(query_listener)
 
         eng._propose(Packet([QueryEvent()]))
 
@@ -1470,10 +1696,12 @@ class EngineEdgeCaseTests(unittest.TestCase):
                 break
 
         self.assertIsNotNone(first_query)
+        first_query = cast(Response, first_query)
         self.assertEqual(first_query.response_type, ResponseType.REQUIRES_QUERY)
         self.assertEqual(query_listener.call_count, 1)
 
-        answered = eng.forward({"approved": True})
+        query_listener.approved = True
+        answered = eng.forward({})
         self.assertEqual(answered.response_type, ResponseType.ACCEPT)
         self.assertEqual(query_listener.call_count, 2)
 
@@ -1509,6 +1737,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             if response.response_type == ResponseType.FINISHED_PACKET:
                 break
         self.assertIsNotNone(response)
+        response = cast(Response, response)
         self.assertEqual(response.response_type, ResponseType.FINISHED_PACKET)
 
         deferred_delta_source["delta"] = 6
@@ -1526,7 +1755,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             metrics["packet_assembles"] += 1
             return [DeltaEvent(state, 4)]
 
-        eng._propose(Packet([packet_factory]))
+        eng._propose(Packet([packet_factory]))  # type: ignore[arg-type]
 
         self.assertEqual(metrics["packet_assembles"], 0)
 
@@ -1724,13 +1953,13 @@ class EngineEdgeCaseTests(unittest.TestCase):
             if response.response_type == ResponseType.INTERRUPT:
                 saw_interrupt = True
             if response.response_type == ResponseType.REQUIRES_QUERY:
-                if response.data.get("query_type") == "ordering":
+                if response_query_type(response) == "ordering":
                     response = self.forward_with_cache(
                         eng,
                         cache,
-                        {"group_ordering": response.data.get("unordered_groups", [])},
+                        {"group_ordering": response_unordered_groups(response)},
                     )
-                elif response.data.get("query_type") == "card_query":
+                elif response_query_type(response) == "card_query":
                     saw_requires_query = True
                     response = self.forward_with_cache(eng, cache, {"input_result": [99]})
 
@@ -1741,6 +1970,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertTrue(saw_interrupt)
         self.assertTrue(saw_requires_query)
         self.assertIsNotNone(final_response)
+        final_response = cast(Response, final_response)
         self.assertEqual(final_response.response_type, ResponseType.SKIP)
 
         self.assertEqual(metrics["modifier2_update_requests"], 1)
@@ -1777,8 +2007,9 @@ class EngineEdgeCaseTests(unittest.TestCase):
             lambda r: r.response_type in [ResponseType.REQUIRES_QUERY, ResponseType.NO_MORE_EVENTS],
         )
 
+        ordering_query = cast(Response, ordering_query)
         self.assertEqual(ordering_query.response_type, ResponseType.REQUIRES_QUERY)
-        self.assertEqual(ordering_query.data.get("query_type"), "ordering")
+        self.assertEqual(response_query_type(ordering_query), "ordering")
         self.assertEqual(listener_a.call_count, 0)
         self.assertEqual(listener_b.call_count, 0)
 
@@ -1798,7 +2029,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         ordering_query = None
         for _ in range(50):
             response = eng.forward({})
-            if response.data.get("constrainer_announced") == "tag-constraint":
+            if response_data_value(response, "constrainer_announced") == "tag-constraint":
                 saw_constraint_announcement = True
             if response.response_type == ResponseType.REQUIRES_QUERY:
                 ordering_query = response
@@ -1806,7 +2037,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
 
         self.assertTrue(saw_constraint_announcement)
         self.assertIsNotNone(ordering_query)
-        self.assertEqual(ordering_query.data.get("query_type"), "ordering")
+        self.assertEqual(response_query_type(ordering_query), "ordering")
         self.assertEqual(constrained.call_count, 0)
 
     def test_runtime_constraints_reduce_to_one_listener_so_no_ordering_required(self):
@@ -1826,7 +2057,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         final = None
         for _ in range(100):
             response = eng.forward({})
-            if response.response_type == ResponseType.REQUIRES_QUERY and response.data.get("query_type") == "ordering":
+            if response.response_type == ResponseType.REQUIRES_QUERY and response_query_type(response) == "ordering":
                 saw_ordering_query = True
                 break
             if response.response_type == ResponseType.NO_MORE_EVENTS:
@@ -1950,13 +2181,13 @@ class EngineEdgeCaseTests(unittest.TestCase):
             if response.response_type == ResponseType.INTERRUPT:
                 saw_interrupts += 1
             elif response.response_type == ResponseType.REQUIRES_QUERY:
-                if response.data.get("query_type") == "ordering":
+                if response_query_type(response) == "ordering":
                     saw_ordering = True
-                    next_args = {"group_ordering": response.data.get("unordered_groups", [])}
-                elif response.data.get("query_type") == "card_query":
+                    next_args = {"group_ordering": response_unordered_groups(response)}
+                elif response_query_type(response) == "card_query":
                     next_args = {"input_result": [1]}
                 else:
-                    self.fail(f"Unexpected query type: {response.data.get('query_type')}")
+                    self.fail(f"Unexpected query type: {response_query_type(response)}")
             elif response.response_type == ResponseType.NO_MORE_EVENTS:
                 finished = True
                 break
@@ -2196,6 +2427,76 @@ class EngineEdgeCaseTests(unittest.TestCase):
             and eng._queue.queue_len() == 0
         )
         self.assertFalse(queue_drained)
+
+
+class EngineHistoryTests(unittest.TestCase):
+    def test_set_unformalized_changes_returns_matching_nonformalized_events(self):
+        history = EngineHistory[Event]()
+        state = MutableState()
+        first = DeltaEvent(state, 1)
+        second = DeltaEvent(state, 2)
+
+        history.propose_event(first)
+        history.propose_event(second)
+
+        changed = history.set_unformalized_changes(HistoryState.UNDONE)
+        self.assertEqual(changed, [first, second])
+
+    def test_new_chapter_requires_formalized_changes(self):
+        history = EngineHistory[Event]()
+        history.propose_event(BaseEvent())
+
+        with self.assertRaises(Exception):
+            history.new_chapter()
+
+        last_event, _ = history.history[0][-1]
+        history.history[0][-1] = (last_event, HistoryState.FORMALIZED)
+        history.new_chapter()
+
+        self.assertIn(1, history.history)
+        self.assertEqual(history.history[1], [])
+
+    def test_search_handles_missing_chapter_and_matches_kwargs(self):
+        history = EngineHistory[Event]()
+        state = MutableState()
+        event = DeltaEvent(state, 5)
+        history.propose_event(event)
+
+        missing_event, missing_idx = history.search(99, DeltaEvent, {"delta": 5})
+        self.assertIsNone(missing_event)
+        self.assertEqual(missing_idx, -1)
+
+        found_event, found_idx = history.search(
+            0,
+            DeltaEvent,
+            {"delta": 5},
+            index_to_start=0,
+            specific_state=HistoryState.NONFORMALIZED,
+        )
+        self.assertIs(found_event, event)
+        self.assertEqual(found_idx, 0)
+
+    def test_search_returns_absolute_index_and_skips_nonmatching_kwargs(self):
+        history = EngineHistory[Event]()
+        state = MutableState()
+        first = DeltaEvent(state, 3)
+        second = DeltaEvent(state, 9)
+        third = DeltaEvent(state, 3)
+
+        history.propose_event(first)
+        history.propose_event(second)
+        history.propose_event(third)
+
+        found_event, found_idx = history.search(
+            0,
+            DeltaEvent,
+            {"delta": 3},
+            index_to_start=1,
+            specific_state=HistoryState.NONFORMALIZED,
+        )
+
+        self.assertIs(found_event, third)
+        self.assertEqual(found_idx, 2)
 
 
 if __name__ == "__main__":

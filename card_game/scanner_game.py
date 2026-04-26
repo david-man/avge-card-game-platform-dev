@@ -97,8 +97,8 @@ def _get_active_external_listener_names_by_player(env: AVGEEnvironment) -> dict[
         if(name in ignored):
             continue
         identifier = getattr(listener, "identifier", None)
-        caller_card = getattr(identifier, "caller_card", None)
-        caller_player = getattr(caller_card, "player", None)
+        caller = getattr(identifier, "caller", None)
+        caller_player = getattr(caller, "player", None)
         if(caller_player is None):
             active["environment"].append(name)
         if(isinstance(caller_player, AVGEPlayer) and caller_player.unique_id in [PlayerID.P1, PlayerID.P2]):
@@ -149,7 +149,7 @@ def _build_ui_text(env: AVGEEnvironment) -> str:
     event_stack = list(env._engine.event_stack)
     queue_lines: list[str] = []
     for idx, packet in enumerate(queue):
-        queue_lines.append(f"[{idx}] {packet} {packet.identifier.caller_card if isinstance(packet, AVGEPacket) else "??"}")
+        queue_lines.append(f"[{idx}] {packet} {packet.identifier.caller if isinstance(packet, AVGEPacket) else "??"}")
     if(len(queue_lines) == 0):
         queue_lines.append("(empty)")
 

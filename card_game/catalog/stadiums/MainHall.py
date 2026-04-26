@@ -3,7 +3,8 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import PlayNonCharacterCard
+from card_game.internal_events import PlayNonCharacterCard, TransferCard
+
 
 class MainHallPlayLimitAssessor(AVGEAssessor):
 	def __init__(self, owner_card: AVGEStadiumCard, round : int):
@@ -11,9 +12,42 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 		self.owner_card = owner_card
 		self.round_active = round
 
-	def event_match(self, event):
-		from card_game.internal_events import TransferCard
+	def _is_counted_transfer(self, event: TransferCard, player: AVGEPlayer) -> bool:
+		return (
+			event.card.player == player
+			and event.catalyst_action == ActionTypes.PLAYER_CHOICE
+			and event.pile_from.pile_type == Pile.HAND
+			and event.pile_to.pile_type == Pile.BENCH
+		)
 
+	def _count_player_plays_this_round(self, player: AVGEPlayer) -> int:
+		env = self.owner_card.env
+		round_id = env.round_id
+		count = 0
+
+		nonchar_idx = 0
+		while True:
+			event, found_idx = env.check_history(round_id, PlayNonCharacterCard, {}, nonchar_idx)
+			if event is None:
+				break
+			assert isinstance(event, PlayNonCharacterCard)
+			if event.card.player == player and event.catalyst_action == ActionTypes.PLAYER_CHOICE:
+				count += 1
+			nonchar_idx = found_idx + 1
+
+		transfer_idx = 0
+		while True:
+			event, found_idx = env.check_history(round_id, TransferCard, {}, transfer_idx)
+			if event is None:
+				break
+			assert isinstance(event, TransferCard)
+			if self._is_counted_transfer(event, player):
+				count += 1
+			transfer_idx = found_idx + 1
+
+		return count
+
+	def event_match(self, event):
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not self.owner_card.env.round_id >= self.round_active):
@@ -25,12 +59,8 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 		if(isinstance(event, TransferCard)
 		   and (event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH)):
 			return False
-		player_id = event.card.player.unique_id
-		if(player_id == str(PlayerID.P1)):
-			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0)
-		else:
-			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P2_COUNT_KEY, 0)
-		assert isinstance(count, int)
+		player = event.card.player
+		count = self._count_player_plays_this_round(player)
 		return count >= 3
 
 	def update_status(self):
@@ -38,80 +68,12 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 			self.invalidate()
 
 	def assess(self, args=None):
-		return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "MainHall: player already played 3 non-character cards this turn."})
+		return Response(ResponseType.SKIP, Notify('MainHall: player already played 3 cards this turn.', all_players, default_timeout))
 
-
-class MainHallCountPlayReactor(AVGEReactor):
-	def __init__(self, owner_card: AVGEStadiumCard, round_start : int):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MainHall), group=EngineGroup.EXTERNAL_REACTORS)
-		self.owner_card = owner_card
-		self.round_start = round_start
-
-	def event_match(self, event):
-		from card_game.internal_events import TransferCard
-
-		if(not self.owner_card._is_active_stadium()):
-			return False
-		if(not self.owner_card.env.round_id >= self.round_start):
-			return False
-		if(not event.catalyst_action == ActionTypes.PLAYER_CHOICE):
-			return False
-		if(not isinstance(event, (PlayNonCharacterCard, TransferCard))):
-			return False
-		if(isinstance(event, TransferCard)
-		   and (event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH)):
-			return False
-		return True
-
-	def update_status(self):
-		if(not self.owner_card._is_active_stadium()):
-			self.invalidate()
-
-	def react(self, args=None):
-		event = self.attached_event
-		from card_game.internal_events import TransferCard
-		assert isinstance(event, (PlayNonCharacterCard, TransferCard))
-		player_id = event.card.player.unique_id
-		if(player_id == str(PlayerID.P1)):
-			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P1_COUNT_KEY, 0)
-			assert(isinstance(count, int))
-			self.owner_card.env.cache.set(self.owner_card, MainHall._P1_COUNT_KEY, count + 1)
-		else:
-			count = self.owner_card.env.cache.get(self.owner_card, MainHall._P2_COUNT_KEY, 0)
-			assert(isinstance(count, int))
-			self.owner_card.env.cache.set(self.owner_card, MainHall._P2_COUNT_KEY, count + 1)
-		return self.generate_response()
-
-
-class MainHallTurnStartResetReactor(AVGEReactor):
-	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MainHall), group=EngineGroup.EXTERNAL_REACTORS)
-		self.owner_card = owner_card
-
-	def event_match(self, event):
-		from card_game.internal_events import PhasePickCard
-		return self.owner_card._is_active_stadium() and isinstance(event, PhasePickCard)
-
-	def update_status(self):
-		if(not self.owner_card._is_active_stadium()):
-			self.invalidate()
-
-	def react(self, args=None):
-		event = self.attached_event
-		from card_game.internal_events import PhasePickCard
-		assert isinstance(event, PhasePickCard)
-		player_id = event.player.unique_id
-		if(player_id == str(PlayerID.P1)):
-			self.owner_card.env.cache.set(self.owner_card, MainHall._P1_COUNT_KEY, 0)
-		else:
-			self.owner_card.env.cache.set(self.owner_card, MainHall._P2_COUNT_KEY, 0)
-		return self.generate_response()
 
 class MainHall(AVGEStadiumCard):
 	_ENABLED_KEY = "mainhall_enabled"
 	_PENDING_ENABLE_KEY = "mainhall_pending_enable"
-	_P1_COUNT_KEY = "mainhall_p1_noncharacter_count"
-	_P2_COUNT_KEY = "mainhall_p2_noncharacter_count"
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
@@ -119,11 +81,6 @@ class MainHall(AVGEStadiumCard):
 	def play_card(self) -> Response:
 		owner_card = self
 		if(owner_card.env.round_id == 0):
-			return owner_card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "MainHall cannot be played on the first turn."})
-		owner_card.env.cache.set(owner_card, MainHall._P1_COUNT_KEY, 0)
-		owner_card.env.cache.set(owner_card, MainHall._P2_COUNT_KEY, 0)
-
+			return Response(ResponseType.SKIP, Notify('MainHall cannot be played on the first turn.', [owner_card.player.unique_id], default_timeout))
 		owner_card.add_listener(MainHallPlayLimitAssessor(owner_card, owner_card.env.round_id + 1))
-		owner_card.add_listener(MainHallCountPlayReactor(owner_card, owner_card.env.round_id + 1))
-		owner_card.add_listener(MainHallTurnStartResetReactor(owner_card))
-		return owner_card.generate_response()
+		return Response(ResponseType.CORE, Data())

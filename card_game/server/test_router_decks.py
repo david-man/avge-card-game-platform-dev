@@ -16,6 +16,84 @@ def _login(client, username: str) -> str:
     return session_id
 
 
+def _valid_deck_cards_alpha() -> list[str]:
+    return [
+        'KeiWatanabe',
+        'MatthewWang',
+        'DavidMan',
+        'RobertoGonzales',
+        'FionaLi',
+        'JennieWang',
+        'LukeXu',
+        'DanielYang',
+        'RyanLi',
+        'SophiaSWang',
+        'AliceWang',
+        'EmilyWang',
+        'AnnaBrown',
+        'FelixChen',
+        'Angel',
+        'Emma',
+        'MainHall',
+        'FriedmanHall',
+        'ConcertTicket',
+        'ConcertTicket',
+    ]
+
+
+def _valid_deck_cards_beta() -> list[str]:
+    return [
+        'MeyaGao',
+        'BenCherekIII',
+        'ChristmasKim',
+        'GraceZhao',
+        'BokaiBi',
+        'CavinXue',
+        'PascalKim',
+        'CathyRong',
+        'HenryWang',
+        'KatieXiang',
+        'GabrielChen',
+        'JuliaCiacerelli',
+        'BettySolomon',
+        'LucaChen',
+        'Richard',
+        'Victoria',
+        'SteinertPracticeRoom',
+        'RileyHall',
+        'AVGETShirt',
+        'AVGETShirt',
+    ]
+
+
+def _valid_non_character_deck_cards() -> list[str]:
+    cards: list[str] = []
+    for symbol_name, symbol in sorted(router_server.__dict__.items()):
+        if not isinstance(symbol, type):
+            continue
+        if not issubclass(symbol, router_server.AVGECard):
+            continue
+        if not str(getattr(symbol, '__module__', '')).startswith('card_game.catalog'):
+            continue
+        if issubclass(symbol, router_server.AVGECharacterCard):
+            continue
+
+        max_copies = (
+            router_server.DECK_MAX_ITEM_OR_TOOL_COPIES
+            if issubclass(symbol, router_server.AVGEItemCard) or issubclass(symbol, router_server.AVGEToolCard)
+            else router_server.DECK_MAX_OTHER_COPIES
+        )
+
+        remaining = router_server.DECK_REQUIRED_CARD_COUNT - len(cards)
+        copies_to_add = min(max_copies, remaining)
+        cards.extend([symbol_name] * copies_to_add)
+        if len(cards) == router_server.DECK_REQUIRED_CARD_COUNT:
+            break
+
+    assert len(cards) == router_server.DECK_REQUIRED_CARD_COUNT
+    return cards
+
+
 def test_deck_crud_and_selection_roundtrip(tmp_path: Path) -> None:
     router_server.router = router_server.MatchmakingRouter(db_path=str(tmp_path / 'router.sqlite3'))
     client = router_server.app.test_client()
@@ -27,7 +105,7 @@ def test_deck_crud_and_selection_roundtrip(tmp_path: Path) -> None:
         json={
             'session_id': session_id,
             'name': 'Alpha',
-            'cards': ['c1', 'c2'],
+            'cards': _valid_deck_cards_alpha(),
         },
     )
     assert create_response.status_code == 201
@@ -49,7 +127,7 @@ def test_deck_crud_and_selection_roundtrip(tmp_path: Path) -> None:
         json={
             'session_id': session_id,
             'name': 'Alpha+',
-            'cards': ['c3'],
+            'cards': _valid_deck_cards_beta(),
         },
     )
     assert update_response.status_code == 200
@@ -88,7 +166,7 @@ def test_deck_ownership_enforced(tmp_path: Path) -> None:
         json={
             'session_id': alice_session,
             'name': 'Alice Deck',
-            'cards': ['a'],
+            'cards': _valid_deck_cards_alpha(),
         },
     )
     assert create_response.status_code == 201
@@ -135,7 +213,7 @@ def test_decks_get_accepts_query_session_without_cookie(tmp_path: Path) -> None:
         json={
             'session_id': session_id,
             'name': 'Alpha',
-            'cards': ['c1'],
+            'cards': _valid_deck_cards_alpha(),
         },
     )
     assert create_response.status_code == 201
@@ -201,7 +279,7 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
             json={
                 'session_id': session_a,
                 'name': 'Alpha',
-                'cards': ['KeiWatanabe', 'ConcertTicket', 'AVGETShirt'],
+                'cards': _valid_deck_cards_alpha(),
             },
         )
         assert create_a.status_code == 201
@@ -214,7 +292,7 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
             json={
                 'session_id': session_b,
                 'name': 'Beta',
-                'cards': ['MatthewWang', 'MainHall'],
+                'cards': _valid_deck_cards_beta(),
             },
         )
         assert create_b.status_code == 201
@@ -241,8 +319,8 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
             tuple(worker_args['p2_selected_cards'] or []),
         }
         expected = {
-            ('KeiWatanabe', 'ConcertTicket', 'AVGETShirt'),
-            ('MatthewWang', 'MainHall'),
+            tuple(_valid_deck_cards_alpha()),
+            tuple(_valid_deck_cards_beta()),
         }
         assert observed == expected
     finally:
@@ -261,3 +339,177 @@ def test_game_runner_setup_payload_uses_usernames() -> None:
     assert isinstance(p2, dict)
     assert p1.get('username') == game_runner.p1_username
     assert p2.get('username') == game_runner.p2_username
+
+
+def test_enqueue_rejects_invalid_selected_deck(tmp_path: Path) -> None:
+    router_server.router = router_server.MatchmakingRouter(db_path=str(tmp_path / 'router.sqlite3'))
+    client = router_server.app.test_client()
+
+    session_id = _login(client, 'alice')
+
+    create_response = client.post(
+        '/api/v1/decks',
+        json={
+            'session_id': session_id,
+            'name': 'Alpha',
+            'cards': _valid_deck_cards_alpha(),
+        },
+    )
+    assert create_response.status_code == 201
+    create_body = create_response.get_json()
+    assert isinstance(create_body, dict)
+    deck = create_body.get('deck')
+    assert isinstance(deck, dict)
+    deck_id = deck['deck_id']
+
+    select_response = client.post(
+        f'/api/v1/decks/{deck_id}/select',
+        json={'session_id': session_id},
+    )
+    assert select_response.status_code == 200
+
+    session = router_server.router.session(session_id)
+    assert session is not None
+
+    # Simulate a stale/corrupted selected deck that bypassed API validation.
+    storage_update_ok = router_server.router._storage.update_deck(
+        deck_id,
+        session.user_id,
+        'Alpha',
+        '{"cards":["KeiWatanabe"]}'
+    )
+    assert storage_update_ok is True
+
+    enqueue_response = client.post(
+        '/matchmaking/queue',
+        json={'action': 'join', 'session_id': session_id},
+    )
+    assert enqueue_response.status_code == 400
+    enqueue_body = enqueue_response.get_json()
+    assert isinstance(enqueue_body, dict)
+    assert enqueue_body.get('ok') is False
+    assert isinstance(enqueue_body.get('error'), str)
+    assert 'invalid selected deck' in str(enqueue_body.get('error')).lower()
+
+    status_response = client.get('/matchmaking/status', query_string={'session_id': session_id})
+    assert status_response.status_code == 200
+    status_body = status_response.get_json()
+    assert isinstance(status_body, dict)
+    assert status_body.get('status') == 'idle'
+
+
+def test_deck_create_allows_incomplete_but_rejects_invalid_copies(tmp_path: Path) -> None:
+    router_server.router = router_server.MatchmakingRouter(db_path=str(tmp_path / 'router.sqlite3'))
+    client = router_server.app.test_client()
+
+    session_id = _login(client, 'alice')
+
+    incomplete_but_valid = client.post(
+        '/api/v1/decks',
+        json={
+            'session_id': session_id,
+            'name': 'Incomplete Draft',
+            'cards': _valid_deck_cards_alpha()[:10],
+        },
+    )
+    assert incomplete_but_valid.status_code == 201
+
+    item_over_limit = client.post(
+        '/api/v1/decks',
+        json={
+            'session_id': session_id,
+            'name': 'Too Many Item Copies',
+            'cards': ['ConcertTicket', 'ConcertTicket', 'ConcertTicket'] + _valid_deck_cards_alpha()[3:],
+        },
+    )
+    assert item_over_limit.status_code == 400
+
+    character_over_limit = client.post(
+        '/api/v1/decks',
+        json={
+            'session_id': session_id,
+            'name': 'Too Many Character Copies',
+            'cards': ['KeiWatanabe', 'KeiWatanabe'] + _valid_deck_cards_alpha()[2:],
+        },
+    )
+    assert character_over_limit.status_code == 400
+
+
+def test_enqueue_rejects_incomplete_active_deck(tmp_path: Path) -> None:
+    router_server.router = router_server.MatchmakingRouter(db_path=str(tmp_path / 'router.sqlite3'))
+    client = router_server.app.test_client()
+
+    session_id = _login(client, 'alice')
+
+    create_response = client.post(
+        '/api/v1/decks',
+        json={
+            'session_id': session_id,
+            'name': 'Draft',
+            'cards': _valid_deck_cards_alpha()[:10],
+        },
+    )
+    assert create_response.status_code == 201
+    create_body = create_response.get_json()
+    assert isinstance(create_body, dict)
+    deck = create_body.get('deck')
+    assert isinstance(deck, dict)
+    deck_id = deck['deck_id']
+
+    select_response = client.post(
+        f'/api/v1/decks/{deck_id}/select',
+        json={'session_id': session_id},
+    )
+    assert select_response.status_code == 200
+
+    enqueue_response = client.post(
+        '/matchmaking/queue',
+        json={'action': 'join', 'session_id': session_id},
+    )
+    assert enqueue_response.status_code == 400
+    enqueue_body = enqueue_response.get_json()
+    assert isinstance(enqueue_body, dict)
+    assert enqueue_body.get('ok') is False
+    assert isinstance(enqueue_body.get('error'), str)
+    assert 'invalid selected deck' in str(enqueue_body.get('error')).lower()
+    assert 'exactly 20 cards' in str(enqueue_body.get('error')).lower()
+
+
+def test_enqueue_rejects_active_deck_without_character_card(tmp_path: Path) -> None:
+    router_server.router = router_server.MatchmakingRouter(db_path=str(tmp_path / 'router.sqlite3'))
+    client = router_server.app.test_client()
+
+    session_id = _login(client, 'alice')
+
+    create_response = client.post(
+        '/api/v1/decks',
+        json={
+            'session_id': session_id,
+            'name': 'No Character Deck',
+            'cards': _valid_non_character_deck_cards(),
+        },
+    )
+    assert create_response.status_code == 201
+    create_body = create_response.get_json()
+    assert isinstance(create_body, dict)
+    deck = create_body.get('deck')
+    assert isinstance(deck, dict)
+    deck_id = deck['deck_id']
+
+    select_response = client.post(
+        f'/api/v1/decks/{deck_id}/select',
+        json={'session_id': session_id},
+    )
+    assert select_response.status_code == 200
+
+    enqueue_response = client.post(
+        '/matchmaking/queue',
+        json={'action': 'join', 'session_id': session_id},
+    )
+    assert enqueue_response.status_code == 400
+    enqueue_body = enqueue_response.get_json()
+    assert isinstance(enqueue_body, dict)
+    assert enqueue_body.get('ok') is False
+    assert isinstance(enqueue_body.get('error'), str)
+    assert 'invalid selected deck' in str(enqueue_body.get('error')).lower()
+    assert 'at least 1 character' in str(enqueue_body.get('error')).lower()

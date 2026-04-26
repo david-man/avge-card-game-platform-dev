@@ -123,6 +123,10 @@ class MultiplayerTransportState:
             return
         session.pending_commands = list(commands)
 
+    def clear_reserved_slot(self, slot: PlayerSlot) -> None:
+        self.reserved_session_by_slot[slot] = None
+        self.grace_deadline_by_slot[slot] = None
+
     def _bind_sid_to_slot(
         self,
         sid: str,

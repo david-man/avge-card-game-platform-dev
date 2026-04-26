@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
+from card_game.internal_events import AVGECardHPChange
 from card_game.catalog.characters.pianos.DavidMan import DavidMan
 from card_game.catalog.characters.pianos.LukeXu import LukeXu
 from card_game.catalog.characters.woodwinds.EvelynWu import EvelynWu
@@ -14,15 +15,10 @@ class JennieWang(AVGECharacterCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 110, CardType.PIANO, 1, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Small Ensemble Committee'
+        self.atk_2_name = 'Grand Piano'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         count = 0
         for c in card.player.get_cards_in_play():
             if isinstance(c, JennieWang.TARGET_CLASSES):
@@ -31,10 +27,9 @@ class JennieWang(AVGECharacterCard):
             if isinstance(c, JennieWang.TARGET_CLASSES):
                 count += 1
 
-        if count <= 0:
-            return card.generate_response(data={MESSAGE_KEY: "No other SE members in play!"})
-
         per_target = min(20 * count, 40)
+        if per_target <= 0:
+            return self.generic_response(card, ActionTypes.ATK_1)
 
         def generate_packet() -> PacketType:
             packet: PacketType = []
@@ -48,33 +43,16 @@ class JennieWang(AVGECharacterCard):
                             AVGEAttributeModifier.SUBSTRACTIVE,
                             CardType.PIANO,
                             ActionTypes.ATK_1,
+                            None,
                             card,
                         )
                     )
             return packet
-        def generate_packet_bench() -> PacketType:
-            packet : PacketType = []
-            opp = card.player.opponent
-            for bc in opp.cardholders[Pile.BENCH]:
-                assert isinstance(bc, AVGECharacterCard)
-                packet.append(
-                    AVGECardHPChange(
-                        bc,
-                        per_target,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.PIANO,
-                        ActionTypes.ATK_1,
-                        card,
-                    )
-                )
-            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JennieWang)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
         from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
         from card_game.catalog.stadiums.RileyHall import RileyHall
@@ -88,17 +66,20 @@ class JennieWang(AVGECharacterCard):
 
         def generate_packet() -> PacketType:
             active = card.player.opponent.get_active_card()
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     active,
                     dmg,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_2,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, JennieWang)))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

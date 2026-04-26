@@ -4,117 +4,129 @@ from random import randint
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange, PlayCharacterCard
 
 class JessicaJung(AVGECharacterCard):
-    _ACTIVE_USED_KEY = "jessicajung_active_used"
     _COIN_KEY = "jessicajung_coin"
     _SUPPORTER_SELECTION_KEY = "jessicajung_supporter_choice"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
-        self.has_passive = False
-        self.has_active = True
+        self.atk_1_name = 'Vibrato'
+        self.active_name = 'Cleric Spell'
 
-    @staticmethod
-    def can_play_active(card: AVGECharacterCard) -> bool:
-        if card.env.player_turn != card.player:
+    def can_play_active(self) -> bool:
+        if self.env is None or self.player is None:
             return False
-        used = card.env.cache.get(card, JessicaJung._ACTIVE_USED_KEY, None)
-        return used != card.env.round_id
+        if self.env.player_turn != self.player:
+            return False
+        _, used_idx = self.env.check_history(
+            self.env.round_id,
+            PlayCharacterCard,
+            {
+                'card': self,
+                'card_action': ActionTypes.ACTIVATE_ABILITY,
+                'caller': self,
+            },
+        )
+        return used_idx == -1
 
-    @staticmethod
-    def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
-
-        card.env.cache.set(card, JessicaJung._ACTIVE_USED_KEY, card.env.round_id)
-        discard = card.player.cardholders[Pile.DISCARD]
+    def active(self) -> Response:
+        discard = self.player.cardholders[Pile.DISCARD]
         supporter_cards = [c for c in list(discard) if isinstance(c, AVGESupporterCard)]
-        flip = card.env.cache.get(card, JessicaJung._COIN_KEY, None)
+        flip = self.env.cache.get(self, JessicaJung._COIN_KEY, None, True)
         if flip is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
+                            self.player,
                             [JessicaJung._COIN_KEY],
-                            InputType.COIN,
                             lambda r: True,
                             ActionTypes.ACTIVATE_ABILITY,
-                            card,
-                            {LABEL_FLAG: "jessica_jung_active"},
+                            self,
+                            CoinflipData('Cleric Spell: Flip a coin.')
                         )
-                    ]
-                },
+                    ]),
             )
 
         if int(flip) != 1:
-            return card.generate_response()
+            return Response(ResponseType.CORE, Notify("Jessica Jung used Cleric Spell, but she didn't roll a heads...", all_players, default_timeout))
+
+        if len(supporter_cards) == 0:
+            return Response(ResponseType.CORE, Notify("Jessica Jung used Cleric Spell, but there are no supporter cards in the discard pile...", all_players, default_timeout))
+
         missing = object()
-        chosen = card.env.cache.get(card, JessicaJung._SUPPORTER_SELECTION_KEY, missing, True)
+        chosen = self.env.cache.get(self, JessicaJung._SUPPORTER_SELECTION_KEY, missing, True)
         if chosen is missing:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
+                            self.player,
                             [JessicaJung._SUPPORTER_SELECTION_KEY],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ACTIVATE_ABILITY,
-                            card,
-                            {
-                                LABEL_FLAG: "jessica_jung_supporter",
-                                TARGETS_FLAG: supporter_cards,
-                                DISPLAY_FLAG: list(discard),
-                                ALLOW_NONE: True
-                            },
+                            self,
+                            CardSelectionQuery(
+                                'Cleric Spell: Choose a supporter in your discard to shuffle into your deck.',
+                                supporter_cards,
+                                supporter_cards,
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        deck = card.player.cardholders[Pile.DECK]
+        deck = self.player.cardholders[Pile.DECK]
+        if not isinstance(chosen, AVGESupporterCard):
+            return Response(
+                ResponseType.CORE,
+                Notify(
+                    'Jessica Jung used Cleric Spell, but the selected card was not a supporter.',
+                    all_players,
+                    default_timeout,
+                ),
+            )
+
         def generate_packet() -> PacketType:
-            if not isinstance(chosen, AVGESupporterCard):
-                return []
-            return [
+            packet: PacketType = []
+            packet.append(
                 TransferCard(
                     chosen,
                     discard,
                     deck,
                     ActionTypes.ACTIVATE_ABILITY,
-                    card,
+                    self,
+                    None,
                     randint(0, len(deck)),
                 )
-            ]
-        card.env.cache.delete(card, JessicaJung._COIN_KEY)
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JessicaJung)))
-        return card.generate_response()
+            )
+            return packet
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, JessicaJung)))
+        return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         def generate_packet() -> PacketType:
             active = card.player.opponent.get_active_card()
+            packet: PacketType = []
             if not isinstance(active, AVGECharacterCard):
-                return []
-            return [
+                return packet
+            packet.append(
                 AVGECardHPChange(
                     active,
                     40,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JessicaJung)))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

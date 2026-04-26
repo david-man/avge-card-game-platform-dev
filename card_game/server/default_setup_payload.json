@@ -266,7 +266,7 @@
     {
       "id": "ENERGY-1",
       "ownerId": "p1",
-      "holderId": "p1-energy",
+      "holderId": "shared-energy",
       "attachedToCardId": "CARD-2"
     }
   ]

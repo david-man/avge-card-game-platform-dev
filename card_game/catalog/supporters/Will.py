@@ -11,10 +11,9 @@ class Will(AVGESupporterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
 
-    @staticmethod
-    def play_card(card: AVGECard) -> Response:
+    def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
         from card_game.internal_events import TransferCard
-            
+
         def gen() -> PacketType:
             discard = card.player.cardholders[Pile.DISCARD]
             deck = card.player.cardholders[Pile.DECK]
@@ -29,11 +28,11 @@ class Will(AVGESupporterCard):
                         deck,
                         ActionTypes.NONCHAR,
                         card,
+                        None,
                         random.randint(0, len(deck)),
                     )
                 )
             return packet
-            
-        card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.NONCHAR, Will)))
 
-        return card.generate_response(ResponseType.CORE)
+        card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.NONCHAR, Will)))
+        return self.generic_response(card)

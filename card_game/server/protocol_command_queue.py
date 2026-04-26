@@ -1,9 +1,43 @@
 from __future__ import annotations
 
 from threading import Condition, RLock
-from typing import Any, Callable, cast
+from typing import Any, Callable, Literal, cast
 
 from .server_models import ClientSession, PendingCommandAck, PlayerSlot, MultiplayerTransportState
+
+BackendCommandResponseCategory = Literal[
+    'replay_command',
+    'query_input',
+    'query_notify',
+    'winner',
+    'lock_state',
+    'phase_update',
+    'other',
+]
+
+
+def classify_command_response_category(command: str) -> BackendCommandResponseCategory:
+    parts = command.strip().split()
+    if not parts:
+        return 'other'
+
+    action = parts[0].lower()
+    if action == 'input':
+        return 'query_input'
+
+    if action in {'notify', 'reveal'}:
+        return 'query_notify'
+
+    if action == 'winner':
+        return 'winner'
+
+    if action in {'lock-input', 'lock_input', 'unlock-input', 'unlock_input'}:
+        return 'lock_state'
+
+    if action == 'phase':
+        return 'phase_update'
+
+    return 'replay_command'
 
 
 def normalize_target_slot(raw_target: str | None) -> PlayerSlot | None:
@@ -36,9 +70,9 @@ def classify_required_ack_slots(
         if transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None
     }
 
-    if action == 'notify' and len(parts) >= 2:
-        notify_target = parts[1].strip().lower()
-        if notify_target in {'both', 'all'}:
+    if action in {'notify', 'reveal'} and len(parts) >= 2:
+        broadcast_target = parts[1].strip().lower()
+        if broadcast_target in {'both', 'all'}:
             return connected_slots if connected_slots else {'p1', 'p2'}
 
     if action in {'lock-input', 'lock_input', 'unlock-input', 'unlock_input'} and len(parts) >= 2:
@@ -75,6 +109,7 @@ def build_command_packet(
         'command': pending.command,
         'command_id': pending.command_id,
         'target_slots': sorted(pending.required_slots),
+        'response_category': classify_command_response_category(pending.command),
     }
     if session is not None:
         return issue_backend_packet_for_session(session, 'command', body, is_response)

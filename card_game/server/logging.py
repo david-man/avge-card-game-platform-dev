@@ -133,3 +133,7 @@ def log_energy_move(
     if token is not None:
         fields['token'] = token
     _log_with_payload('[ENERGY_MOVE]', fields)
+
+
+def log_input_trace(event: str, **fields: Any) -> None:
+    _log_with_payload(f'[INPUT_TRACE] {event}', fields)

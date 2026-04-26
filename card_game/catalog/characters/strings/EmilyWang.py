@@ -2,93 +2,142 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import TransferCard, InputEvent, AVGECardHPChange, PlayCharacterCard
 
 class EmilyWang(AVGECharacterCard):
     _COIN_KEY_0 = "emilywang_coin_0"
     _COIN_KEY_1 = "emilywang_coin_1"
     _COIN_KEY_2 = "emilywang_coin_2"
+    _TOOL_DISCARD_KEY = "emilywang_tool_discard"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
-        self.has_passive = False
-        self.has_active = True
+        super().__init__(unique_id, 100, CardType.STRING, 3, 3)
+        self.atk_1_name = 'Triple Stop'
+        self.active_name = 'Profit Margins'
 
-    @staticmethod
-    def can_play_active(card: AVGECharacterCard) -> bool:
-        env = card.env
-        if env is None or card.player is None:
+    def can_play_active(self) -> bool:
+        if self.env is None or self.player is None:
             return False
-        if env.player_turn != card.player:
+        if self.env.player_turn != self.player:
             return False
-        return len(card.tools_attached) > 0
+        if len(self.tools_attached) == 0:
+            return False
 
-    @staticmethod
-    def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import TransferCard, InputEvent
+        _, already_used_idx = self.env.check_history(
+            self.env.round_id,
+            PlayCharacterCard,
+            {
+                'card': self,
+                'card_action': ActionTypes.ACTIVATE_ABILITY,
+                'caller': self,
+            },
+        )
+        return already_used_idx == -1
 
-        tool = card.tools_attached.peek()
+    def active(self) -> Response:
+        tool = self.env.cache.get(self, EmilyWang._TOOL_DISCARD_KEY, None, True)
+        available_tools = list(self.tools_attached)
+        if tool is None:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                        InputEvent(
+                            self.player,
+                            [EmilyWang._TOOL_DISCARD_KEY],
+                            lambda r: True,
+                            ActionTypes.ACTIVATE_ABILITY,
+                            self,
+                            CardSelectionQuery(
+                                'Profit Margins: Choose a tool attached to this character to discard.',
+                                available_tools,
+                                available_tools,
+                                False,
+                                False,
+                            )
+                        )
+                    ]),
+            )
 
-        discard = card.player.cardholders[Pile.DISCARD]
-        packet: PacketType = [TransferCard(tool, tool.cardholder, discard, ActionTypes.ACTIVATE_ABILITY, card)]
+        if not isinstance(tool, AVGECard) or tool not in self.tools_attached:
+            return Response(ResponseType.CORE, Data())
 
-        deck = card.player.cardholders[Pile.DECK]
-        hand = card.player.cardholders[Pile.HAND]
+        discard = self.player.cardholders[Pile.DISCARD]
+        packet: PacketType = []
+        packet.append(
+            TransferCard(
+                tool,
+                tool.cardholder,
+                discard,
+                ActionTypes.ACTIVATE_ABILITY,
+                self,
+                None,
+            )
+        )
+
+        deck = self.player.cardholders[Pile.DECK]
+        hand = self.player.cardholders[Pile.HAND]
         def draw_top() -> PacketType:
-            if len(deck) == 0:
-                return []
-            return [
-                TransferCard(deck.peek(), deck, hand, ActionTypes.ACTIVATE_ABILITY, card)
-            ]
+            ret: PacketType = []
+            if len(deck) > 0:
+                ret.append(
+                    TransferCard(
+                        deck.peek(),
+                        deck,
+                        hand,
+                        ActionTypes.ACTIVATE_ABILITY,
+                        self,
+                        None,
+                    )
+                )
+            return ret
+
         packet.append(draw_top)
 
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EmilyWang)))
-        return card.generate_response()
+        self.propose(AVGEPacket(packet, AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, EmilyWang)))
+        return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         r0 = card.env.cache.get(card, EmilyWang._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, EmilyWang._COIN_KEY_1, None, True)
         r2 = card.env.cache.get(card, EmilyWang._COIN_KEY_2, None, True)
         if r0 is None or r1 is None or r2 is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [EmilyWang._COIN_KEY_0, EmilyWang._COIN_KEY_1, EmilyWang._COIN_KEY_2],
-                            InputType.COIN,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {LABEL_FLAG: "emily_wang_triple_stop"},
+                            CoinflipData('Triple Stop: Flip 3 coins.')
                         )
-                    ]
-                },
+                    ]),
             )
 
         heads = int(r0) + int(r1) + int(r2)
-        if heads > 0:
+        packet: PacketType = []
+        for _ in range(max(0, heads)):
             def generate_packet() -> PacketType:
                 active = card.player.opponent.get_active_card()
-                if not isinstance(active, AVGECharacterCard):
-                    return []
-                return [
-                    AVGECardHPChange(
-                        active,
-                        40 * heads,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.STRING,
-                        ActionTypes.ATK_1,
-                        card,
+                ret: PacketType = []
+                if isinstance(active, AVGECharacterCard):
+                    ret.append(
+                        AVGECardHPChange(
+                            active,
+                            40,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.STRING,
+                            ActionTypes.ATK_1,
+                            None,
+                            card,
+                        )
                     )
-                ]
+                return ret
 
-            card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EmilyWang)))
+            packet.append(generate_packet)
 
-        return card.generate_response()
+        if len(packet) > 0:
+            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EmilyWang)))
+
+        return self.generic_response(card, ActionTypes.ATK_1)

@@ -1,103 +1,86 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts import *
-
 from card_game.constants import *
-from card_game.engine.engine_constants import EngineGroup
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardHPChange, PlayCharacterCard, TransferCard
+
 
 class DesmondRoper(AVGECharacterCard):
-    _PLAYED_ROUND_KEY = "desmond_played_round"
-
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = True
-        self.has_active = False
+        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 1, 3)
+        self.atk_1_name = 'Circular Breathing'
+        self.atk_2_name = 'Speedrun Central'
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        owner_card = card
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        streak = 0
+        turn = card.player.get_last_turn()
+        while streak < 4 and turn >= 0:
+            _, used_last_turn_idx = card.env.check_history(
+                turn,
+                PlayCharacterCard,
+                {
+                    'card': card,
+                    'card_action': ActionTypes.ATK_1,
+                    'caller': card,
+                },
+            )
+            if used_last_turn_idx == -1:
+                break
+            streak += 1
+            turn -= 2
 
-        class _DesmondPlayTracker(AVGEReactor):
-            def __init__(self):
-                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.ATK_2, DesmondRoper), group=EngineGroup.EXTERNAL_REACTORS)
+        bonus = min(40, 10 * streak)
+        damage = 10 + bonus
 
-            def event_match(self, event):
-                from card_game.internal_events import TransferCard
-
-                if not isinstance(event, TransferCard):
-                    return False
-                if event.card != owner_card:
-                    return False
-                return event.pile_to.pile_type == Pile.ACTIVE
-
-            def event_effect(self) -> bool:
-                return True
-
-            def update_status(self):
-                return
-
-            def react(self, args=None):
-                if args is None:
-                    args = {}
-                owner_card.env.cache.set(owner_card, DesmondRoper._PLAYED_ROUND_KEY, owner_card.env.round_id)
-                return self.generate_response()
-
-        owner_card.add_listener(_DesmondPlayTracker())
-        return owner_card.generate_response()
-
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-        def hit() -> PacketType:
-            return [
-                AVGECardHPChange(
-                    card.player.opponent.get_active_card(),
-                    50,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                ),
-                AVGECardHPChange(
-                    card,
-                    10,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.WOODWIND,
-                    ActionTypes.ATK_1,
-                    card,
-                ),
-            ]
-        card.propose(
-            AVGEPacket([hit], AVGEEngineID(card, ActionTypes.ATK_1, DesmondRoper))
-        )
-        return card.generate_response()
-
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-
-        damage = 40
-        played_round = card.env.cache.get(card, DesmondRoper._PLAYED_ROUND_KEY, None, True)
-        if played_round == card.env.round_id:
-            damage = 100
-
-        def generate_packet() -> PacketType:
+        def gen() -> PacketType:
+            packet: PacketType = []
             active = card.player.opponent.get_active_card()
             if isinstance(active, AVGECharacterCard):
-                return [
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
+                )
+            return packet
+
+        card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, DesmondRoper)))
+        return self.generic_response(card, ActionTypes.ATK_1)
+
+    def atk_2(self, card: AVGECharacterCard) -> Response:
+        _, played_to_active_idx = card.env.check_history(
+            card.env.round_id,
+            TransferCard,
+            {
+                'card': card,
+                'pile_to': card.player.cardholders[Pile.ACTIVE],
+            },
+        )
+        played_to_active_this_turn = played_to_active_idx != -1
+
+        damage = 100 if played_to_active_this_turn else 40
+
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
                     AVGECardHPChange(
                         active,
                         damage,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.WOODWIND,
                         ActionTypes.ATK_2,
+                        None,
                         card,
                     )
-                ]
-            return []
+                )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, DesmondRoper)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

@@ -4,106 +4,100 @@ import random
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardHPChange, InputEvent, PlayCharacterCard, TransferCard
 
 class RachaelYuan(AVGECharacterCard):
-    _LAST_ATK1_ROUND_KEY = "rachael_last_atk1_round"
-    _CONSECUTIVE_USES = "rachael_consecutive_atks"
-    _BENCH_SHUFFLE_KEY = "rachael_bench_shuffle"
+    _BENCH_SHUFFLE_KEY = 'rachaelyuan_bench_shuffle'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.WOODWIND, 1, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3, 2)
+        self.atk_1_name = 'Circular Breathing'
+        self.atk_2_name = 'E2 Reaction'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        streak = 0
+        turn = card.player.get_last_turn()
+        while streak < 4 and turn >= 0:
+            _, used_last_turn_idx = card.env.check_history(
+                turn,
+                PlayCharacterCard,
+                {
+                    'card': card,
+                    'card_action': ActionTypes.ATK_1,
+                    'caller': card,
+                },
+            )
+            if used_last_turn_idx == -1:
+                break
+            streak += 1
+            turn -= 2
 
-        last_round = card.env.cache.get(card, RachaelYuan._LAST_ATK1_ROUND_KEY, None, True)
-        atks_before = card.env.cache.get(card, RachaelYuan._CONSECUTIVE_USES, 0, True)
-        if last_round is None or card.env.round_id > last_round + 2:
-            atks_before = 0
-        assert isinstance(atks_before, int)
-        total_damage = 10 + min(atks_before, 4) * 10
-        card.env.cache.set(card, RachaelYuan._LAST_ATK1_ROUND_KEY, card.env.round_id)
-        card.env.cache.set(card, RachaelYuan._CONSECUTIVE_USES, atks_before + 1)
+        total_damage = 10 + (10 * streak)
 
         def generate_packet() -> PacketType:
+            packet: PacketType = []
             active = card.player.opponent.get_active_card()
             if isinstance(active, AVGECharacterCard):
-                return [
+                packet.append(
                     AVGECardHPChange(
                         active,
                         total_damage,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.WOODWIND,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
-                ]
-            return []
+                )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, RachaelYuan)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
-
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         opponent = card.player.opponent
         opponent_bench = opponent.cardholders[Pile.BENCH]
         opponent_deck = opponent.cardholders[Pile.DECK]
-
-        def gen() -> PacketType:
-            return [
-            AVGECardHPChange(
-                opponent.get_active_card(),
-                30,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_2,
-                card,
-            )
-        ]
-        packet : PacketType =  [gen]
-
-        if len(opponent_bench) >= 2:
-            chosen_card = card.env.cache.get(card, RachaelYuan._BENCH_SHUFFLE_KEY, None, True)
-            if chosen_card is None:
-                return card.generate_response(
-                    ResponseType.INTERRUPT,
-                    {
-                        INTERRUPT_KEY: [
-                            InputEvent(
-                                card.player,
-                                [RachaelYuan._BENCH_SHUFFLE_KEY],
-                                InputType.SELECTION,
-                                lambda r: True,
-                                ActionTypes.ATK_2,
-                                card,
-                                {
-                                    LABEL_FLAG: "rachael_yuan_bench_shuffle",
-                                    TARGETS_FLAG: list(opponent_bench),
-                                    DISPLAY_FLAG: list(opponent_bench)
-                                },
-                            )
-                        ]
-                    },
-                )
-            assert chosen_card is not None
-            packet.insert(0, 
-                TransferCard(
-                    chosen_card,
-                    opponent_bench,
-                    opponent_deck,
-                    ActionTypes.ATK_2,
-                    card,
-                    random.randint(0, len(opponent_deck)),
-                )
+        if(len(opponent_bench) < 2):
+            return Response(ResponseType.CORE, Notify(f"{str(card)} used E2 Reaction, but it didn't do anything...", all_players, default_timeout))
+        missing = object()
+        chosen_card = card.env.cache.get(card, RachaelYuan._BENCH_SHUFFLE_KEY, missing, True)
+        if len(opponent_bench) >= 2 and chosen_card is missing:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        card.player,
+                        [RachaelYuan._BENCH_SHUFFLE_KEY],
+                        lambda r: True,
+                        ActionTypes.ATK_2,
+                        card,
+                        CardSelectionQuery(
+                            'E2 Reaction: You may shuffle one opposing benched character into their deck.',
+                            list(opponent_bench),
+                            list(opponent_bench),
+                            True,
+                            False,
+                        )
+                    )
+                ]),
             )
 
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, RachaelYuan)))
-        return card.generate_response()
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            if len(opponent_bench) >= 2 and isinstance(chosen_card, AVGECharacterCard) and chosen_card in opponent_bench:
+                packet.append(
+                    TransferCard(
+                        chosen_card,
+                        opponent_bench,
+                        opponent_deck,
+                        ActionTypes.ATK_2,
+                        card,
+                        None,
+                        random.randint(0, len(opponent_deck)),
+                    )
+                )
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, RachaelYuan)))
+        return self.generic_response(card, ActionTypes.ATK_2)

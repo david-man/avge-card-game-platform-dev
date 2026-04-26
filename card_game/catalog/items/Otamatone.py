@@ -4,17 +4,16 @@ from card_game.avge_abstracts import *
 
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import PlayCharacterCard
 
 
-class OtomatoneEnergy(AVGEModifier):
+class OtamatoneEnergy(AVGEModifier):
 	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, round_played):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, Otomatone), group=EngineGroup.EXTERNAL_MODIFIERS_1)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.NONCHAR, Otamatone), group=EngineGroup.EXTERNAL_MODIFIERS_1)
 		self.owner_card = owner_card
 		self.round_played = round_played
 
 	def event_match(self, event):
-		from card_game.internal_events import PlayCharacterCard
-
 		if(not isinstance(event, PlayCharacterCard)):
 			return False
 		if(event.catalyst_action != ActionTypes.PLAYER_CHOICE):
@@ -40,27 +39,23 @@ class OtomatoneEnergy(AVGEModifier):
 		return True
 
 	def package(self):
-		return "Otomatone Effect"
+		return "Otamatone Effect"
 
 	def modify(self, args=None):
-		from card_game.internal_events import PlayCharacterCard
-
 		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement = max(0, event.energy_requirement - 1)
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Notify('Otamatone: Active has +1 effective energy this turn.', all_players, default_timeout))
 
 
-class Otomatone(AVGEItemCard):
+class Otamatone(AVGEItemCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-
-	@staticmethod
-	def play_card(card) -> Response:
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 
 		if(card.env.round_id == 0):
-			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Cannot play Otomatone on the first turn of round one."})
+			return Response(ResponseType.SKIP, Notify('Cannot play Otamatone on the first turn.', [card.player.unique_id], default_timeout))
 
-		card.add_listener(OtomatoneEnergy(card, card.env.round_id))
-		return card.generate_response()
+		card.add_listener(OtamatoneEnergy(card, card.env.round_id))
+		return self.generic_response(card)

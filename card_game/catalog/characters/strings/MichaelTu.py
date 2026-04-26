@@ -4,110 +4,120 @@ import random
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, AVGEEnergyTransfer, TransferCard, AVGECardHPChange, ReorderCardholder, EmptyEvent
+
 
 class MichaelTu(AVGECharacterCard):
-    _ATK1_TARGET = "michaeltu_atk1_target"
-    _ACK = "michael_tu_ack"
+    _ATK1_TARGET = 'michaeltu_atk1_target'
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.STRING, 1, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = '440 Hz'
+        self.atk_2_name = 'Synchro Summon'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGEEnergyTransfer, InputEvent
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         player = card.player
         if len(player.energy) <= 0:
-            return card.generate_response(data={MESSAGE_KEY: "No energy to give!"})
+            return Response(ResponseType.CORE, Notify('440 Hz failed: no energy to attach.', all_players, default_timeout))
 
-        bench = player.cardholders[Pile.BENCH]
+        bench = list(player.cardholders[Pile.BENCH])
         if len(bench) == 0:
-            return card.generate_response(data={MESSAGE_KEY: "No benched characters!"})
+            return Response(ResponseType.CORE, Notify('440 Hz failed: no benched characters.', all_players, default_timeout))
 
         chosen = card.env.cache.get(card, MichaelTu._ATK1_TARGET, None, True)
         if chosen is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             player,
                             [MichaelTu._ATK1_TARGET],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {
-                                LABEL_FLAG: "michael_tu_atk1",
-                                TARGETS_FLAG: bench,
-                                DISPLAY_FLAG: bench
-                            },
+                            CardSelectionQuery(
+                                '440 Hz: Choose one benched character to attach 1 energy.',
+                                bench,
+                                bench,
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
+
+        if not isinstance(chosen, AVGECharacterCard) or chosen not in player.cardholders[Pile.BENCH]:
+            return Response(ResponseType.CORE, Notify('440 Hz failed: selected card is not a valid benched character.', all_players, default_timeout))
 
         card.propose(
             AVGEPacket([
-                AVGEEnergyTransfer(player.energy[0], player, chosen, ActionTypes.ATK_1, card)
+                AVGEEnergyTransfer(player.energy[0], card.env, chosen, ActionTypes.ATK_1, card, None)
             ], AVGEEngineID(card, ActionTypes.ATK_1, MichaelTu))
         )
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, ReorderCardholder, TransferCard, EmptyEvent, InputEvent
-
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         player = card.player
         deck = player.cardholders[Pile.DECK]
         hand = player.cardholders[Pile.HAND]
 
-        first_char = None
-        to_reveal : list[AVGECard] = []
+        revealed: list[AVGECard] = []
+        first_char: AVGECharacterCard | None = None
         for c in deck:
-            to_reveal.append(c)
+            revealed.append(c)
             if isinstance(c, AVGECharacterCard):
                 first_char = c
                 break
-        
-        deck_order = list(deck.get_order())
-        random.shuffle(deck_order)
-        packet : PacketType = [ReorderCardholder(deck, deck_order, ActionTypes.ATK_2, card)]
-        packet.append(EmptyEvent(
-            ActionTypes.ATK_1,
-            card,
-            response_data={
-                REVEAL_KEY: to_reveal
-            }
-        ))
-        
-        if first_char is None:
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MichaelTu)))
-            return card.generate_response()
 
-        if first_char.card_type != CardType.STRING:
-            def gen():
-                ret : PacketType = []
-                ret.append(TransferCard(first_char, first_char.cardholder, hand, ActionTypes.ATK_2, card))
-                ret.append(
-                    AVGECardHPChange(
-                        card.player.opponent.get_active_card(),
-                        30,
-                        AVGEAttributeModifier.SUBSTRACTIVE,
-                        CardType.STRING,
+        packet: PacketType = []
+        packet.append(
+            EmptyEvent(
+                ActionTypes.ATK_2,
+                card,
+                ResponseType.CORE,
+                RevealCards('Synchro Summon: Revealed cards', all_players, default_timeout, revealed),
+            )
+        )
+
+        if first_char is not None and first_char.card_type != CardType.STRING:
+            packet.append(
+                TransferCard(
+                    first_char,
+                    deck,
+                    hand,
+                    ActionTypes.ATK_2,
+                    card,
+                    None,
+                )
+            )
+            packet.append(
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    30,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.STRING,
+                    ActionTypes.ATK_2,
+                    None,
+                    card,
+                )
+            )
+
+        def shuffle_deck() -> PacketType:
+            p: PacketType = []
+            if len(deck) > 1:
+                p.append(
+                    ReorderCardholder(
+                        deck,
+                        random.sample(deck.get_order(), len(deck)),
                         ActionTypes.ATK_2,
                         card,
+                        None,
                     )
                 )
-                return ret
-            packet.append(gen)
+            return p
+
+        packet.append(shuffle_deck)
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, MichaelTu)))
-
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

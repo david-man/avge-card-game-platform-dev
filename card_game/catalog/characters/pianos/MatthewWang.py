@@ -4,6 +4,7 @@ from card_game.avge_abstracts import *
 
 from card_game.constants import *
 from card_game.engine.engine_constants import *
+from card_game.internal_events import InputEvent, TransferCard, AVGECardHPChange
 
 
 class _MatthewTurnBeginReactor(AVGEReactor):
@@ -14,7 +15,11 @@ class _MatthewTurnBeginReactor(AVGEReactor):
     def event_match(self, event):
         from card_game.internal_events import PhasePickCard
 
-        return isinstance(event, PhasePickCard) and self.owner_card.player == self.owner_card.env.player_turn and self.owner_card == self.owner_card.player.get_active_card()
+        if not isinstance(event, PhasePickCard):
+            return False
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.ACTIVE:
+            return False
+        return self.owner_card.player == self.owner_card.env.player_turn and self.owner_card == self.owner_card.player.get_active_card()
 
     def event_effect(self) -> bool:
         return True
@@ -25,69 +30,71 @@ class _MatthewTurnBeginReactor(AVGEReactor):
     def react(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import InputEvent, TransferCard
 
         owner = self.owner_card
         env = owner.env
         deck = owner.player.cardholders[Pile.DECK]
         if len(deck) == 0:
-            return self.generate_response(data={MESSAGE_KEY: "No cards in deck to draw from!"})
+            return Response(ResponseType.ACCEPT, Data())
 
         res = env.cache.get(owner, MatthewWang._COIN_KEY, None)
         if res is None:
-            return owner.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             owner.player,
                             [MatthewWang._COIN_KEY],
-                            InputType.COIN,
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {LABEL_FLAG: "matthew_wang_1coin"},
+                            CoinflipData('Pot of Greed: Flip a coin!')
                         )
-                    ]
-                },
+                    ]),
             )
 
         if int(res) != 1:
             env.cache.delete(owner, MatthewWang._COIN_KEY)
-            return self.generate_response()
+            return Response(ResponseType.ACCEPT, Data())
 
         choice = env.cache.get(owner, MatthewWang._DRAW_CHOICE_KEY, None, True)
         if choice is None:
-            return owner.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             owner.player,
                             [MatthewWang._DRAW_CHOICE_KEY],
-                            InputType.BINARY,
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {LABEL_FLAG: "matthew_wang_successful_coin"},
+                            StrSelectionQuery(
+                                'Pot of Greed: Draw one extra card (2 instead of 1)?',
+                                ['Yes', 'No'],
+                                ['Yes', 'No'],
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
         env.cache.delete(owner, MatthewWang._COIN_KEY)
-        if choice == 1:
+        if choice == 'Yes':
             def draw_top() -> PacketType:
+                packet: PacketType = []
                 if len(deck) == 0:
-                    return []
-                return [
+                    return packet
+                packet.append(
                     TransferCard(
                         deck.peek(),
                         deck,
                         owner.player.cardholders[Pile.HAND],
                         ActionTypes.PASSIVE,
                         owner,
+                        None,
                     )
-                ]
+                )
+                return packet
 
             owner.propose(
                 AVGEPacket([
@@ -95,7 +102,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
                 ], AVGEEngineID(owner, ActionTypes.PASSIVE, MatthewWang)), 1
             )
 
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class MatthewWang(AVGECharacterCard):
@@ -103,35 +110,31 @@ class MatthewWang(AVGECharacterCard):
     _DRAW_CHOICE_KEY = "matthew_draw_choice"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.PIANO, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        super().__init__(unique_id, 100, CardType.PIANO, 2, 2)
+        self.atk_1_name = 'Arpeggios'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        card.add_listener(_MatthewTurnBeginReactor(card))
-        return card.generate_response()
+    def passive(self) -> Response:
+        self.add_listener(_MatthewTurnBeginReactor(self))
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         def generate_packet() -> PacketType:
             active = card.player.opponent.get_active_card()
-            if not isinstance(active, AVGECharacterCard):
-                return []
-            return [
-                AVGECardHPChange(
-                    active,
-                    60,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.PIANO,
-                    ActionTypes.ATK_1,
-                    card,
+            packet: PacketType = []
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        40,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.PIANO,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
                 )
-            ]
+            return packet
 
         card.propose(
             AVGEPacket([
@@ -139,4 +142,4 @@ class MatthewWang(AVGECharacterCard):
             ], AVGEEngineID(card, ActionTypes.ATK_1, MatthewWang))
         )
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

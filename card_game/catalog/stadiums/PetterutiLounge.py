@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import random
+
 from card_game.avge_abstracts import *
-from card_game.avge_abstracts.AVGECards import AVGEStadiumCard
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
-from card_game.internal_events import AVGECardHPChange, TransferCard
+from card_game.internal_events import AVGECardHPChange, EmptyEvent, TransferCard
 
 
 class PetterutiMaidDamageModifier(AVGEModifier):
@@ -23,11 +24,13 @@ class PetterutiMaidDamageModifier(AVGEModifier):
 			return False
 		if(event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE):
 			return False
+		if(event.change_type == CardType.ALL):
+			return False
 		if(event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]):
 			return False
-		if(not isinstance(event.caller_card, AVGECharacterCard)):
+		if(not isinstance(event.caller, AVGECharacterCard)):
 			return False
-		return len(event.caller_card.statuses_attached.get(StatusEffect.MAID, [])) > 0
+		return len(event.caller.statuses_attached.get(StatusEffect.MAID, [])) > 0
 
 	def event_effect(self) -> bool:
 		return True
@@ -40,7 +43,7 @@ class PetterutiMaidDamageModifier(AVGEModifier):
 		event = self.attached_event
 		assert isinstance(event, AVGECardHPChange)
 		event.modify_magnitude(10)
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Data())
 
 
 class PetterutiMaidTransfer(AVGEModifier):
@@ -73,8 +76,38 @@ class PetterutiMaidTransfer(AVGEModifier):
 	def modify(self, args=None):
 		event = self.attached_event
 		assert isinstance(event, TransferCard)
-		event.energy_requirement = 0
-		return self.generate_response()
+		event.energy_requirement = max(0, event.energy_requirement - 1)
+		return Response(ResponseType.ACCEPT, Data())
+
+
+class PetterutiPowerpointNightPacketListener(AVGEPacketListener):
+	def __init__(self, owner_card: AVGEStadiumCard):
+		super().__init__(
+			identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, PetterutiLounge),
+		)
+		self.owner_card = owner_card
+
+	def packet_match(self, packet: AVGEPacket, packet_finish_status: ResponseType) -> bool:
+		if(not self.owner_card._is_active_stadium()):
+			return False
+		if(not isinstance(packet.identifier.caller, AVGECharacterCard)):
+			return False
+		return packet.identifier.action_type in [ActionTypes.ATK_1, ActionTypes.ATK_2]
+
+	def update_status(self):
+		if(not self.owner_card._is_active_stadium()):
+			self.invalidate()
+
+	def react(self, p: AVGEPacket) -> Response:
+		caller = p.identifier.caller
+		assert isinstance(caller, AVGECharacterCard)
+		attacking_player = caller.player
+		opponent_hand = attacking_player.opponent.cardholders[Pile.HAND]
+		if(len(opponent_hand) == 0):
+			return Response(ResponseType.ACCEPT, Notify('Petteruti Lounge: No card to reveal from opponent hand.', [attacking_player.unique_id], default_timeout))
+
+		revealed = random.choice(list(opponent_hand))
+		return Response(ResponseType.ACCEPT, RevealCards('Petteruti Lounge: Random card from opponent hand', [attacking_player.unique_id], default_timeout, [revealed]))
 
 
 class PetterutiLounge(AVGEStadiumCard):
@@ -84,5 +117,6 @@ class PetterutiLounge(AVGEStadiumCard):
 	def play_card(self) -> Response:
 		self.add_listener(PetterutiMaidDamageModifier(self))
 		self.add_listener(PetterutiMaidTransfer(self))
+		self.add_packet_listener(PetterutiPowerpointNightPacketListener(self))
 
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

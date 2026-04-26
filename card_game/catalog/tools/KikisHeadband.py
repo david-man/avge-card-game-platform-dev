@@ -49,7 +49,7 @@ class KikisHeadbandTransferModifier(AVGEModifier):
 		assert isinstance(self.attached_event, TransferCard)
 		event: TransferCard = self.attached_event
 		event.energy_requirement = max(0, event.energy_requirement - 1)
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Data())
 
 
 class KikisHeadband(AVGEToolCard):
@@ -59,4 +59,4 @@ class KikisHeadband(AVGEToolCard):
 
 	def play_card(self) -> Response:
 		self.add_listener(KikisHeadbandTransferModifier(self))
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

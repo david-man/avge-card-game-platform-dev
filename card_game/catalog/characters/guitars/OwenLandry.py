@@ -7,27 +7,25 @@ from card_game.constants import ActionTypes
 class OwenLandry(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.GUITAR, 2, 2, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Feedback Loop'
+        self.atk_2_name = 'Domain Expansion'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         def generate_packet() -> PacketType:
-            packet : PacketType  = []
-            packet = [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
             for c in card.player.cardholders[Pile.BENCH]:
                 assert isinstance(c, AVGECharacterCard)
                 if c.card_type == CardType.GUITAR:
@@ -38,22 +36,22 @@ class OwenLandry(AVGECharacterCard):
                             AVGEAttributeModifier.SUBSTRACTIVE,
                             CardType.GUITAR,
                             ActionTypes.ATK_1,
+                            None,
                             card,
                         )
                     )
             return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, OwenLandry)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer
 
         def generate_packet() -> PacketType:
-            packet = []
+            packet: PacketType = []
             for token in list(card.energy):
-                packet.append(AVGEEnergyTransfer(token, card, card.player, ActionTypes.ATK_2, card))
+                packet.append(AVGEEnergyTransfer(token, card, card.env, ActionTypes.ATK_2, card, None))
 
             opp = card.player.opponent
             for c in opp.get_cards_in_play():
@@ -64,10 +62,11 @@ class OwenLandry(AVGECharacterCard):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.GUITAR,
                         ActionTypes.ATK_2,
+                        None,
                         card,
                     )
                 )
             return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, OwenLandry)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

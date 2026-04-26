@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from .AVGEEvent import AVGEEvent, AVGEPacket, DeferredAVGEPacket
     from .AVGEEnvironment import AVGEEnvironment
     from .AVGECardholder import AVGECardholder
-    from .AVGEEventListeners import AVGEAbstractEventListener
+    from .AVGEEventListeners import AVGEAbstractEventListener, AVGEPacketListener
     from .AVGEConstrainer import AVGEConstraint
 
 class AVGECard():
@@ -18,11 +18,14 @@ class AVGECard():
         self.env : AVGEEnvironment = None#type: ignore
         self.owned_listeners : list[AVGEAbstractEventListener] = []
         self.owned_constraints : list[AVGEConstraint] = []
-    
+        self.owned_packet_listeners : list[AVGEPacketListener] = []
+    def __hash__(self):
+        return hash(self.unique_id)
     def __eq__(self, other : object):
         return isinstance(other, AVGECard) and self.unique_id == other.unique_id
     def __str__(self):
-        return type(self).__name__ + "(" + str(self.unique_id) + ")"
+        text = type(self).__name__
+        return "".join([" " + char if char.isupper() and i > 0 else char for i, char in enumerate(text)])
     def attach_to_cardholder(self, cardholder : AVGECardholder):
         self.cardholder = cardholder
         self.player = cardholder.player
@@ -39,21 +42,23 @@ class AVGECard():
         assert self.env is not None
         self.env.add_constrainer(constrainer)
         self.owned_constraints.append(constrainer)
-    def play_card(self, parent_event : AVGEEvent, args : Data = {}) -> Response:
+    def add_packet_listener(self, listener : AVGEPacketListener):
+        """Interface for cards to add their own external listeners. Cards that stick around
+        should use this interface"""
+        assert self.env is not None
+        self.env.add_packet_listener(listener)
+        self.owned_packet_listeners.append(listener)
+    def play_card(self, parent_event : AVGEEvent, args : dict | None = None) -> Response:
         raise NotImplementedError()
     def deactivate_card(self):
         for listener in self.owned_listeners:
             listener.invalidate()#invalidate all owned listeners, since this card is no longer in play
         for constrainer in self.owned_constraints:
             constrainer.invalidate()#invalidates all owned constrainers, since this card has left play
+        for listener in self.owned_packet_listeners:
+            listener.invalidate()#invalidates all owned packet listeners, since this card has left play
     def reactivate_card(self):
         return#engine will revalidate all constrainers and listeners, so can do nothing. However, need to override if you override deactivate_card
-    def generate_response(self, response_type : ResponseType = ResponseType.CORE, data = None):
-        #helper function to generate a response 
-        return Response(self, response_type, data)
-    def generate_interrupt(self, events : list[AVGEEvent]) -> Response:
-        #Helper function to generate an INTERRUPT response easier
-        return Response(self, ResponseType.INTERRUPT, {INTERRUPT_KEY: events})
     def propose(self, packet : AVGEPacket, priority : int = 0):
         assert self.env is not None
         self.env.propose(packet, priority)
@@ -74,7 +79,7 @@ class AVGECharacterCard(AVGECard):
         from .AVGECardholder import AVGEToolCardholder
         super().__init__(unique_id)
         self.tools_attached : AVGEToolCardholder = AVGEToolCardholder(self)
-        self.statuses_attached : dict[StatusEffect, list[AVGECard | None]] = {effect: [] for effect in StatusEffect}
+        self.statuses_attached : dict[StatusEffect, list[AVGECard | AVGEPlayer | AVGEEnvironment]] = {effect: [] for effect in StatusEffect}
         self.statuses_responsible : dict[StatusEffect, list[AVGECard]] = {effect: [] for effect in StatusEffect}
         #up to you to redefine all of the following!
         self.hp : int = hp
@@ -86,60 +91,85 @@ class AVGECharacterCard(AVGECard):
         self.default_max_hp : int = hp
         self.default_type : CardType = card_type
         self.retreat_cost : int = retreat_cost#default cost
-        self.has_atk_1 : bool = False
+        self.atk_1_name : str | None = None
         self.atk_1_cost : int = mv_1_cost#default cost. doesn't matter if no atk_2
-        self.has_atk_2 : bool = False
+        self.atk_2_name : str | None = None
         self.atk_2_cost : int = mv_2_cost#default cost. doesn't matter if no atk_2
         self.has_passive : bool = False#any ability that activates when the card gets put in play
-        self.has_active : bool = False#any ability that can be activated whenever
+        self.active_name : str | None = None#any ability that can be activated whenever
 
-    @staticmethod
-    def atk_1(card : 'AVGECharacterCard') -> Response:
+    def atk_1(self, card : 'AVGECharacterCard') -> Response:
         raise NotImplementedError()
-    @staticmethod
-    def atk_2(card : 'AVGECharacterCard') -> Response:
+    def atk_2(self, card : 'AVGECharacterCard') -> Response:
         raise NotImplementedError()
-    @staticmethod
-    def can_play_active(card : 'AVGECharacterCard') -> bool:
+    def can_play_active(self) -> bool:
         raise NotImplementedError()
-    @staticmethod
-    def active(card : 'AVGECharacterCard') -> Response:
+    def active(self) -> Response:
         raise NotImplementedError()
-    @staticmethod
-    def passive(card : 'AVGECharacterCard') -> Response:
+    def passive(self) -> Response:
         raise NotImplementedError()
     
-    def play_card(self, card : AVGECharacterCard, args : Data = {}) -> Response:#type: ignore
+    def play_card(self, card : AVGECharacterCard, args : dict | None = None) -> Response:#type: ignore
         #Character cards can only have their abilities appropriated by other character cards, since abilities like "heal" make no sense for non-character cards. This may be tweaked later.
-
+        if(args is None):
+            args = {}
         if(args['type'] == ActionTypes.ATK_1):
             return self.atk_1(card)
         elif(args['type'] == ActionTypes.ATK_2):
             return self.atk_2(card)
         elif(args['type'] == ActionTypes.ACTIVATE_ABILITY):
-            return self.active(card)
+            if(card != self):
+                raise Exception("Tried to steal an ability. This is currently not supported.")
+            return self.active()
         elif(args['type'] == ActionTypes.PASSIVE):
-            return self.passive(card)
+            if(card != self):
+                raise Exception("Tried to steal an ability. This is currently not supported.")
+            return self.passive()
     
     def attach_to_cardholder(self, cardholder : AVGECardholder):
         super().attach_to_cardholder(cardholder)
         self.tools_attached.env = self.env
         self.tools_attached.player = self.player
 
+    def generic_response(self, caller : AVGECharacterCard, action_type : ActionTypes) -> Response:
+        if(action_type == ActionTypes.ATK_1):
+            return Response(ResponseType.CORE, Notify(f"{str(caller)} used {self.atk_1_name}!", all_players, default_timeout))
+        if(action_type == ActionTypes.ACTIVATE_ABILITY):
+            return Response(ResponseType.CORE, Notify(f"{str(caller)} used {self.active_name}!", all_players, default_timeout))
+        if(action_type == ActionTypes.ATK_2):
+            return Response(ResponseType.CORE, Notify(f"{str(caller)} used {self.atk_2_name}!", all_players, default_timeout))
+        return Response(ResponseType.CORE, Data())
+
 
 class AVGESupporterCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-    @staticmethod
-    def play_card(card : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:#type: ignore
+    def play_card(self, card : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:#type: ignore
         raise NotImplementedError()
+    def generic_response(self, caller : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
+        if(caller == self):
+            return Response(ResponseType.CORE, RevealCards(
+                f"{str(self)} was used!", all_players, default_timeout, [self]
+            ))
+        else:
+            return Response(ResponseType.CORE, RevealCards(
+                f"{str(caller)} used {str(self)}!", all_players, default_timeout, [self]
+            ))
 
 class AVGEItemCard(AVGECard):
     def __init__(self, unique_id):
         super().__init__(unique_id)
-    @staticmethod
-    def play_card(card : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:#type: ignore
+    def play_card(self, card : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:#type: ignore
         raise NotImplementedError()
+    def generic_response(self, caller : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
+        if(caller == self):
+            return Response(ResponseType.CORE, RevealCards(
+                f"{str(self)} was used!", all_players, default_timeout, [self]
+            ))
+        else:
+            return Response(ResponseType.CORE, RevealCards(
+                f"{str(caller)} used {str(self)}!", all_players, default_timeout, [self]
+            ))
 
 
 class AVGEToolCard(AVGECard):

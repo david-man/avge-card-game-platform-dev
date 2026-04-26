@@ -2,101 +2,103 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, TransferCard
 
 class StandardMusescoreFile(AVGEItemCard):
-    _TOOL_DISCARD_TARGET_KEY = "standardmusescorefile_tool_discard_target"
-    _DECK_NONITEM_PICK_KEY = "standardmusescorefile_deck_nonitem_pick"
+    _TOOL_DISCARD_TARGET_KEY = 'standardmusescorefile_tool_discard_target'
+    _DECK_NONITEM_PICK_KEY = 'standardmusescorefile_deck_nonitem_pick'
 
     def __init__(self, unique_id):
         super().__init__(unique_id)
-    
-    @staticmethod
-    def play_card(card) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+
+    def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 
         player = card.player
         deck = player.cardholders[Pile.DECK]
         hand = player.cardholders[Pile.HAND]
         discard = player.cardholders[Pile.DISCARD]
 
-        tool_targets = [c for c in player.get_cards_in_play() if len(c.tools_attached) > 0]
-        if(len(tool_targets) == 0):
-            return card.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: "No tools to discard for StandardMusescoreFile."})
+        tool_targets = [c for c in player.get_cards_in_play() if isinstance(c, AVGECharacterCard) and len(c.tools_attached) > 0]
 
-        chosen_tool_target = card.env.cache.get(card, StandardMusescoreFile._TOOL_DISCARD_TARGET_KEY, None)
-        if(chosen_tool_target is None):
-            return card.generate_response(
+        missing = object()
+        source_probe = card.env.cache.get(card, StandardMusescoreFile._TOOL_DISCARD_TARGET_KEY, missing, False)
+        if source_probe is missing:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            player,
-                            [StandardMusescoreFile._TOOL_DISCARD_TARGET_KEY],
-                            InputType.SELECTION,
-                            lambda res : True,
-                            ActionTypes.NONCHAR,
-                            card,
-                            {
-                                LABEL_FLAG: "standard_musescore_file_tool_discard_target",
-                                TARGETS_FLAG: tool_targets,
-                                DISPLAY_FLAG: player.get_cards_in_play()
-                            },
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        player,
+                        [StandardMusescoreFile._TOOL_DISCARD_TARGET_KEY],
+                        lambda res: True,
+                        ActionTypes.NONCHAR,
+                        card,
+                        CardSelectionQuery(
+                            'Standard Musescore File: Choose a character with a tool to discard (or None).',
+                            tool_targets,
+                            player.get_cards_in_play(),
+                            True,
+                            False,
                         )
-                    ]
-                },
+                    )
+                ]),
             )
 
-        packet : PacketType = []
-        
-        assert(isinstance(chosen_tool_target, AVGECharacterCard))
-        tool_to_discard = list(chosen_tool_target.tools_attached)[0]
-        packet.append(
+        if source_probe is None:
+            card.env.cache.get(card, StandardMusescoreFile._TOOL_DISCARD_TARGET_KEY, None, True)
+            return self.generic_response(card)
+
+        if not isinstance(source_probe, AVGECharacterCard) or source_probe not in tool_targets:
+            raise Exception('StandardMusescoreFile: Invalid tool source selection')
+
+        tool_to_discard = list(source_probe.tools_attached)[0]
+        packet: PacketType = [
             TransferCard(
                 tool_to_discard,
-                chosen_tool_target.tools_attached,
+                tool_to_discard.cardholder,
                 discard,
                 ActionTypes.NONCHAR,
                 card,
+                None,
             )
-        )
+        ]
 
         non_item_choices = [c for c in deck if not isinstance(c, AVGEItemCard)]
-        missing = object()
-        deck_pick = card.env.cache.get(card, StandardMusescoreFile._DECK_NONITEM_PICK_KEY, missing, one_look=True)
-        if(deck_pick is missing):
-            return card.generate_response(
+        deck_pick_probe = card.env.cache.get(card, StandardMusescoreFile._DECK_NONITEM_PICK_KEY, missing, False)
+        if deck_pick_probe is missing:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            player,
-                            [StandardMusescoreFile._DECK_NONITEM_PICK_KEY],
-                            InputType.SELECTION,
-                            lambda res: True,
-                            ActionTypes.NONCHAR,
-                            card,
-                            {
-                                LABEL_FLAG: "standard_musescore_file_nonitem_pick",
-                                TARGETS_FLAG: non_item_choices,
-                                DISPLAY_FLAG: list(deck),
-                                ALLOW_NONE: True
-                            },
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        player,
+                        [StandardMusescoreFile._DECK_NONITEM_PICK_KEY],
+                        lambda res: True,
+                        ActionTypes.NONCHAR,
+                        card,
+                        CardSelectionQuery(
+                            'Standard Musescore File: Choose a non-item card from your deck to put into your hand (or None).',
+                            non_item_choices,
+                            list(deck),
+                            True,
+                            False,
                         )
-                    ]
-                },
+                    )
+                ]),
             )
-        if deck_pick is not None:
+
+        if deck_pick_probe is not None:
+            if not isinstance(deck_pick_probe, AVGECard) or deck_pick_probe not in non_item_choices:
+                raise Exception('StandardMusescoreFile: Invalid deck non-item selection')
             packet.append(
                 TransferCard(
-                    deck_pick,
+                    deck_pick_probe,
                     deck,
                     hand,
                     ActionTypes.NONCHAR,
                     card,
+                    None,
                 )
             )
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, StandardMusescoreFile)))
 
-        return card.generate_response()
+        return self.generic_response(card)

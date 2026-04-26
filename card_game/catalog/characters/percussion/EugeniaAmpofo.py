@@ -2,133 +2,133 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, TransferCard, AVGEEnergyTransfer, EmptyEvent, AVGECardHPChange
+from card_game.internal_events import InputEvent, TransferCard, AVGEEnergyTransfer, AVGECardHPChange, PlayCharacterCard
 
 
 class EugeniaAmpofo(AVGECharacterCard):
     _ATTACH_CHOICE_KEY = "eugenia_attach_choice"
-    _ATTACH_USED_ROUND_KEY = "eugenia_attach_used_round"
     _BENCH_SWAP_KEY = "eugenia_bench_swap"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
-        self.has_passive = False
-        self.has_active = True
+        self.atk_1_name = 'Stick Trick'
+        self.active_name = 'Fermentation'
 
-    @staticmethod
-    def can_play_active(card: AVGECharacterCard) -> bool:
-        if card.env.player_turn != card.player:
+    def can_play_active(self) -> bool:
+        if self.env.player_turn != self.player:
             return False
-        if card.cardholder.pile_type != Pile.ACTIVE:
+        if self.cardholder is None or self.cardholder.pile_type != Pile.ACTIVE:
             return False
-        if len(card.player.energy) <= 0:
+        if len(self.player.energy) <= 0:
             return False
-        if len(card.player.cardholders[Pile.BENCH]) == 0:
+        if len(self.player.cardholders[Pile.BENCH]) == 0:
             return False
-        used_round = card.env.cache.get(card, EugeniaAmpofo._ATTACH_USED_ROUND_KEY, None)
-        return used_round != card.env.round_id
+        _, already_used_idx = self.env.check_history(
+            self.env.round_id,
+            PlayCharacterCard,
+            {
+                'card': self,
+                'card_action': ActionTypes.ACTIVATE_ABILITY,
+                'caller': self,
+            },
+        )
+        return already_used_idx == -1
 
-    @staticmethod
-    def active(card: AVGECharacterCard) -> Response:
-        bench_chars = card.player.cardholders[Pile.BENCH]
-        choice = card.env.cache.get(card, EugeniaAmpofo._ATTACH_CHOICE_KEY, None, True)
-        if choice is None:
-            return card.generate_response(
+    def active(self) -> Response:
+        bench_chars = self.player.cardholders[Pile.BENCH]
+        missing = object()
+        choice = self.env.cache.get(self, EugeniaAmpofo._ATTACH_CHOICE_KEY, missing, True)
+        if choice is missing:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
+                            self.player,
                             [EugeniaAmpofo._ATTACH_CHOICE_KEY],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ACTIVATE_ABILITY,
-                            card,
-                            {
-                                LABEL_FLAG: "eugenia_ampofo_active_ability",
-                                TARGETS_FLAG: list(bench_chars),
-                                DISPLAY_FLAG: list(bench_chars)
-                            },
+                            self,
+                            CardSelectionQuery(
+                                'Fermentation: Attach an extra (X) to one benched character',
+                                list(bench_chars),
+                                list(bench_chars),
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
-        target_card = choice
+        if not isinstance(choice, AVGECharacterCard):
+            return Response(ResponseType.ACCEPT, Data())
 
         def generate_packet() -> PacketType:
-            if len(card.player.energy) <= 0:
-                return [
-                    EmptyEvent(
-                        ActionTypes.ACTIVATE_ABILITY,
-                        card,
-                        response_data = {MESSAGE_KEY: "Tried to play Eugenia active, but no player energy was available."}
-                    )
-                ]
-            return [
+            packet: PacketType = []
+            if len(self.player.energy) <= 0:
+                return packet
+            packet.append(
                 AVGEEnergyTransfer(
-                    card.player.energy[0],
-                    card.player,
-                    target_card,
+                    self.player.energy[0],
+                    self.env,
+                    choice,
                     ActionTypes.ACTIVATE_ABILITY,
-                    card,
+                    self,
+                    None,
                 )
-            ]
+            )
+            return packet
 
-        card.env.cache.set(card, EugeniaAmpofo._ATTACH_USED_ROUND_KEY, card.env.round_id)
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)))
-        return card.generate_response()
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)))
+        return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         packet : PacketType = []
         def generate() -> PacketType:
-            return [
-            AVGECardHPChange(
-                card.player.opponent.get_active_card(),
-                20,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.PERCUSSION,
-                ActionTypes.ATK_1,
-                card,
+            p: PacketType = []
+            p.append(
+                AVGECardHPChange(
+                    card.player.opponent.get_active_card(),
+                    20,
+                    AVGEAttributeModifier.SUBSTRACTIVE,
+                    CardType.PERCUSSION,
+                    ActionTypes.ATK_1,
+                    None,
+                    card,
+                )
             )
-        ]
+            return p
         packet.append(generate)
 
         bench_holder = card.player.cardholders[Pile.BENCH]
         active_holder = card.player.cardholders[Pile.ACTIVE]
-        perc_candidates = [c for c in bench_holder if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION]
-        if len(bench_holder) == 0:
+        bench_candidates = [c for c in bench_holder if isinstance(c, AVGECharacterCard)]
+        if len(bench_candidates) == 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EugeniaAmpofo)))
-            return card.generate_response(data = {MESSAGE_KEY: "No bench characters to swap with! Skipping past bench swap."})
+            return self.generic_response(card, ActionTypes.ATK_1)
         missing = object()
-        pick = card.env.cache.get(card, EugeniaAmpofo._BENCH_SWAP_KEY, None, True)
+        pick = card.env.cache.get(card, EugeniaAmpofo._BENCH_SWAP_KEY, missing, True)
         if pick is missing:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [EugeniaAmpofo._BENCH_SWAP_KEY],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {
-                                LABEL_FLAG: "eugenia_ampofo_benched_percussion_swap",
-                                TARGETS_FLAG: perc_candidates,
-                                DISPLAY_FLAG: list(bench_holder),
-                                ALLOW_NONE: True,
-                            },
+                            CardSelectionQuery(
+                                'Stick Trick: You may swap with a benched character for free',
+                                bench_candidates,
+                                list(bench_holder),
+                                True,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
-        if pick is not None:
-            packet.append(TransferCard(pick, bench_holder, active_holder, ActionTypes.ATK_1, card))
-            packet.append(TransferCard(card, active_holder, bench_holder, ActionTypes.ATK_1, card))
+        if isinstance(pick, AVGECharacterCard):
+            packet.append(TransferCard(pick, bench_holder, active_holder, ActionTypes.ATK_1, card, None))
+            packet.append(TransferCard(card, active_holder, bench_holder, ActionTypes.ATK_1, card, None))
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EugeniaAmpofo)))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

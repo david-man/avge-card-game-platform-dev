@@ -12,14 +12,13 @@ class Michelle(AVGESupporterCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	@staticmethod
-	def play_card(card: AVGECard) -> Response:
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		from card_game.internal_events import InputEvent, TransferCard
 
 		if(card.env.round_id == 0):
-			return card.generate_response(
+			return Response(
 				ResponseType.SKIP,
-				{MESSAGE_KEY: "Michelle cannot be played on the first turn."},
+				Notify("Michelle cannot be played on the first turn.", [card.player.unique_id], default_timeout),
 			)
 
 		opponent = card.player.opponent
@@ -27,30 +26,23 @@ class Michelle(AVGESupporterCard):
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
 
 		if(len(opponent_hand) <= 1):
-			return card.generate_response(ResponseType.CORE)
+			return self.generic_response(card)
 
 		missing = object()
 		keep_card = card.env.cache.get(card, Michelle._KEEP_KEY, missing, True)
 		if(keep_card is missing):
-			return card.generate_response(
+			return Response(
 				ResponseType.INTERRUPT,
-				{
-					INTERRUPT_KEY: [
+				Interrupt[InputEvent]([
 						InputEvent(
 							opponent,
 							[Michelle._KEEP_KEY],
-							InputType.SELECTION,
 							lambda r: True,
 							ActionTypes.NONCHAR,
 							card,
-							{
-								LABEL_FLAG: "michelle_opponent_keep_one",
-								TARGETS_FLAG: list(opponent_hand),
-								DISPLAY_FLAG: list(opponent_hand),
-							},
+							CardSelectionQuery("michelle_opponent_keep_one", list(opponent_hand), list(opponent_hand), False, False)
 						)
-					]
-				},
+					]),
 			)
 
 		packet: PacketType = []
@@ -64,6 +56,7 @@ class Michelle(AVGESupporterCard):
 					opponent_discard,
 					ActionTypes.NONCHAR,
 					card,
+					None,
 					random.randint(0, len(opponent_discard)),
 				)
 			)
@@ -72,4 +65,4 @@ class Michelle(AVGESupporterCard):
 			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, Michelle)))
 		card.env.cache.delete(card, Michelle._KEEP_KEY)
 
-		return card.generate_response(ResponseType.CORE)
+		return self.generic_response(card)

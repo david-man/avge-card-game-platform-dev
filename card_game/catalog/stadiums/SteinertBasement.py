@@ -3,7 +3,7 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import PlayCharacterCard
+from card_game.internal_events import PhasePickCard, PlayCharacterCard, TransferCard
 
 class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 	def __init__(self, owner_card: AVGEStadiumCard):
@@ -11,11 +11,9 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 		self.owner_card = owner_card
 
 	def event_match(self, event):
-		from card_game.internal_events import PhasePickCard
-
 		if(not isinstance(event, PhasePickCard)):
 			return False
-		player = event.player
+		player = event.env.player_turn
 		return self.owner_card._is_active_stadium() and len(player.get_cards_in_play()) == 2
 
 	def event_effect(self) -> bool:
@@ -29,25 +27,21 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 		return True
 
 	def package(self):
-		return "SteinertBasement Reactor"
+		return "SteinertBasement Duo Queue"
 
 	def react(self, args=None):
-		from card_game.internal_events import TransferCard
-
 		event = self.attached_event
-		from card_game.internal_events import PhasePickCard
 		assert isinstance(event, PhasePickCard)
-		player : AVGEPlayer = event.player
+		player : AVGEPlayer = event.env.player_turn
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
 		if(len(deck) == 0):
-			player.env.winner = player.opponent
-			return self.generate_response(ResponseType.GAME_END, {"winner": player.opponent, "reason": "steinert basement extra draw failed"})
+			return Response(ResponseType.ACCEPT, Notify('Steinert Basement: No extra card available for Duo Queue.', [player.unique_id], default_timeout))
 
 		self.propose(AVGEPacket([
-			TransferCard(deck.peek(), deck, hand, ActionTypes.ENV, self.owner_card)
+			TransferCard(deck.peek(), deck, hand, ActionTypes.ENV, self.owner_card, None)
 		], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, SteinertBasement)))
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Notify('Steinert Basement: Duo Queue grants one additional draw this turn.', [player.unique_id], default_timeout))
 
 
 class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
@@ -87,7 +81,7 @@ class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
 		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement += 1
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Notify("Steinert Basement: Attack cost increased by 1", all_players, default_timeout))
 
 
 class SteinertBasement(AVGEStadiumCard):
@@ -97,4 +91,4 @@ class SteinertBasement(AVGEStadiumCard):
 	def play_card(self) -> Response:
 		self.add_listener(SteinertBasementTwoInPlayBonusDrawReactor(self))
 		self.add_listener(SteinertBasementAttackExtraCostAssessor(self))
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

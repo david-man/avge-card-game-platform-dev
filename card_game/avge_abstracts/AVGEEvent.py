@@ -4,7 +4,6 @@ from ..engine.event import Event, Packet
 from ..engine.event_listener import *
 from typing import TYPE_CHECKING, Callable, TypeVar, cast
 from ..constants import *
-
 if TYPE_CHECKING:
     from .AVGEEnvironment import AVGEEnvironment
 
@@ -14,12 +13,14 @@ type DeferredAVGEPacket = Callable[[], list[AVGEEvent | DeferredAVGEPacket]]
 class AVGEEvent(Event):
     def __init__(self,
                  catalyst_action : ActionTypes,
-                 caller_card : AVGECard | None,
+                 caller : AVGECard | AVGEPlayer | AVGEEnvironment,
+                 core_notif : Notify | None,
                  **kwargs):
-        super().__init__(catalyst_action = catalyst_action, caller_card = caller_card, **kwargs)
-        self.caller_card = caller_card
+        super().__init__(catalyst_action = catalyst_action, caller = caller, core_notif=core_notif,**kwargs)
+        self.caller = caller
         self.catalyst_action = catalyst_action
-        self.identifier = AVGEEngineID(caller_card, catalyst_action, None)
+        self.core_notif = core_notif
+        self.identifier = AVGEEngineID(caller, catalyst_action, None)
         self.temp_cache = {}
     def __str__(self):
         package_fn = getattr(self, "package", None)

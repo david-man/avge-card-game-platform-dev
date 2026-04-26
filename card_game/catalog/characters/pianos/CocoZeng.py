@@ -2,88 +2,97 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, AVGECardHPChange, PlayCharacterCard
 
 class CocoZeng(AVGECharacterCard):
-    _LAST_ATK1_ROUND_KEY = "cocozeng_atk1_last_round"
     _ATK2_COIN_BASE = "cocozeng_atk2_coin_"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.PIANO, 2, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        super().__init__(unique_id, 100, CardType.PIANO, 2, 2, 3)
+        self.atk_1_name = 'Glissando'
+        self.atk_2_name = 'Inventory Management'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, EmptyEvent
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        _, used_last_turn_idx = card.env.check_history(
+            card.player.get_last_turn(),
+            PlayCharacterCard,
+            {
+                'card': card,
+                'card_action': ActionTypes.ATK_1,
+                'caller': card,
+            },
+        )
+        if used_last_turn_idx != -1:
+            return Response(
+                ResponseType.CORE,
+                Notify('Glissando cannot be used this turn.', [card.player.unique_id], default_timeout),
+            )
 
-        last_round = card.env.cache.get(card, CocoZeng._LAST_ATK1_ROUND_KEY, None)
-        if last_round is not None and card.env.round_id - last_round <= 2:
-            return card.generate_response(data={MESSAGE_KEY: "You cannot use this attack this turn!"})
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
-                    30,
+                    50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
+
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, CocoZeng))
         )
 
-        card.env.cache.set(card, CocoZeng._LAST_ATK1_ROUND_KEY, card.env.round_id)
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
-
-        n = len([c for c in card.player.cardholders[Pile.HAND] if isinstance(c, AVGEItemCard)])
-        if n == 0:
-            return card.generate_response(data={MESSAGE_KEY: "No items in hand!"})
+    def atk_2(self, card: AVGECharacterCard) -> Response:
+        n = len(card.player.cardholders[Pile.HAND])
+        if n <= 0:
+            return Response(ResponseType.CORE, Notify(f"{str(card)} used Inventory Management, but there was no inventory to manage...", all_players, default_timeout))
 
         coin_keys = [CocoZeng._ATK2_COIN_BASE + str(i) for i in range(n)]
-        vals = [card.env.cache.get(card, key, None, True) for key in coin_keys]
-        if vals[0] is None:
-            return card.generate_response(
+        missing = object()
+        vals = [card.env.cache.get(card, key, missing, True) for key in coin_keys]
+        if any(v is missing for v in vals):
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             coin_keys,
-                            InputType.COIN,
                             lambda res: True,
                             ActionTypes.ATK_2,
                             card,
-                            {LABEL_FLAG: "cocozeng_inventory_management"},
+                            CoinflipData('Inventory Management: Flip a coin for each card in your hand')
                         )
-                    ]
-                },
+                    ]),
             )
 
-        heads = sum(int(v) for v in vals if v is not None)
+        heads = sum(int(v) for v in vals if isinstance(v, int))
         if heads <= 0:
-            return card.generate_response()
+            return self.generic_response(card, ActionTypes.ATK_2)
+
         def gen() -> PacketType:
-            return [AVGECardHPChange(
+            packet: PacketType = []
+            packet.append(
+                AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     30 * heads,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_2,
+                    None,
                     card,
-                )]
+                )
+            )
+            return packet
+
         card.propose(
-            AVGEPacket([
-                gen
-            ], AVGEEngineID(card, ActionTypes.ATK_2, CocoZeng))
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_2, CocoZeng))
         )
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

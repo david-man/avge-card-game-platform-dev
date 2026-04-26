@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, AVGECardHPChange
 
 class GabrielChen(AVGECharacterCard):
     _COIN_KEY_0 = "gabrielchen_coin_0"
@@ -14,148 +13,158 @@ class GabrielChen(AVGECharacterCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.STRING, 1, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'You know what it is'
+        self.atk_2_name = 'Harmonics'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         if card.hp != 60:
-            return card.generate_response()
+            return self.generic_response(card, ActionTypes.ATK_1)
+
+        targets = [c for c in card.player.opponent.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
+        if len(targets) == 0:
+            return self.generic_response(card, ActionTypes.ATK_1)
 
         chosen = card.env.cache.get(card, GabrielChen._ATK1_SELECTION_KEY, None, True)
         if chosen is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [GabrielChen._ATK1_SELECTION_KEY],
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {
-                                LABEL_FLAG: "gabe_chen_ykwis",
-                                TARGETS_FLAG: card.player.opponent.get_cards_in_play(),
-                                DISPLAY_FLAG: card.player.opponent.get_cards_in_play()
-                            },
+                            CardSelectionQuery(
+                                'You know what it is: Deal 70 damage to one opposing character',
+                                targets,
+                                targets,
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
         def generate_packet() -> PacketType:
-            if not isinstance(chosen, AVGECharacterCard):
-                return []
-            return [
-                AVGECardHPChange(
-                    chosen,
-                    70,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_1,
-                    card,
+            packet: PacketType = []
+            if isinstance(chosen, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        chosen,
+                        70,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.STRING,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
                 )
-            ]
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, GabrielChen)))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, AVGECardHPChange
-
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         r0 = card.env.cache.get(card, GabrielChen._COIN_KEY_0, None)
         r1 = card.env.cache.get(card, GabrielChen._COIN_KEY_1, None)
         if r0 is None or r1 is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [GabrielChen._COIN_KEY_0, GabrielChen._COIN_KEY_1],
-                            InputType.COIN,
                             lambda res: True,
                             ActionTypes.ATK_2,
                             card,
-                            {LABEL_FLAG: "gabe_harmonics_2coin"},
+                            CoinflipData('Harmonics: Flip two coins.')
                         )
-                    ]
-                },
+                    ]),
             )
 
         heads = int(r0) + int(r1)
         if heads != 2:
-            return card.generate_response()
+            card.env.cache.delete(card, GabrielChen._COIN_KEY_0)
+            card.env.cache.delete(card, GabrielChen._COIN_KEY_1)
+            return self.generic_response(card, ActionTypes.ATK_2)
 
         mode = card.env.cache.get(card, GabrielChen._ATK2_MODE_KEY, None)
         if mode is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [GabrielChen._ATK2_MODE_KEY],
-                            InputType.BINARY,
                             lambda r : True,
                             ActionTypes.ATK_2,
                             card,
-                            {LABEL_FLAG: "gabe_harmonics_mode_choice"},
+                            StrSelectionQuery(
+                                'Harmonics: Choose one effect',
+                                ['Deal 60 to three opposing characters', 'Deal 70 to two opposing characters'],
+                                ['Deal 60 to three opposing characters', 'Deal 70 to two opposing characters'],
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        req_count = 3 if mode else 2
-        count = min(req_count, len(card.player.opponent.get_cards_in_play()))
+        targets = [c for c in card.player.opponent.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
+        req_count = 3 if mode == 'Deal 60 to three opposing characters' else 2
+        count = min(req_count, len(targets))
+        if count == 0:
+            card.env.cache.delete(card, GabrielChen._ATK2_MODE_KEY)
+            card.env.cache.delete(card, GabrielChen._COIN_KEY_0)
+            card.env.cache.delete(card, GabrielChen._COIN_KEY_1)
+            return self.generic_response(card, ActionTypes.ATK_2)
+
         keys = [GabrielChen._ATK2_SELECTION_BASE_KEY + str(i) for i in range(count)]
         chosen = [card.env.cache.get(card, key, None, True) for key in keys]
         if chosen[0] is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             keys,
-                            InputType.SELECTION,
                             lambda r: True,
                             ActionTypes.ATK_2,
                             card,
-                            {
-                                LABEL_FLAG: "gabe_harmonics",
-                                TARGETS_FLAG: card.player.opponent.get_cards_in_play(),
-                                DISPLAY_FLAG: card.player.opponent.get_cards_in_play()
-                            },
+                            CardSelectionQuery(
+                                'Harmonics: Choose opposing targets',
+                                targets,
+                                targets,
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        dmg_amt = 60 if mode else 70
-        packet = []
-        for tgt in chosen:
-            assert isinstance(tgt, AVGECharacterCard)
-            packet.append(
-                AVGECardHPChange(
-                    tgt,
-                    dmg_amt,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_2,
-                    card,
-                )
-            )
+        dmg_amt = 60 if mode == 'Deal 60 to three opposing characters' else 70
+
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            for tgt in chosen:
+                if isinstance(tgt, AVGECharacterCard):
+                    packet.append(
+                        AVGECardHPChange(
+                            tgt,
+                            dmg_amt,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.STRING,
+                            ActionTypes.ATK_2,
+                            None,
+                            card,
+                        )
+                    )
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, GabrielChen)))
         card.env.cache.delete(card, GabrielChen._ATK2_MODE_KEY)
         card.env.cache.delete(card, GabrielChen._COIN_KEY_0)
         card.env.cache.delete(card, GabrielChen._COIN_KEY_1)
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, GabrielChen)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

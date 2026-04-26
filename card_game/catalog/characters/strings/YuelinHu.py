@@ -1,152 +1,163 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts import *
-
+from card_game.catalog.items.AVGEBirb import AVGEBirb
 from card_game.constants import *
-from card_game.engine.engine_constants import *
+from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
 
 
-class YuelinHu(AVGECharacterCard):
-    _DISCARD_DECISION_KEY = "yuelinhu_discard_decision"
-    _DISCARD_TARGET_KEY = "yuelinhu_discard_target"
-    _COIN_KEY_0 = "yuelinhu_coin_0"
-    _COIN_KEY_1 = "yuelinhu_coin_1"
-    _COIN_KEY_2 = "yuelinhu_coin_2"
+class _YuelinBirbDrawReactor(AVGEReactor):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, YuelinHu), group=EngineGroup.EXTERNAL_REACTORS)
+        self.owner_card = owner_card
 
-    def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
-        self.has_passive = True
-        self.has_active = False
+    def event_match(self, event):
+        if not isinstance(event, TransferCard):
+            return False
+        if not isinstance(event.card, AVGEBirb):
+            return False
+        if event.pile_from.pile_type != Pile.DECK:
+            return False
+        if event.pile_to.pile_type != Pile.HAND:
+            return False
+        if event.pile_to.player != self.owner_card.player:
+            return False
+        if self.owner_card.cardholder is None:
+            return False
+        return self.owner_card.cardholder.pile_type in [Pile.ACTIVE, Pile.BENCH]
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        owner_card = card
+    def event_effect(self) -> bool:
+        return True
 
-        class _BirbDrawReactor(AVGEReactor):
-            def __init__(self):
-                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, YuelinHu), group=EngineGroup.EXTERNAL_REACTORS)
-                self.owner_card = owner_card
+    def update_status(self):
+        return
 
-            def event_match(self, event):
-                from card_game.internal_events import TransferCard
-                from card_game.catalog.items.AVGEBirb import AVGEBirb
+    def react(self, args=None):
+        if args is None:
+            args = {}
 
-                if not isinstance(event, TransferCard):
-                    return False
-                if not isinstance(event.card, AVGEBirb):
-                    return False
-                if event.pile_from.pile_type != Pile.DECK:
-                    return False
-                if event.pile_to.pile_type != Pile.HAND:
-                    return False
-                return event.pile_to.player == self.owner_card.player
+        owner = self.owner_card
+        player = owner.player
+        hand = player.cardholders[Pile.HAND]
+        discard = player.cardholders[Pile.DISCARD]
 
-            def event_effect(self) -> bool:
-                return True
-
-            def update_status(self):
-                return
-
-
-            def react(self, args=None):
-                if args is None:
-                    args = {}
-                from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
-
-                env = self.owner_card.env
-                player = self.owner_card.player
-                hand = player.cardholders[Pile.HAND]
-                discard = player.cardholders[Pile.DISCARD]
-
-                should_discard = env.cache.get(self.owner_card, YuelinHu._DISCARD_DECISION_KEY, None, True)
-                if should_discard is None:
-                    return self.generate_response(
-                        ResponseType.INTERRUPT,
-                        {
-                            INTERRUPT_KEY: [
-                                InputEvent(
-                                    player,
-                                    [YuelinHu._DISCARD_DECISION_KEY],
-                                    InputType.BINARY,
-                                    lambda r: True,
-                                    ActionTypes.NONCHAR,
-                                    self.owner_card,
-                                    {
-                                        LABEL_FLAG: "yuelin_hu_birb_reactor",
-                                    },
-                                )
-                            ]
-                        },
-                    )
-
-                if not should_discard:
-                    return self.generate_response()
-                target = cast(TransferCard, self.attached_event).card
-                def gen() -> PacketType:
-                    return [
-                        TransferCard(target, hand, discard, ActionTypes.PASSIVE, self.owner_card),
-                        AVGECardHPChange(
-                            player.opponent.get_active_card(),
-                            40,
-                            AVGEAttributeModifier.SUBSTRACTIVE,
-                            CardType.STRING,
-                            ActionTypes.PASSIVE,
-                            self.owner_card,
-                        ),
-                    ]
-                self.propose(AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, YuelinHu)))
-                return self.generate_response()
-
-        owner_card.add_listener(_BirbDrawReactor())
-        return owner_card.generate_response()
-
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
-
-        r0 = card.env.cache.get(card, YuelinHu._COIN_KEY_0, None, True)
-        r1 = card.env.cache.get(card, YuelinHu._COIN_KEY_1, None, True)
-        r2 = card.env.cache.get(card, YuelinHu._COIN_KEY_2, None, True)
-        if r0 is None or r1 is None or r2 is None:
-            return card.generate_response(
+        yn = owner.env.cache.get(owner, YuelinHu._DISCARD_DECISION_KEY, None, True)
+        if yn is None:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
-                            [YuelinHu._COIN_KEY_0, YuelinHu._COIN_KEY_1, YuelinHu._COIN_KEY_2],
-                            InputType.COIN,
+                            player,
+                            [YuelinHu._DISCARD_DECISION_KEY],
                             lambda r: True,
-                            ActionTypes.ATK_1,
-                            card,
-                            {LABEL_FLAG: "yuelin_hu_triple_stop"},
+                            ActionTypes.PASSIVE,
+                            owner,
+                            StrSelectionQuery(
+                                'Musical Cat Summoned!: Discard the drawn AVGE Birb to deal 40 damage?',
+                                ['Yes', 'No'],
+                                ['Yes', 'No'],
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        heads = r0 + r1 + r2
+        if yn != 'Yes':
+            return Response(ResponseType.ACCEPT, Notify('Musical Cat Summoned!: You kept AVGE Birb in hand.', all_players, default_timeout))
 
-        if heads > 0:
-            packet = []
-            def hit_active() -> PacketType:
-                active = card.player.opponent.get_active_card()
-                if not isinstance(active, AVGECharacterCard):
-                    return []
-                return [
+        assert isinstance(self.attached_event, TransferCard)
+        birb = self.attached_event.card
+
+        def discard_and_damage() -> PacketType:
+            packet: PacketType = [
+                TransferCard(
+                    birb,
+                    hand,
+                    discard,
+                    ActionTypes.PASSIVE,
+                    owner,
+                    None,
+                )
+            ]
+            active = player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
                     AVGECardHPChange(
                         active,
                         40,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.STRING,
-                        ActionTypes.ATK_1,
-                        card,
+                        ActionTypes.PASSIVE,
+                        None,
+                        owner,
                     )
-                ]
-            for _ in range(heads):
-                packet.append(hit_active)
+                )
+            return packet
+
+        owner.propose(AVGEPacket([discard_and_damage], AVGEEngineID(owner, ActionTypes.PASSIVE, YuelinHu)))
+        return Response(ResponseType.ACCEPT, Notify('Musical Cat Summoned!: Discarded AVGE Birb to deal 40 damage.', all_players, default_timeout))
+
+
+class YuelinHu(AVGECharacterCard):
+    _DISCARD_DECISION_KEY = 'yuelinhu_discard_decision'
+    _COIN_KEY_0 = 'yuelinhu_coin_0'
+    _COIN_KEY_1 = 'yuelinhu_coin_1'
+    _COIN_KEY_2 = 'yuelinhu_coin_2'
+
+    def __init__(self, unique_id):
+        super().__init__(unique_id, 100, CardType.STRING, 1, 3)
+        self.atk_1_name = 'Triple Stop'
+        self.has_passive = True
+
+    def passive(self) -> Response:
+        self.add_listener(_YuelinBirbDrawReactor(self))
+        return Response(ResponseType.CORE, Data())
+
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        r0 = card.env.cache.get(card, YuelinHu._COIN_KEY_0, None, True)
+        r1 = card.env.cache.get(card, YuelinHu._COIN_KEY_1, None, True)
+        r2 = card.env.cache.get(card, YuelinHu._COIN_KEY_2, None, True)
+        if r0 is None or r1 is None or r2 is None:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                        InputEvent(
+                            card.player,
+                            [YuelinHu._COIN_KEY_0, YuelinHu._COIN_KEY_1, YuelinHu._COIN_KEY_2],
+                            lambda r: True,
+                            ActionTypes.ATK_1,
+                            card,
+                            CoinflipData('Triple Stop: Flip 3 coins.')
+                        )
+                    ]),
+            )
+
+        heads = int(r0) + int(r1) + int(r2)
+        packet: PacketType = []
+
+        for _ in range(max(0, heads)):
+            def hit_active() -> PacketType:
+                active = card.player.opponent.get_active_card()
+                p: PacketType = []
+                if isinstance(active, AVGECharacterCard):
+                    p.append(
+                        AVGECardHPChange(
+                            active,
+                            40,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.STRING,
+                            ActionTypes.ATK_1,
+                            None,
+                            card,
+                        )
+                    )
+                return p
+
+            packet.append(hit_active)
+
+        if len(packet) > 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, YuelinHu)))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

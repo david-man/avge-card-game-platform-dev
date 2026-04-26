@@ -12,7 +12,6 @@ class MaidOutfit(AVGEToolCard):
 	def deactivate_card(self):
 		from card_game.internal_events import AVGECardStatusChange
 
-		
 		assert self.card_attached is not None
 		self.extend_event([
 				AVGECardStatusChange(
@@ -21,6 +20,7 @@ class MaidOutfit(AVGEToolCard):
 				self.card_attached,
 				ActionTypes.ENV,
 				self,
+				None,
 				)
 			]
 		)
@@ -37,8 +37,9 @@ class MaidOutfit(AVGEToolCard):
 				self.card_attached,
 				ActionTypes.NONCHAR,
 				self,
+				None,
 				)
 			], AVGEEngineID(self, ActionTypes.NONCHAR, MaidOutfit))
 		)
 
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

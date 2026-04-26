@@ -19,13 +19,10 @@ class _YanwanStartReactor(AVGEReactor):
             return False
         if self.owner_card.cardholder.pile_type != Pile.ACTIVE:
             return False
-        if (event.player == self.owner_card.player and len(self.owner_card.player.cardholders[Pile.DECK]) <= 1):
-            return False
-        if (event.player.opponent == self.owner_card.player and len(self.owner_card.player.cardholders[Pile.DECK]) == 0):
+        if (event.env.player_turn == self.owner_card.player and len(self.owner_card.player.cardholders[Pile.DECK]) <= 1):
             return False
         if len(self.owner_card.energy) != 2:
             return False
-
         return True
 
     def event_effect(self) -> bool:
@@ -41,30 +38,29 @@ class _YanwanStartReactor(AVGEReactor):
         env = owner.env
         deck = owner.player.cardholders[Pile.DECK]
         hand = owner.player.cardholders[Pile.HAND]
-        if(len(deck) == 0):
-            return self.generate_response()
         yn = env.cache.get(owner, YanwanZhu._DRAW_CHOICE_KEY, None, True)
         if yn is None:
-            return owner.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[InputEvent]([
                         InputEvent(
                             owner.player,
                             [YanwanZhu._DRAW_CHOICE_KEY],
-                            InputType.BINARY,
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            {LABEL_FLAG: "yanwan_optional_draw"},
+                            StrSelectionQuery("Bass Boost: Do you want to draw an extra card?",
+                                              ["Yes", "No"],
+                                              ["Yes", "No"],
+                                              False,
+                                              False)
                         )
-                    ]
-                },
+                    ]),
             )
-        if yn:
+        if yn == "Yes":
             def generate() -> PacketType:
                 if(len(deck) > 0):
-                    return [TransferCard(deck.peek(), deck, hand, ActionTypes.PASSIVE, owner)]
+                    return [TransferCard(deck.peek(), deck, hand, ActionTypes.PASSIVE, owner, None)]
                 return []
             self.propose(
                 AVGEPacket(
@@ -72,7 +68,7 @@ class _YanwanStartReactor(AVGEReactor):
                     AVGEEngineID(owner, ActionTypes.PASSIVE, YanwanZhu),
                 ), 1
             )
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class YanwanZhu(AVGECharacterCard):
@@ -80,18 +76,14 @@ class YanwanZhu(AVGECharacterCard):
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.CHOIR, 1, 1)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Intense Echo'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        card.add_listener(_YanwanStartReactor(card))
-        return card.generate_response()
+    def passive(self) -> Response:
+        self.add_listener(_YanwanStartReactor(self))
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         def gen_active() -> PacketType:
             return [
@@ -101,6 +93,7 @@ class YanwanZhu(AVGECharacterCard):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.CHOIR,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
                 ]
@@ -112,6 +105,7 @@ class YanwanZhu(AVGECharacterCard):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.CHOIR,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     ) for c in card.player.opponent.cardholders[Pile.BENCH]
                 ]
@@ -123,4 +117,4 @@ class YanwanZhu(AVGECharacterCard):
             )
         )
 
-        return card.generate_response()
+        return Response(ResponseType.CORE, Notify(f"{str(card)} used Intense Echo!", all_players, default_timeout))

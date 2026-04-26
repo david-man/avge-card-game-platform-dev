@@ -9,7 +9,8 @@ if TYPE_CHECKING:
     from .AVGECardholder import AVGECardholder
     from .AVGEEnvironment import AVGEEnvironment
 class AVGEPlayer():
-    def __init__(self, unique_id : PlayerID):
+    def __init__(self, unique_id : PlayerID, username : str):
+        self.username = username
         self.unique_id = unique_id
         self.cardholders : dict[Pile, AVGECardholder] = {}
         self.env : AVGEEnvironment = None#type: ignore
@@ -33,6 +34,8 @@ class AVGEPlayer():
 
         self.opponent : AVGEPlayer = self
         self.energy : list[EnergyToken] = []
+    def __hash__(self):
+        return hash(self.unique_id)
     def get_active_card(self) -> AVGECharacterCard:
         assert isinstance(self.cardholders[Pile.ACTIVE].peek(), AVGECharacterCard)
         return cast(AVGECharacterCard, self.cardholders[Pile.ACTIVE].peek())

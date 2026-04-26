@@ -4,7 +4,7 @@ from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
-from card_game.internal_events import TransferCard, PlayCharacterCard
+from card_game.internal_events import InputEvent, PlayCharacterCard, TransferCard
 class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 	def __init__(self, owner_card: AVGEStadiumCard):
 		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SteinertPracticeRoom), group=EngineGroup.EXTERNAL_PRECHECK_1)
@@ -38,7 +38,7 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 		return "SteinertPracticeRoom BenchCap"
 
 	def assess(self, args=None):
-		return self.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "SteinertPracticeRoom: cannot have more than 2 benched characters."})
+		return Response(ResponseType.SKIP, Notify('SteinertPracticeRoom: cannot have more than 2 benched characters.', all_players, default_timeout))
 
 
 class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
@@ -47,7 +47,6 @@ class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 		self.owner_card = owner_card
 
 	def event_match(self, event):
-		from card_game.internal_events import PlayCharacterCard
 		if(not self.owner_card._is_active_stadium()):
 			return False
 		if(not isinstance(event, PlayCharacterCard)):
@@ -69,13 +68,13 @@ class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 		return True
 
 	def package(self):
-		return "SteinertPracticeRoom 15 minutes"
+		return "SteinertPracticeRoom 15 Minute Walk"
 
 	def modify(self, args=None):
 		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement += 1
-		return self.generate_response()
+		return Response(ResponseType.ACCEPT, Data())
 
 
 class SteinertPracticeRoom(AVGEStadiumCard):
@@ -88,13 +87,12 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 		super().__init__(unique_id)
 
 	def play_card(self) -> Response:
-		from card_game.internal_events import InputEvent, PlayCharacterCard, TransferCard
 		player = self.player
 		assert player is not None
 		def _resolve_discards_for_player(target_player: AVGEPlayer, base_key: str, resolved_key: str) -> Response:
 
 			if(bool(self.env.cache.get(self, resolved_key, False))):
-				return self.generate_response(ResponseType.CORE)
+				return Response(ResponseType.CORE, Data())
 
 			bench = target_player.cardholders[Pile.BENCH]
 			discard = target_player.cardholders[Pile.DISCARD]
@@ -102,33 +100,26 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 			if(extra == 0):
 				self.env.cache.set(self, resolved_key, True)
 				self.env.cache.delete(self, base_key)
-				return self.generate_response(ResponseType.CORE)
+				return Response(ResponseType.CORE, Data())
 
 			keys = [base_key + str(i) for i in range(extra)]
 			chosen = [self.env.cache.get(self, key, None, True) for key in keys]
 			if(chosen[0] is None):
-				return self.generate_response(
+				return Response(
 					ResponseType.INTERRUPT,
-					{
-						INTERRUPT_KEY: [
+					Interrupt[AVGEEvent]([
 							InputEvent(
 								target_player,
 								keys,
-								InputType.SELECTION,
 								lambda res: True,
 								ActionTypes.NONCHAR,
 								self,
-								{
-									LABEL_FLAG: "Steinert-practice-room-bench",
-									TARGETS_FLAG: list(target_player.cardholders[Pile.BENCH]),
-									DISPLAY_FLAG: list(target_player.cardholders[Pile.BENCH])
-								},
+								CardSelectionQuery("Steinert Practice Room: Choose benched character(s) to discard down to 2.", list(target_player.cardholders[Pile.BENCH]), list(target_player.cardholders[Pile.BENCH]), False, False)
 							)
-						]
-					},
+						]),
 				)
 
-			packet = []
+			packet: list[AVGEEvent] = []
 			for card in chosen:
 				assert isinstance(card, AVGECharacterCard)
 				packet.append(
@@ -138,13 +129,14 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 						discard,
 						ActionTypes.NONCHAR,
 						self,
+						None,
 					)
 				)
 
 			self.env.cache.set(self, resolved_key, True)
 			if(len(packet) > 0):
-				return self.generate_response(ResponseType.INTERRUPT, {INTERRUPT_KEY: packet})
-			return self.generate_response(ResponseType.CORE)
+				return Response(ResponseType.INTERRUPT, Interrupt[AVGEEvent](packet))
+			return Response(ResponseType.CORE, Data())
 		
 		owner_resolve = _resolve_discards_for_player(
 			player,
@@ -168,4 +160,4 @@ class SteinertPracticeRoom(AVGEStadiumCard):
 		self.add_listener(SteinertPracticeRoomBenchCapAssessor(self))
 		self.add_listener(SteinertPracticeRoomAttackExtraCostAssessor(self))
 
-		return self.generate_response()
+		return Response(ResponseType.CORE, Data())

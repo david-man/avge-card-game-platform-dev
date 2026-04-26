@@ -18,7 +18,7 @@ class CavinMaidBoostModifier(AVGEModifier):
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
         
-        if event.caller_card != self.owner_card:
+        if event.caller != self.owner_card:
             return False
 
         env = self.owner_card.env
@@ -37,13 +37,10 @@ class CavinMaidBoostModifier(AVGEModifier):
         if self.owner_card.env is None or self.owner_card.cardholder is None:
             self.invalidate()
             return
-        if self.owner_card.cardholder.pile_type != Pile.ACTIVE:
+        if self.owner_card.cardholder.pile_type not in [Pile.ACTIVE, Pile.BENCH]:
             self.invalidate()
 
-
-    def modify(self, args=None):
-        if args is None:
-            args = {}
+    def modify(self):
         from card_game.internal_events import AVGECardHPChange
 
         event = self.attached_event
@@ -57,38 +54,45 @@ class CavinMaidBoostModifier(AVGEModifier):
                     maid_count += 1
 
         event.modify_magnitude(20 * maid_count)
-        return self.generate_response()
+        return Response(
+            ResponseType.ACCEPT,
+            Notify(
+                f"{str(self.owner_card)} gained +{20 * maid_count} damage from \"Wait no... I'm not into femboys-\".",
+                all_players,
+                default_timeout,
+            ),
+        )
 
 
 class CavinXue(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.PERCUSSION, 1, 1)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Cymbal Crash'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        card.add_listener(CavinMaidBoostModifier(card))
-        return card.generate_response()
+    def passive(self) -> Response:
+        self.add_listener(CavinMaidBoostModifier(self))
+        return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
+
         def generate() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
         card.propose(
             AVGEPacket([generate], AVGEEngineID(card, ActionTypes.ATK_1, CavinXue))
         )
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

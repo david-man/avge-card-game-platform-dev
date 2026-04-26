@@ -2,50 +2,55 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardHPChange, TransferCard, PlayCharacterCard, EmptyEvent
 
 class HenryWang(AVGECharacterCard):
-    _LAST_ATK1_ROUND_KEY = "henry_atk1_last_round"
-
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PIANO, 1, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        super().__init__(unique_id, 110, CardType.PIANO, 1, 2, 3)
+        self.atk_1_name = 'Glissando'
+        self.atk_2_name = 'Improv'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        _, used_last_turn_idx = card.env.check_history(
+            card.player.get_last_turn(),
+            PlayCharacterCard,
+            {
+                'card': card,
+                'card_action': ActionTypes.ATK_1,
+                'caller': card,
+            },
+        )
+        if used_last_turn_idx != -1:
+            return Response(
+                ResponseType.CORE,
+                Notify('Glissando cannot be used this turn.', [card.player.unique_id], default_timeout),
+            )
 
-        last_round = card.env.cache.get(card, HenryWang._LAST_ATK1_ROUND_KEY, None)
-        if last_round is not None and card.env.round_id - last_round <= 2:
-            return card.generate_response(data={MESSAGE_KEY: "You cannot use this attack this turn!"})
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
+
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, HenryWang))
         )
 
-        card.env.cache.set(card, HenryWang._LAST_ATK1_ROUND_KEY, card.env.round_id)
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, TransferCard
-
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         opponent = card.player.opponent
 
-        def generate_packet():
+        def generate_packet() -> PacketType:
             deck = opponent.cardholders[Pile.DECK]
             discard = opponent.cardholders[Pile.DISCARD]
 
@@ -53,21 +58,22 @@ class HenryWang(AVGECharacterCard):
             packet : PacketType = []
             if len(deck) > 0:
                 top = deck.peek()
-                packet.append(TransferCard(top, deck, discard, ActionTypes.ATK_2, card))
+                packet.append(TransferCard(top, deck, discard, ActionTypes.ATK_2, card, None))
                 if isinstance(top, AVGEItemCard):
                     damage = 100
 
-            packet.insert(
-                0,
+            packet.append(
                 AVGECardHPChange(
                     opponent.get_active_card(),
                     damage,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_2,
+                    None,
                     card,
                 ),
             )
             return packet
+
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, HenryWang)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

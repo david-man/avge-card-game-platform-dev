@@ -17,13 +17,13 @@ class _JuanBenchAttackBoost(AVGEModifier):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
             return False
-        if not isinstance(event.caller_card, AVGECharacterCard):
+        if not isinstance(event.caller, AVGECharacterCard):
             return False
-        if event.caller_card != self.owner_card.player.get_active_card():
+        if event.caller != self.owner_card.player.get_active_card():
             return False
         if self.owner_card.cardholder.pile_type != Pile.BENCH:
             return False
-        if event.caller_card.card_type != CardType.BRASS:
+        if event.caller.card_type != CardType.BRASS:
             return False
         return True
 
@@ -38,24 +38,20 @@ class _JuanBenchAttackBoost(AVGEModifier):
         event : AVGECardHPChange = self.attached_event
         # add +20 damage to the attack
         event.modify_magnitude(20)
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Notify("Baking Buff! +20 damage", all_players, default_timeout))
 
 
 class JuanBurgos(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.BRASS, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Concert Pitch'
         self.has_passive = True
-        self.has_active = False
-    @staticmethod
-    def passive(card : AVGECharacterCard) -> Response:
+    def passive(self) -> Response:
         # attach bench boost modifier globally while in play
-        card.add_listener(_JuanBenchAttackBoost(card))
-        return card.generate_response()
+        self.add_listener(_JuanBenchAttackBoost(self))
+        return Response(ResponseType.ACCEPT, Data())
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
         opponent = card.player.opponent
         def generate_packet() -> PacketType:
@@ -76,8 +72,8 @@ class JuanBurgos(AVGECharacterCard):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.BRASS,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )]
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JuanBurgos)))
-
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

@@ -1,100 +1,185 @@
 from __future__ import annotations
 
 from card_game.avge_abstracts import *
-
 from card_game.constants import *
 from card_game.engine.engine_constants import *
+from card_game.internal_events import AVGECardStatusChange, TransferCard, AVGECardHPChange
+
+
+class _BenchMaidReactor(AVGEReactor):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FionaLi), group=EngineGroup.EXTERNAL_REACTORS)
+        self.owner_card = owner_card
+
+    def update_status(self):
+        return
+
+    def event_match(self, event):
+        if not isinstance(event, TransferCard):
+            return False
+        if self.owner_card.player is None:
+            return False
+
+        moved_to_bench = (
+            event.card == self.owner_card
+            and event.pile_to.pile_type == Pile.BENCH
+            and event.pile_to.player == self.owner_card.player
+        )
+        moved_from_bench = (
+            event.card == self.owner_card
+            and event.pile_from.pile_type == Pile.BENCH
+            and event.pile_from.player == self.owner_card.player
+        )
+        if moved_to_bench or moved_from_bench:
+            return True
+
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.BENCH:
+            return False
+
+        return (
+            event.pile_from.pile_type == Pile.ACTIVE
+            and event.pile_from.player == self.owner_card.player
+            and isinstance(event.card, AVGECharacterCard)
+        ) or (
+            event.pile_to.pile_type == Pile.ACTIVE
+            and event.pile_to.player == self.owner_card.player
+            and isinstance(event.card, AVGECharacterCard)
+        )
+
+    def react(self, args=None) -> Response:
+        if args is None:
+            args = {}
+        event = self.attached_event
+        assert isinstance(event, TransferCard)
+
+        owner = self.owner_card
+        packet: PacketType = []
+
+        moved_to_bench = (
+            event.card == owner
+            and event.pile_to.pile_type == Pile.BENCH
+            and event.pile_to.player == owner.player
+        )
+        moved_from_bench = (
+            event.card == owner
+            and event.pile_from.pile_type == Pile.BENCH
+            and event.pile_from.player == owner.player
+        )
+
+        if moved_to_bench:
+            active = owner.player.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardStatusChange(
+                        StatusEffect.MAID,
+                        StatusChangeType.ADD,
+                        active,
+                        ActionTypes.PASSIVE,
+                        owner,
+                        None,
+                    )
+                )
+        elif moved_from_bench:
+            active = owner.player.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardStatusChange(
+                        StatusEffect.MAID,
+                        StatusChangeType.ERASE,
+                        active,
+                        ActionTypes.PASSIVE,
+                        owner,
+                        None,
+                    )
+                )
+        else:
+            if (
+                event.pile_from.pile_type == Pile.ACTIVE
+                and event.pile_from.player == owner.player
+                and isinstance(event.card, AVGECharacterCard)
+            ):
+                packet.append(
+                    AVGECardStatusChange(
+                        StatusEffect.MAID,
+                        StatusChangeType.ERASE,
+                        event.card,
+                        ActionTypes.PASSIVE,
+                        owner,
+                        None,
+                    )
+                )
+            if (
+                event.pile_to.pile_type == Pile.ACTIVE
+                and event.pile_to.player == owner.player
+                and isinstance(event.card, AVGECharacterCard)
+            ):
+                packet.append(
+                    AVGECardStatusChange(
+                        StatusEffect.MAID,
+                        StatusChangeType.ADD,
+                        event.card,
+                        ActionTypes.PASSIVE,
+                        owner,
+                        None,
+                    )
+                )
+
+        if len(packet) > 0:
+            owner.propose(AVGEPacket(packet, AVGEEngineID(owner, ActionTypes.PASSIVE, FionaLi)))
+
+        return Response(ResponseType.ACCEPT, Notify('Getting Dressed: Active card gets the maid status', all_players, default_timeout))
 
 
 class FionaLi(AVGECharacterCard):
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.STRING, 1, 1)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Vibrato'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardStatusChange, TransferCard
-        owner_card = card
+    def passive(self) -> Response:
+        self.add_listener(_BenchMaidReactor(self))
 
-        class _BenchMaidReactor(AVGEReactor):
-            def __init__(self):
-                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FionaLi), group=EngineGroup.EXTERNAL_REACTORS)
-                self.owner_card = owner_card
-
-            def update_status(self):
-                return
-
-            def event_match(self, event):
-                if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.BENCH:
-                    return False
-                if not isinstance(event, TransferCard):
-                    return False
-                if event.pile_from.pile_type == Pile.ACTIVE and event.pile_from.player == self.owner_card.player:
-                    return isinstance(event.card, AVGECharacterCard)
-                if event.pile_to.pile_type == Pile.ACTIVE and event.pile_to.player == self.owner_card.player:
-                    return isinstance(event.card, AVGECharacterCard)
-                return False
-
-            def react(self, args=None) -> Response:
-                if args is None:
-                    args = {}
-                event = self.attached_event
-                assert isinstance(event, TransferCard)
-
-                if event.pile_from.pile_type == Pile.ACTIVE and event.pile_from.player == self.owner_card.player:
-                    if isinstance(event.card, AVGECharacterCard):
-                        self.owner_card.propose(
-                            AVGEPacket([
-                                AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.ERASE, event.card, ActionTypes.NONCHAR, self.owner_card)
-                            ], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FionaLi))
-                        )
-                        return self.generate_response()
-
-                if event.pile_to.pile_type == Pile.ACTIVE and event.pile_to.player == self.owner_card.player:
-                    if isinstance(event.card, AVGECharacterCard):
-                        self.owner_card.propose(
-                            AVGEPacket([
-                                AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.ADD, event.card, ActionTypes.NONCHAR, self.owner_card)
-                            ], AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FionaLi))
-                        )
-                        return self.generate_response()
-
-                return self.generate_response()
-
-        if owner_card.cardholder.pile_type == Pile.BENCH:
-            active = owner_card.player.get_active_card()
+        if self.cardholder is not None and self.cardholder.pile_type == Pile.BENCH:
+            active = self.player.get_active_card()
             if isinstance(active, AVGECharacterCard):
-                owner_card.propose(
-                    AVGEPacket([
-                        AVGECardStatusChange(StatusEffect.MAID, StatusChangeType.ADD, active, ActionTypes.PASSIVE, owner_card)
-                    ], AVGEEngineID(owner_card, ActionTypes.PASSIVE, FionaLi))
-                )
+                def apply_initial_maid() -> PacketType:
+                    packet: PacketType = []
+                    packet.append(
+                        AVGECardStatusChange(
+                            StatusEffect.MAID,
+                            StatusChangeType.ADD,
+                            active,
+                            ActionTypes.PASSIVE,
+                            self,
+                            None,
+                        )
+                    )
+                    return packet
 
-        owner_card.add_listener(_BenchMaidReactor())
-        return owner_card.generate_response()
+                self.propose(AVGEPacket([apply_initial_maid], AVGEEngineID(self, ActionTypes.PASSIVE, FionaLi)))
+                return Response(ResponseType.CORE, Notify('Getting Dressed: Active card gets the maid status', all_players, default_timeout))
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+        return Response(ResponseType.CORE, Data())
+
+    def atk_1(self, card: AVGECharacterCard) -> Response:
 
         def generate_packet() -> PacketType:
             active = card.player.opponent.get_active_card()
-            if not isinstance(active, AVGECharacterCard):
-                return []
-            return [
-                AVGECardHPChange(
-                    active,
-                    40,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.STRING,
-                    ActionTypes.ATK_1,
-                    card,
+            packet: PacketType = []
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        40,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.STRING,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
                 )
-            ]
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, FionaLi)))
 
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

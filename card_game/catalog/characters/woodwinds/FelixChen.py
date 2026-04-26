@@ -3,113 +3,113 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import AVGECardHPChange, InputEvent
+
+
+class FelixSynesthesiaModifier(AVGEModifier):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FelixChen), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+        self.owner_card = owner_card
+
+    def event_match(self, event):
+        if not isinstance(event, AVGECardHPChange):
+            return False
+        if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
+            return False
+        if event.change_type == CardType.ALL:
+            return False
+        if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_1]:
+            return False
+        if not isinstance(event.caller, AVGECharacterCard):
+            return False
+        if event.caller.player != self.owner_card.player.opponent:
+            return False
+        if event.target_card.player != self.owner_card.player:
+            return False
+
+        types = [c.card_type for c in self.owner_card.player.get_cards_in_play()]
+        return len(types) == len(set(types))
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def modify(self, args=None):
+        if args is None:
+            args = {}
+        event = self.attached_event
+        assert isinstance(event, AVGECardHPChange)
+        event.modify_magnitude(-10)
+        return Response(ResponseType.ACCEPT, Notify('Synesthesia: Damage from opponent attacks reduced by 10.', all_players, default_timeout))
 
 
 class FelixChen(AVGECharacterCard):
-    _COIN_KEY_0 = "felixchen_coin_0"
-    _COIN_KEY_1 = "felixchen_coin_1"
+    _COIN_KEY_0 = 'felixchen_coin_0'
+    _COIN_KEY_1 = 'felixchen_coin_1'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3, 0)
         self.has_passive = True
-        self.has_active = False
+        self.atk_1_name = 'Multiphonics'
 
-    @staticmethod
-    def passive(card: AVGECharacterCard) -> Response:
-        owner_card = card
+    def passive(self) -> Response:
+        self.add_listener(FelixSynesthesiaModifier(self))
+        return Response(ResponseType.CORE, Data())
 
-        class _FelixDamageReducer(AVGEModifier):
-            def __init__(self):
-                super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, FelixChen), group=EngineGroup.EXTERNAL_MODIFIERS_2)
-
-            def event_match(self, event):
-                from card_game.internal_events import AVGECardHPChange
-
-                if not isinstance(event, AVGECardHPChange):
-                    return False
-                if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
-                    return False
-                if event.target_card.player != owner_card.player:
-                    return False
-                if event.change_type == CardType.ALL:
-                    return False
-                types = [c.card_type for c in owner_card.player.get_cards_in_play()]
-                return len(types) == len(set(types))
-
-            def event_effect(self) -> bool:
-                return True
-
-            def update_status(self):
-                return
-
-            def make_announcement(self) -> bool:
-                return True
-
-            def package(self):
-                return "FelixChen Damage Reducer"
-
-            def modify(self, args=None):
-                if args is None:
-                    args = {}
-                from card_game.internal_events import AVGECardHPChange
-
-                event = self.attached_event
-                assert isinstance(event, AVGECardHPChange)
-                event.modify_magnitude(-10)
-                return self.generate_response()
-
-        owner_card.add_listener(_FelixDamageReducer())
-        return owner_card.generate_response()
-
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
-
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         opponent = card.player.opponent
-        bench = opponent.cardholders[Pile.BENCH]
-        if len(bench) == 0:
-            return card.generate_response()
-
         roll0 = card.env.cache.get(card, FelixChen._COIN_KEY_0, None, True)
         roll1 = card.env.cache.get(card, FelixChen._COIN_KEY_1, None, True)
-        if roll0 is None:
-            return card.generate_response(
+        if roll0 is None or roll1 is None:
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
                             card.player,
                             [FelixChen._COIN_KEY_0, FelixChen._COIN_KEY_1],
-                            InputType.COIN,
                             lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            {LABEL_FLAG: "felixchen_multiphonics"},
+                            CoinflipData('Multiphonics: Flip 2 coins.')
                         )
-                    ]
-                },
+                    ]),
             )
 
-        if roll0 == 1 and roll1 == 1:
-            dmg = 50
-        elif roll0 == 0 and roll1 == 0:
-            dmg = 100
-        else:
-            return card.generate_response()
-        
+        heads = int(roll0) + int(roll1)
 
-        packet : PacketType = [
-            AVGECardHPChange(
-                target,
-                dmg,
-                AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.WOODWIND,
-                ActionTypes.ATK_1,
-                card,
-            )
-            for target in opponent.cardholders[Pile.BENCH] if isinstance(target, AVGECharacterCard)
-        ]
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, FelixChen)))
-        return card.generate_response()
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            if heads == 2:
+                for target in opponent.cardholders[Pile.BENCH]:
+                    if isinstance(target, AVGECharacterCard):
+                        packet.append(
+                            AVGECardHPChange(
+                                target,
+                                50,
+                                AVGEAttributeModifier.SUBSTRACTIVE,
+                                CardType.WOODWIND,
+                                ActionTypes.ATK_1,
+                                None,
+                                card,
+                            )
+                        )
+            elif heads == 0:
+                active = opponent.get_active_card()
+                if isinstance(active, AVGECharacterCard):
+                    packet.append(
+                        AVGECardHPChange(
+                            active,
+                            100,
+                            AVGEAttributeModifier.SUBSTRACTIVE,
+                            CardType.WOODWIND,
+                            ActionTypes.ATK_1,
+                            None,
+                            card,
+                        )
+                    )
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, FelixChen)))
+        return self.generic_response(card, ActionTypes.ATK_1)

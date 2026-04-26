@@ -6,6 +6,7 @@ import math
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
+from card_game.internal_events import InputEvent, TransferCard, EmptyEvent, AVGECardHPChange, PlayCharacterCard
 
 
 class DavidNextAttackHalvedModifier(AVGEModifier):
@@ -24,9 +25,9 @@ class DavidNextAttackHalvedModifier(AVGEModifier):
             return False
         if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
             return False
-        if(not isinstance(event.caller_card, AVGECharacterCard)):
+        if(not isinstance(event.caller, AVGECharacterCard)):
             return False
-        return event.caller_card.player == self.owner_card.player.opponent
+        return event.caller.player == self.owner_card.player.opponent
 
     def event_effect(self) -> bool:
         return True
@@ -40,98 +41,127 @@ class DavidNextAttackHalvedModifier(AVGEModifier):
     def modify(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import AVGECardHPChange
 
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
+        # rounded up halving: x - floor(x/2) == ceil(x/2)
         event.modify_magnitude(-math.floor(event.magnitude / 2))
-        return self.generate_response()
+        return Response(ResponseType.ACCEPT, Notify('Damper Pedal: Incoming damage halved.', all_players, default_timeout))
 
 
 class DavidMan(AVGECharacterCard):
-    _ACTIVE_USED_KEY = "davidman_active_used"
     _ACTIVE_CHOICE_KEY = "davidman_active_choice"
     _RANDOM_PICK_KEY = "davidman_active_pick"
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.PIANO, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
-        self.has_passive = False
-        self.has_active = True
+        self.atk_1_name = 'Damper Pedal'
+        self.active_name = 'Reverse Heist'
 
-    @staticmethod
-    def can_play_active(card: AVGECharacterCard) -> bool:
-        if card.env.player_turn != card.player:
+    def can_play_active(self) -> bool:
+        if self.env.player_turn != self.player:
             return False
-        discard = card.player.cardholders[Pile.DISCARD]
+        discard = self.player.cardholders[Pile.DISCARD]
         if len(discard) == 0:
             return False
-        used = card.env.cache.get(card, DavidMan._ACTIVE_USED_KEY, None)
-        return used != card.env.round_id
+        _, already_used_idx = self.env.check_history(
+            self.env.round_id,
+            PlayCharacterCard,
+            {
+                'card': self,
+                'card_action': ActionTypes.ACTIVATE_ABILITY,
+                'caller': self,
+            },
+        )
+        return already_used_idx == -1
 
-    @staticmethod
-    def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard, EmptyEvent
+    def active(self) -> Response:
+        discard = self.player.cardholders[Pile.DISCARD]
+        deck = self.player.cardholders[Pile.DECK]
+        if len(discard) == 0:
+            return Response(ResponseType.CORE, Data())
 
-        discard = card.player.cardholders[Pile.DISCARD]
-        deck = card.player.cardholders[Pile.DECK]
-        if(len(discard) == 0):
-            return card.generate_response(data={MESSAGE_KEY: "No cards in discard to use!"})
-        card.env.cache.set(card, DavidMan._ACTIVE_USED_KEY, card.env.round_id)
-
-        if card.env.cache.get(card, DavidMan._RANDOM_PICK_KEY, None) is None:
+        if self.env.cache.get(self, DavidMan._RANDOM_PICK_KEY, None) is None:
             topick = random.choice(list(discard))
-            card.env.cache.set(card, DavidMan._RANDOM_PICK_KEY, topick)
+            self.env.cache.set(self, DavidMan._RANDOM_PICK_KEY, topick)
 
-        choice = card.env.cache.get(card, DavidMan._ACTIVE_CHOICE_KEY, None, True)
+        choice = self.env.cache.get(self, DavidMan._ACTIVE_CHOICE_KEY, None, True)
         if choice is None:
-            return card.generate_response(
+            return Response(
                 ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
+                Interrupt[AVGEEvent]([
                         InputEvent(
-                            card.player,
+                            self.player,
                             [DavidMan._ACTIVE_CHOICE_KEY],
-                            InputType.BINARY,
-                            lambda r : True,
+                            lambda r: True,
                             ActionTypes.ACTIVATE_ABILITY,
-                            card,
-                            {LABEL_FLAG: "david_man_top_bottom",
-                             "card": card.env.cache.get(card, DavidMan._RANDOM_PICK_KEY, None)},
+                            self,
+                            StrSelectionQuery(
+                                'Reverse Heist: Put the chosen discard on top or bottom of your deck?',
+                                ['top', 'bottom'],
+                                ['top', 'bottom'],
+                                False,
+                                False,
+                            )
                         )
-                    ]
-                },
+                    ]),
             )
 
-        chosen_card = card.env.cache.get(card, DavidMan._RANDOM_PICK_KEY, None, True)
-        new_idx = 0 if choice == "top" else None
+        chosen_card = self.env.cache.get(self, DavidMan._RANDOM_PICK_KEY, None, True)
+        new_idx = 0 if choice == 'top' else None
 
         def generate_packet() -> PacketType:
-            if chosen_card is None or chosen_card not in discard:
-                return [EmptyEvent(ActionTypes.ACTIVATE_ABILITY, card,response_data={MESSAGE_KEY:"DavidMan active had no valid discard target at resolve."})]
-            return [
-                TransferCard(chosen_card, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, new_idx)]
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, DavidMan)))
-        return card.generate_response()
+            packet: PacketType = []
+            if not isinstance(chosen_card, AVGECard) or chosen_card not in discard:
+                return packet
+            packet.append(
+                EmptyEvent(
+                    ActionTypes.ACTIVATE_ABILITY,
+                    self,
+                    ResponseType.CORE,
+                    RevealCards(
+                        'Reverse Heist: Randomly selected discard card',
+                        [self.player.unique_id],
+                        default_timeout,
+                        [chosen_card],
+                    ),
+                )
+            )
+            packet.append(
+                TransferCard(
+                    chosen_card,
+                    discard,
+                    deck,
+                    ActionTypes.ACTIVATE_ABILITY,
+                    self,
+                    None,
+                    new_idx,
+                )
+            )
+            return packet
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, DavidMan)))
+        return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
+
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         def gen() -> PacketType:
-            return [
+            packet: PacketType = []
+            packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
                     20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PIANO,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-            ]
+            )
+            return packet
+
         card.propose(
             AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, DavidMan))
         )
 
         card.add_listener(DavidNextAttackHalvedModifier(card))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

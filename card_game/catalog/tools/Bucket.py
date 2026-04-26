@@ -3,6 +3,8 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.constants import ActionTypes
+
+
 class Bucket(AVGEToolCard):
 
     def __init__(self, unique_id):
@@ -11,6 +13,7 @@ class Bucket(AVGEToolCard):
 
     def deactivate_card(self):
         from card_game.internal_events import AVGECardTypeChange
+
         assert self.card_attached is not None
         assert self.original_type is not None
         
@@ -20,6 +23,7 @@ class Bucket(AVGEToolCard):
                     self.card_attached,
                     self.original_type,
                     ActionTypes.ENV,
+                    self,
                     None,
                 )
             ]
@@ -27,8 +31,8 @@ class Bucket(AVGEToolCard):
         super().deactivate_card()
 
     def play_card(self) -> Response:
-        from card_game.avge_abstracts.AVGECardholder import AVGEToolCardholder
         from card_game.internal_events import AVGECardTypeChange
+
         assert self.card_attached is not None
         self.original_type = self.card_attached.card_type
         self.propose(
@@ -36,9 +40,11 @@ class Bucket(AVGEToolCard):
                 AVGECardTypeChange(
                     self.card_attached,
                     CardType.PERCUSSION,
-                    ActionTypes.ENV,
+                    ActionTypes.NONCHAR,
+                    self,
                     None,
                 )
             ], AVGEEngineID(self, ActionTypes.PASSIVE, Bucket))
         )
-        return self.generate_response()
+
+        return Response(ResponseType.CORE, Data())

@@ -10,13 +10,12 @@ class Lio(AVGESupporterCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	@staticmethod
-	def play_card(card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		from card_game.internal_events import TransferCard
 
 		player = card.player
 		def hand() -> PacketType:
-			packet : PacketType= []
+			packet: PacketType = []
 			for c in player.cardholders[Pile.HAND]:
 				def gen(k=c) -> PacketType:
 					return [TransferCard(
@@ -25,6 +24,7 @@ class Lio(AVGESupporterCard):
 						player.cardholders[Pile.DECK],
 						ActionTypes.NONCHAR,
 						card,
+						None,
 						random.randint(0, len(player.cardholders[Pile.DECK])),
 					)]
 				packet.append(
@@ -33,7 +33,7 @@ class Lio(AVGESupporterCard):
 			return packet
 
 		def draw() -> PacketType:
-			packet : PacketType= []
+			packet: PacketType = []
 			deck = player.cardholders[Pile.DECK]
 			for _ in range(4):
 				def gen() -> PacketType:
@@ -44,7 +44,9 @@ class Lio(AVGESupporterCard):
 						deck,
 						player.cardholders[Pile.HAND],
 						ActionTypes.NONCHAR,
-						card)]
+						card,
+						None,
+					)]
 				packet.append(
 					gen
 				)
@@ -52,4 +54,4 @@ class Lio(AVGESupporterCard):
 
 		card.propose(AVGEPacket([hand, draw], AVGEEngineID(card, ActionTypes.NONCHAR, Lio)))
 
-		return card.generate_response(ResponseType.CORE)
+		return self.generic_response(card)

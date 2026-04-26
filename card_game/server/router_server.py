@@ -5,14 +5,23 @@ from dataclasses import field
 from datetime import datetime, timezone
 from threading import RLock
 from time import monotonic
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 import json
 import os
 import random
 import socket
+import urllib.error
+import urllib.request
 
 from flask import Flask, jsonify, make_response, request
+from flask_socketio import SocketIO, emit
+
+from ..avge_abstracts.AVGECards import AVGECard
+from ..avge_abstracts.AVGECards import AVGECharacterCard
+from ..avge_abstracts.AVGECards import AVGEItemCard
+from ..avge_abstracts.AVGECards import AVGEToolCard
+from ..catalog import *
 
 try:
     from .room_worker import RoomWorker
@@ -26,13 +35,69 @@ except ImportError:  # pragma: no cover - direct script execution fallback
 
 SESSION_COOKIE_NAME = "avge_session"
 SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
-ROOM_FINISH_GRACE_SECONDS = 90
+ROOM_FINISH_GRACE_SECONDS = 5
 ROOM_HOST = os.getenv("ROOM_HOST", "127.0.0.1")
 ROOM_BASE_PORT = int(os.getenv("ROOM_BASE_PORT", "5700"))
 ROUTER_DB_PATH = os.getenv(
     "ROUTER_DB_PATH",
     os.path.join(os.path.dirname(__file__), "router.sqlite3"),
 )
+DECK_REQUIRED_CARD_COUNT = 20
+DECK_MAX_ITEM_OR_TOOL_COPIES = 2
+DECK_MAX_OTHER_COPIES = 1
+
+
+def _resolve_catalog_card_class(card_id: str) -> type[AVGECard] | None:
+    symbol = globals().get(card_id)
+    if not isinstance(symbol, type):
+        return None
+    if not issubclass(symbol, AVGECard):
+        return None
+    return symbol
+
+
+def _validate_deck_cards(
+    raw_cards: list[Any],
+    *,
+    require_exact_count: bool = True,
+    require_at_least_one_character: bool = False,
+) -> str | None:
+    normalized_cards: list[str] = []
+    copies_by_card_id: dict[str, int] = {}
+    has_character_card = False
+
+    for raw_card_id in raw_cards:
+        if not isinstance(raw_card_id, str) or not raw_card_id.strip():
+            return "cards must contain non-empty string IDs."
+
+        card_id = raw_card_id.strip()
+        resolved_symbol = _resolve_catalog_card_class(card_id)
+        if resolved_symbol is None:
+            return f"Unknown card ID: {card_id}"
+        if issubclass(resolved_symbol, AVGECharacterCard):
+            has_character_card = True
+
+        next_count = copies_by_card_id.get(card_id, 0) + 1
+        max_copies = (
+            DECK_MAX_ITEM_OR_TOOL_COPIES
+            if issubclass(resolved_symbol, AVGEItemCard) or issubclass(resolved_symbol, AVGEToolCard)
+            else DECK_MAX_OTHER_COPIES
+        )
+        if next_count > max_copies:
+            if max_copies == DECK_MAX_ITEM_OR_TOOL_COPIES:
+                return f"{card_id} exceeds max copies ({DECK_MAX_ITEM_OR_TOOL_COPIES}) for item/tool cards."
+            return f"{card_id} exceeds max copies ({DECK_MAX_OTHER_COPIES})."
+
+        copies_by_card_id[card_id] = next_count
+        normalized_cards.append(card_id)
+
+    if require_exact_count and len(normalized_cards) != DECK_REQUIRED_CARD_COUNT:
+        return f"Deck must contain exactly {DECK_REQUIRED_CARD_COUNT} cards."
+
+    if require_at_least_one_character and not has_character_card:
+        return "Deck must contain at least 1 character card."
+
+    return None
 
 
 @dataclass
@@ -68,6 +133,9 @@ class RoomRecord:
 @dataclass
 class RouterState:
     sessions_by_id: dict[str, SessionIdentity] = field(default_factory=dict)
+    active_session_id_by_user_id: dict[str, str] = field(default_factory=dict)
+    superseded_session_ids: set[str] = field(default_factory=set)
+    auth_socket_sids_by_session_id: dict[str, set[str]] = field(default_factory=dict)
     rooms_by_id: dict[str, RoomRecord] = field(default_factory=dict)
     room_id_by_session_id: dict[str, str] = field(default_factory=dict)
     queue: list[QueueEntry] = field(default_factory=list)
@@ -79,6 +147,36 @@ class MatchmakingRouter:
         self._lock = RLock()
         self._next_room_port = ROOM_BASE_PORT
         self._storage = RouterStorage(db_path or ROUTER_DB_PATH)
+        self._superseded_notifier: Callable[[str, list[str]], None] | None = None
+
+    def set_superseded_notifier(self, notifier: Callable[[str, list[str]], None] | None) -> None:
+        with self._lock:
+            self._superseded_notifier = notifier
+
+    def register_auth_socket(self, session_id: str, socket_sid: str) -> tuple[bool, dict[str, Any]]:
+        with self._lock:
+            session = self._ensure_session_locked(session_id)
+            if session is None:
+                error_body, _ = self.session_error_payload(session_id)
+                return False, error_body
+
+            for sid_set in self._state.auth_socket_sids_by_session_id.values():
+                sid_set.discard(socket_sid)
+
+            sid_set = self._state.auth_socket_sids_by_session_id.setdefault(session.session_id, set())
+            sid_set.add(socket_sid)
+            return True, {"ok": True, "session_id": session.session_id}
+
+    def unregister_auth_socket(self, socket_sid: str) -> None:
+        with self._lock:
+            empty_keys: list[str] = []
+            for session_id, sid_set in self._state.auth_socket_sids_by_session_id.items():
+                sid_set.discard(socket_sid)
+                if not sid_set:
+                    empty_keys.append(session_id)
+
+            for session_id in empty_keys:
+                self._state.auth_socket_sids_by_session_id.pop(session_id, None)
 
     def login(self, username: str, existing_session_id: str | None) -> SessionIdentity:
         now = monotonic()
@@ -87,34 +185,58 @@ class MatchmakingRouter:
         with self._lock:
             self._cleanup_expired_rooms_locked(now)
 
+            reusable_session_id: str | None = None
+
             if existing_session_id:
                 existing = self._state.sessions_by_id.get(existing_session_id)
                 if existing is not None and existing.user_id == user_id:
-                    existing.last_seen_at = now
-                    self._storage.create_or_update_session(
-                        session_id=existing.session_id,
-                        user_id=user_id,
-                        ttl_seconds=SESSION_COOKIE_MAX_AGE_SECONDS,
-                    )
-                    return existing
+                    reusable_session_id = existing.session_id
 
                 stored_session = self._storage.get_session(existing_session_id)
                 if stored_session is not None and stored_session.user_id == user_id:
+                    reusable_session_id = stored_session.session_id
+
+            prior_active_session_id = self._state.active_session_id_by_user_id.get(user_id)
+            session_id_for_room_transfer = (
+                prior_active_session_id
+                if isinstance(prior_active_session_id, str)
+                and prior_active_session_id
+                and prior_active_session_id != reusable_session_id
+                else None
+            )
+
+            self._supersede_user_sessions_locked(
+                user_id=user_id,
+                keep_session_id=reusable_session_id,
+                preserve_room_session_id=session_id_for_room_transfer,
+            )
+
+            if reusable_session_id:
+                reusable = self._state.sessions_by_id.get(reusable_session_id)
+                if reusable is None:
+                    stored_reusable = self._storage.get_session(reusable_session_id)
+                    if stored_reusable is not None:
+                        reusable = SessionIdentity(
+                            session_id=stored_reusable.session_id,
+                            user_id=stored_reusable.user_id,
+                            username=stored_reusable.username,
+                            created_at=now,
+                            last_seen_at=now,
+                            current_room_id=self._state.room_id_by_session_id.get(stored_reusable.session_id),
+                        )
+                        self._state.sessions_by_id[reusable.session_id] = reusable
+
+                if reusable is not None and reusable.user_id == user_id:
+                    reusable.username = username
+                    reusable.last_seen_at = now
                     self._storage.create_or_update_session(
-                        session_id=stored_session.session_id,
+                        session_id=reusable.session_id,
                         user_id=user_id,
                         ttl_seconds=SESSION_COOKIE_MAX_AGE_SECONDS,
                     )
-                    hydrated = SessionIdentity(
-                        session_id=stored_session.session_id,
-                        user_id=stored_session.user_id,
-                        username=stored_session.username,
-                        created_at=now,
-                        last_seen_at=now,
-                        current_room_id=self._state.room_id_by_session_id.get(stored_session.session_id),
-                    )
-                    self._state.sessions_by_id[hydrated.session_id] = hydrated
-                    return hydrated
+                    self._state.active_session_id_by_user_id[user_id] = reusable.session_id
+                    self._state.superseded_session_ids.discard(reusable.session_id)
+                    return reusable
 
             session = SessionIdentity(
                 session_id=uuid4().hex,
@@ -129,6 +251,18 @@ class MatchmakingRouter:
                 ttl_seconds=SESSION_COOKIE_MAX_AGE_SECONDS,
             )
             self._state.sessions_by_id[session.session_id] = session
+            self._state.active_session_id_by_user_id[user_id] = session.session_id
+            self._state.superseded_session_ids.discard(session.session_id)
+
+            if isinstance(session_id_for_room_transfer, str) and session_id_for_room_transfer:
+                handoff = self._transfer_room_assignment_locked(
+                    from_session_id=session_id_for_room_transfer,
+                    to_session_id=session.session_id,
+                )
+                if handoff is not None:
+                    room, slot = handoff
+                    self._notify_room_session_takeover(room, slot, session_id_for_room_transfer, session.session_id)
+
             return session
 
     def session(self, session_id: str) -> SessionIdentity | None:
@@ -143,6 +277,10 @@ class MatchmakingRouter:
 
             self._state.queue = [entry for entry in self._state.queue if entry.session_id != session_id]
             self._state.sessions_by_id.pop(session_id, None)
+            self._state.auth_socket_sids_by_session_id.pop(session_id, None)
+            if self._state.active_session_id_by_user_id.get(session.user_id) == session_id:
+                self._state.active_session_id_by_user_id.pop(session.user_id, None)
+            self._state.superseded_session_ids.discard(session_id)
             self._storage.revoke_session(session_id)
             return True
 
@@ -152,34 +290,58 @@ class MatchmakingRouter:
         with self._lock:
             self._cleanup_expired_rooms_locked(now)
 
+            reusable_session_id: str | None = None
+
             if existing_session_id:
                 existing = self._state.sessions_by_id.get(existing_session_id)
-                if existing is not None:
-                    existing.username = username
-                    existing.last_seen_at = now
-                    self._storage.create_or_update_session(
-                        session_id=existing.session_id,
-                        user_id=user_id,
-                        ttl_seconds=SESSION_COOKIE_MAX_AGE_SECONDS,
-                    )
-                    return existing
+                if existing is not None and existing.user_id == user_id:
+                    reusable_session_id = existing.session_id
 
                 stored_session = self._storage.get_session(existing_session_id)
-                if stored_session is not None:
+                if stored_session is not None and stored_session.user_id == user_id:
+                    reusable_session_id = stored_session.session_id
+
+            prior_active_session_id = self._state.active_session_id_by_user_id.get(user_id)
+            session_id_for_room_transfer = (
+                prior_active_session_id
+                if isinstance(prior_active_session_id, str)
+                and prior_active_session_id
+                and prior_active_session_id != reusable_session_id
+                else None
+            )
+
+            self._supersede_user_sessions_locked(
+                user_id=user_id,
+                keep_session_id=reusable_session_id,
+                preserve_room_session_id=session_id_for_room_transfer,
+            )
+
+            if reusable_session_id:
+                reusable = self._state.sessions_by_id.get(reusable_session_id)
+                if reusable is None:
+                    stored_reusable = self._storage.get_session(reusable_session_id)
+                    if stored_reusable is not None:
+                        reusable = SessionIdentity(
+                            session_id=stored_reusable.session_id,
+                            user_id=stored_reusable.user_id,
+                            username=username,
+                            created_at=now,
+                            last_seen_at=now,
+                            current_room_id=self._state.room_id_by_session_id.get(stored_reusable.session_id),
+                        )
+                        self._state.sessions_by_id[reusable.session_id] = reusable
+
+                if reusable is not None and reusable.user_id == user_id:
+                    reusable.username = username
+                    reusable.last_seen_at = now
                     self._storage.create_or_update_session(
-                        session_id=stored_session.session_id,
+                        session_id=reusable.session_id,
                         user_id=user_id,
                         ttl_seconds=SESSION_COOKIE_MAX_AGE_SECONDS,
                     )
-                    session = SessionIdentity(
-                        session_id=stored_session.session_id,
-                        user_id=stored_session.user_id,
-                        username=username,
-                        created_at=now,
-                        last_seen_at=now,
-                    )
-                    self._state.sessions_by_id[session.session_id] = session
-                    return session
+                    self._state.active_session_id_by_user_id[user_id] = reusable.session_id
+                    self._state.superseded_session_ids.discard(reusable.session_id)
+                    return reusable
 
             session = SessionIdentity(
                 session_id=uuid4().hex,
@@ -194,7 +356,33 @@ class MatchmakingRouter:
                 ttl_seconds=SESSION_COOKIE_MAX_AGE_SECONDS,
             )
             self._state.sessions_by_id[session.session_id] = session
+            self._state.active_session_id_by_user_id[user_id] = session.session_id
+            self._state.superseded_session_ids.discard(session.session_id)
+
+            if isinstance(session_id_for_room_transfer, str) and session_id_for_room_transfer:
+                handoff = self._transfer_room_assignment_locked(
+                    from_session_id=session_id_for_room_transfer,
+                    to_session_id=session.session_id,
+                )
+                if handoff is not None:
+                    room, slot = handoff
+                    self._notify_room_session_takeover(room, slot, session_id_for_room_transfer, session.session_id)
+
             return session
+
+    def session_error_payload(self, session_id: str | None) -> tuple[dict[str, Any], int]:
+        if not isinstance(session_id, str) or not session_id.strip():
+            return {"ok": False, "error": "session_id is required.", "error_code": "session_id_required"}, 400
+
+        normalized = session_id.strip()
+        if normalized in self._state.superseded_session_ids:
+            return {
+                "ok": False,
+                "error": "Session superseded by another login.",
+                "error_code": "session_superseded",
+            }, 401
+
+        return {"ok": False, "error": "Unknown session.", "error_code": "unknown_session"}, 401
 
     def enqueue(self, session_id: str) -> dict[str, Any]:
         with self._lock:
@@ -203,7 +391,8 @@ class MatchmakingRouter:
 
             session = self._ensure_session_locked(session_id)
             if session is None:
-                return {"ok": False, "error": "Unknown session."}
+                error_body, _ = self.session_error_payload(session_id)
+                return error_body
 
             # Only running rooms are considered active assignments for queueing.
             room = self._active_room_for_session_locked(session_id)
@@ -216,6 +405,38 @@ class MatchmakingRouter:
                     "status": "assigned",
                     "room": self._serialize_room_locked(room),
                 }
+
+            selected = self._storage.get_selected_deck(session.user_id)
+            if selected is not None:
+                selected_cards: list[Any]
+                try:
+                    parsed_cards = json.loads(str(selected.get("card_payload_json", "[]")))
+                except Exception:
+                    self._state.queue = [entry for entry in self._state.queue if entry.session_id != session_id]
+                    return {
+                        "ok": False,
+                        "error": "Cannot join queue: invalid selected deck. selected deck payload is invalid JSON.",
+                    }
+
+                if not isinstance(parsed_cards, list):
+                    self._state.queue = [entry for entry in self._state.queue if entry.session_id != session_id]
+                    return {
+                        "ok": False,
+                        "error": "Cannot join queue: invalid selected deck. selected deck payload is not a card list.",
+                    }
+
+                selected_cards = parsed_cards
+                deck_error = _validate_deck_cards(
+                    selected_cards,
+                    require_exact_count=True,
+                    require_at_least_one_character=True,
+                )
+                if deck_error is not None:
+                    self._state.queue = [entry for entry in self._state.queue if entry.session_id != session_id]
+                    return {
+                        "ok": False,
+                        "error": f"Cannot join queue: invalid selected deck. {deck_error}",
+                    }
 
             if not any(entry.session_id == session_id for entry in self._state.queue):
                 self._state.queue.append(QueueEntry(session_id=session_id, enqueued_at=now))
@@ -258,7 +479,8 @@ class MatchmakingRouter:
 
             session = self._ensure_session_locked(session_id)
             if session is None:
-                return {"ok": False, "error": "Unknown session."}
+                error_body, _ = self.session_error_payload(session_id)
+                return error_body
 
             room = self._active_room_for_session_locked(session_id)
             if room is not None:
@@ -287,7 +509,8 @@ class MatchmakingRouter:
 
             session = self._ensure_session_locked(session_id)
             if session is None:
-                return {"ok": False, "error": "Unknown session."}
+                error_body, _ = self.session_error_payload(session_id)
+                return error_body
 
             resolved_room_id = room_id or self._state.room_id_by_session_id.get(session_id)
             if resolved_room_id is None:
@@ -296,6 +519,14 @@ class MatchmakingRouter:
             room = self._state.rooms_by_id.get(resolved_room_id)
             if room is None:
                 return {"ok": False, "error": "Room not found."}
+
+            if room.status != "running":
+                # Do not allow reconnecting into retained finished rooms.
+                if self._state.room_id_by_session_id.get(session_id) == resolved_room_id:
+                    self._state.room_id_by_session_id.pop(session_id, None)
+                if session.current_room_id == resolved_room_id:
+                    session.current_room_id = None
+                return {"ok": False, "error": "Room is not active."}
 
             if session_id not in room.player_session_ids:
                 return {"ok": False, "error": "Session does not belong to this room."}
@@ -318,8 +549,21 @@ class MatchmakingRouter:
                 room.finished_at = now
                 room.retain_until = now + ROOM_FINISH_GRACE_SECONDS
                 room.finish_reason = reason
-                if room.worker is not None:
+                # Winner declaration should drop router assignment immediately,
+                # but keep the room process alive so clients can finish the
+                # winner UI and return to MainMenu explicitly.
+                should_stop_worker = reason not in {"winner_declared"}
+                if should_stop_worker and room.worker is not None:
                     room.worker.stop(reason=reason)
+
+            # Finished rooms are retained for diagnostics only; active session
+            # assignment should be cleared immediately.
+            for session_id in room.player_session_ids:
+                if self._state.room_id_by_session_id.get(session_id) == room.room_id:
+                    self._state.room_id_by_session_id.pop(session_id, None)
+                session = self._state.sessions_by_id.get(session_id)
+                if session is not None and session.current_room_id == room.room_id:
+                    session.current_room_id = None
 
             return {
                 "ok": True,
@@ -435,6 +679,14 @@ class MatchmakingRouter:
             room.finished_at = now
             room.retain_until = now + ROOM_FINISH_GRACE_SECONDS
             room.finish_reason = reason
+
+            for session_id in room.player_session_ids:
+                if self._state.room_id_by_session_id.get(session_id) == room_id:
+                    self._state.room_id_by_session_id.pop(session_id, None)
+                session = self._state.sessions_by_id.get(session_id)
+                if session is not None and session.current_room_id == room_id:
+                    session.current_room_id = None
+
             print(
                 f"[ROUTER] room_finished room_id={room_id} reason={reason} "
                 f"retain_until={room.retain_until}"
@@ -495,6 +747,12 @@ class MatchmakingRouter:
         session = self._state.sessions_by_id.get(session_id)
         now = monotonic()
         if session is not None:
+            active_session_id = self._state.active_session_id_by_user_id.get(session.user_id)
+            if active_session_id is not None and active_session_id != session_id:
+                self._state.sessions_by_id.pop(session_id, None)
+                self._state.superseded_session_ids.add(session_id)
+                self._storage.revoke_session(session_id)
+                return None
             session.last_seen_at = now
             self._storage.touch_session(session_id, SESSION_COOKIE_MAX_AGE_SECONDS)
             return session
@@ -511,12 +769,144 @@ class MatchmakingRouter:
             last_seen_at=now,
             current_room_id=self._state.room_id_by_session_id.get(stored.session_id),
         )
+
+        active_session_id = self._state.active_session_id_by_user_id.get(hydrated.user_id)
+        if active_session_id is not None and active_session_id != hydrated.session_id:
+            self._state.superseded_session_ids.add(hydrated.session_id)
+            self._storage.revoke_session(hydrated.session_id)
+            return None
+
         self._state.sessions_by_id[hydrated.session_id] = hydrated
+        self._state.active_session_id_by_user_id[hydrated.user_id] = hydrated.session_id
+        self._state.superseded_session_ids.discard(hydrated.session_id)
         self._storage.touch_session(session_id, SESSION_COOKIE_MAX_AGE_SECONDS)
         return hydrated
 
+    def _transfer_room_assignment_locked(
+        self,
+        from_session_id: str,
+        to_session_id: str,
+    ) -> tuple[RoomRecord, str] | None:
+        if from_session_id == to_session_id:
+            return None
+
+        room_id = self._state.room_id_by_session_id.get(from_session_id)
+        if not isinstance(room_id, str) or not room_id:
+            return None
+
+        room = self._state.rooms_by_id.get(room_id)
+        if room is None or room.status != 'running':
+            return None
+
+        p1_session_id, p2_session_id = room.player_session_ids
+        slot: str | None = None
+        if p1_session_id == from_session_id:
+            room.player_session_ids = (to_session_id, p2_session_id)
+            slot = 'p1'
+        elif p2_session_id == from_session_id:
+            room.player_session_ids = (p1_session_id, to_session_id)
+            slot = 'p2'
+
+        if slot is None:
+            return None
+
+        self._state.room_id_by_session_id.pop(from_session_id, None)
+        self._state.room_id_by_session_id[to_session_id] = room_id
+
+        old_session = self._state.sessions_by_id.get(from_session_id)
+        if old_session is not None:
+            old_session.current_room_id = None
+
+        new_session = self._state.sessions_by_id.get(to_session_id)
+        if new_session is not None:
+            new_session.current_room_id = room_id
+
+        return room, slot
+
+    def _notify_room_session_takeover(
+        self,
+        room: RoomRecord,
+        slot: str,
+        old_session_id: str,
+        new_session_id: str,
+    ) -> None:
+        payload = {
+            'old_session_id': old_session_id,
+            'new_session_id': new_session_id,
+            'slot': slot,
+        }
+        endpoint = f'http://{room.host}:{room.port}/room/replace-session'
+        data = json.dumps(payload).encode('utf-8')
+        request_obj = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(request_obj, timeout=0.8) as response:
+                _ = response.read()
+        except urllib.error.URLError as exc:
+            print(
+                f'[ROUTER] room_session_takeover_notify_failed room_id={room.room_id} '
+                f'slot={slot} error={exc}'
+            )
+        except Exception as exc:
+            print(
+                f'[ROUTER] room_session_takeover_notify_failed room_id={room.room_id} '
+                f'slot={slot} error={exc}'
+            )
+
+    def _supersede_user_sessions_locked(
+        self,
+        user_id: str,
+        keep_session_id: str | None = None,
+        preserve_room_session_id: str | None = None,
+    ) -> None:
+        active_session_ids = set(self._storage.list_active_session_ids_for_user(user_id))
+        active_session_ids.update(
+            session.session_id
+            for session in self._state.sessions_by_id.values()
+            if session.user_id == user_id
+        )
+
+        superseded_socket_sids: list[tuple[str, list[str]]] = []
+
+        for session_id in active_session_ids:
+            if keep_session_id and session_id == keep_session_id:
+                continue
+
+            self._state.queue = [entry for entry in self._state.queue if entry.session_id != session_id]
+            if not preserve_room_session_id or session_id != preserve_room_session_id:
+                self._state.room_id_by_session_id.pop(session_id, None)
+
+            existing = self._state.sessions_by_id.pop(session_id, None)
+            if existing is not None:
+                existing.current_room_id = None
+
+            sid_list = list(self._state.auth_socket_sids_by_session_id.pop(session_id, set()))
+            if sid_list:
+                superseded_socket_sids.append((session_id, sid_list))
+
+            self._state.superseded_session_ids.add(session_id)
+            self._storage.revoke_session(session_id)
+
+        active_session_id = self._state.active_session_id_by_user_id.get(user_id)
+        if active_session_id is None:
+            return
+        if keep_session_id is None or active_session_id != keep_session_id:
+            self._state.active_session_id_by_user_id.pop(user_id, None)
+
+        if self._superseded_notifier is not None:
+            for session_id, sid_list in superseded_socket_sids:
+                self._superseded_notifier(session_id, sid_list)
+
     def _serialize_room_locked(self, room: RoomRecord) -> dict[str, Any]:
-        worker_snapshot = room.worker.snapshot() if room.worker is not None else None
+        worker_snapshot = None
+        if room.worker is not None:
+            snapshot_fn = getattr(room.worker, 'snapshot', None)
+            if callable(snapshot_fn):
+                worker_snapshot = snapshot_fn()
         return {
             "room_id": room.room_id,
             "status": room.status,
@@ -533,6 +923,7 @@ class MatchmakingRouter:
                 "started_at": worker_snapshot.started_at,
                 "finished": worker_snapshot.finished,
                 "finish_reason": worker_snapshot.finish_reason,
+                "log_path": worker_snapshot.log_path,
             }
             if worker_snapshot is not None
             else None,
@@ -576,6 +967,25 @@ def _payload_username(payload: dict[str, Any]) -> str | None:
 
 app = Flask(__name__)
 router = MatchmakingRouter()
+socketio: Any = None
+if SocketIO is not None:
+    socketio = SocketIO(app, cors_allowed_origins='*')
+
+
+def _notify_superseded_session(session_id: str, socket_sids: list[str]) -> None:
+    if socketio is None:
+        return
+
+    payload = {
+        'reason': 'session_superseded',
+        'session_id': session_id,
+        'message': 'Signed out: account opened on another client.',
+    }
+    for sid in socket_sids:
+        socketio.emit('force_logout', payload, to=sid)
+
+
+router.set_superseded_notifier(_notify_superseded_session)
 
 
 def _session_response_payload(session: SessionIdentity) -> dict[str, Any]:
@@ -591,11 +1001,11 @@ def _resolve_authenticated_session(payload: dict[str, Any] | None = None) -> tup
     payload_dict = payload if isinstance(payload, dict) else {}
     session_id = _payload_session_id(payload_dict) or _query_session_id() or _cookie_session_id()
     if session_id is None:
-        return None, ({"ok": False, "error": "session_id is required."}, 400)
+        return None, router.session_error_payload(session_id)
 
     session = router.session(session_id.strip())
     if session is None:
-        return None, ({"ok": False, "error": "Unknown session."}, 401)
+        return None, router.session_error_payload(session_id)
 
     return session, None
 
@@ -609,7 +1019,13 @@ def _validate_deck_payload(payload: dict[str, Any]) -> tuple[str, str, tuple[dic
     if not isinstance(raw_cards, list):
         return "", "", ({"ok": False, "error": "cards must be an array."}, 400)
 
-    card_payload_json = json.dumps(raw_cards, separators=(",", ":"))
+    deck_error = _validate_deck_cards(raw_cards, require_exact_count=False)
+    if deck_error is not None:
+        return "", "", ({"ok": False, "error": deck_error}, 400)
+
+    normalized_cards = [str(card_id).strip() for card_id in raw_cards]
+
+    card_payload_json = json.dumps(normalized_cards, separators=(",", ":"))
     return raw_name.strip()[:64], card_payload_json, None
 
 
@@ -629,9 +1045,26 @@ def _serialize_deck_response(deck_id: str, name: str, card_payload_json: str, up
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS, GET, PUT, DELETE"
+    request_origin = request.headers.get("Origin")
+    if isinstance(request_origin, str) and request_origin.strip():
+        response.headers["Access-Control-Allow-Origin"] = request_origin
+        response.headers["Vary"] = "Origin"
+    else:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+
+    requested_headers = request.headers.get("Access-Control-Request-Headers")
+    if isinstance(requested_headers, str) and requested_headers.strip():
+        response.headers["Access-Control-Allow-Headers"] = requested_headers
+    else:
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+
+    requested_method = request.headers.get("Access-Control-Request-Method")
+    if isinstance(requested_method, str) and requested_method.strip():
+        response.headers["Access-Control-Allow-Methods"] = f"{requested_method}, OPTIONS"
+    else:
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS, GET, PUT, DELETE"
+
+    response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 
@@ -684,7 +1117,7 @@ def auth_login() -> Any:
 
     session = router.login(
         username=username,
-        existing_session_id=_payload_session_id(payload) or _cookie_session_id(),
+        existing_session_id=_payload_session_id(payload),
     )
 
     response = make_response(jsonify(_session_response_payload(session)), 200)
@@ -702,11 +1135,11 @@ def auth_login() -> Any:
 def auth_session() -> tuple[dict[str, Any], int]:
     session_id = request.args.get("session_id") or _cookie_session_id()
     if not isinstance(session_id, str) or not session_id.strip():
-        return {"ok": False, "error": "session_id is required."}, 400
+        return router.session_error_payload(None)
 
     session = router.session(session_id.strip())
     if session is None:
-        return {"ok": False, "error": "Unknown session."}, 401
+        return router.session_error_payload(session_id)
 
     return _session_response_payload(session), 200
 
@@ -723,11 +1156,11 @@ def auth_logout() -> Any:
     payload_dict: dict[str, Any] = payload if isinstance(payload, dict) else {}
     session_id = _payload_session_id(payload_dict) or _cookie_session_id()
     if session_id is None:
-        return {"ok": False, "error": "session_id is required."}, 400
+        return router.session_error_payload(None)
 
     logged_out = router.logout(session_id)
     if not logged_out:
-        return {"ok": False, "error": "Unknown session."}, 401
+        return router.session_error_payload(session_id)
 
     response = make_response(jsonify({"ok": True}), 200)
     response.delete_cookie(SESSION_COOKIE_NAME)
@@ -797,11 +1230,16 @@ def deck_item(deck_id: str) -> Any:
             return {"ok": False, "error": "Deck not found."}, 404
         return {"ok": True}, 200
 
+    deck_id_normalized = deck_id.strip()
+    owned_deck_ids = {deck.deck_id for deck in router._storage.list_decks_for_user(session.user_id)}
+    if deck_id_normalized not in owned_deck_ids:
+        return {"ok": False, "error": "Deck not found."}, 404
+
     name, card_payload_json, validation_error = _validate_deck_payload(payload_dict)
     if validation_error is not None:
         return validation_error
 
-    updated = router._storage.update_deck(deck_id.strip(), session.user_id, name, card_payload_json)
+    updated = router._storage.update_deck(deck_id_normalized, session.user_id, name, card_payload_json)
     if not updated:
         return {"ok": False, "error": "Deck not found."}, 404
 
@@ -854,7 +1292,7 @@ def matchmaking_queue() -> tuple[dict[str, Any], int]:
 
     session_id = _payload_session_id(payload) or _cookie_session_id()
     if session_id is None:
-        return {"ok": False, "error": "session_id is required."}, 400
+        return router.session_error_payload(None)
 
     action = payload.get("action")
     if not isinstance(action, str):
@@ -866,7 +1304,9 @@ def matchmaking_queue() -> tuple[dict[str, Any], int]:
         result = router.enqueue(session_id)
 
     if not result.get("ok"):
-        return result, 400
+        error_code = result.get("error_code") if isinstance(result.get("error_code"), str) else ""
+        status = 401 if error_code in {"session_superseded", "unknown_session"} else 400
+        return result, status
     return result, 200
 
 
@@ -874,11 +1314,13 @@ def matchmaking_queue() -> tuple[dict[str, Any], int]:
 def matchmaking_status() -> tuple[dict[str, Any], int]:
     session_id = request.args.get("session_id") or _cookie_session_id()
     if not isinstance(session_id, str) or not session_id.strip():
-        return {"ok": False, "error": "session_id is required."}, 400
+        return router.session_error_payload(None)
 
     result = router.status(session_id.strip())
     if not result.get("ok"):
-        return result, 404
+        error_code = result.get("error_code") if isinstance(result.get("error_code"), str) else ""
+        status = 401 if error_code in {"session_superseded", "unknown_session"} else 404
+        return result, status
     return result, 200
 
 
@@ -893,12 +1335,14 @@ def room_rejoin() -> tuple[dict[str, Any], int]:
 
     session_id = _payload_session_id(payload) or _cookie_session_id()
     if session_id is None:
-        return {"ok": False, "error": "session_id is required."}, 400
+        return router.session_error_payload(None)
 
     room_id = payload.get("room_id") if isinstance(payload.get("room_id"), str) else None
     result = router.rejoin_room(session_id, room_id=room_id)
     if not result.get("ok"):
-        return result, 404
+        error_code = result.get("error_code") if isinstance(result.get("error_code"), str) else ""
+        status = 401 if error_code in {"session_superseded", "unknown_session"} else 404
+        return result, status
     return result, 200
 
 
@@ -924,14 +1368,73 @@ def room_finish() -> tuple[dict[str, Any], int]:
     return result, 200
 
 
+if socketio is not None:
+    @socketio.on('auth_register_session')
+    def socket_auth_register_session(payload: Any) -> None:
+        if emit is None:
+            return
+
+        data = payload if isinstance(payload, dict) else {}
+        raw_session_id = data.get('session_id')
+        session_id = raw_session_id.strip() if isinstance(raw_session_id, str) else ''
+        if not session_id:
+            emit('auth_registration_error', {
+                'ok': False,
+                'error': 'session_id is required.',
+                'error_code': 'session_id_required',
+            })
+            return
+
+        socket_sid = getattr(request, 'sid', None)
+        sid = socket_sid if isinstance(socket_sid, str) else ''
+        if not sid:
+            emit('auth_registration_error', {
+                'ok': False,
+                'error': 'socket sid unavailable',
+                'error_code': 'socket_sid_unavailable',
+            })
+            return
+
+        ok, body = router.register_auth_socket(session_id, sid)
+        if not ok:
+            emit('auth_registration_error', body)
+            if body.get('error_code') == 'session_superseded':
+                emit('force_logout', {
+                    'reason': 'session_superseded',
+                    'session_id': session_id,
+                    'message': 'Signed out: account opened on another client.',
+                })
+            return
+
+        emit('auth_registration_ok', body)
+
+
+    @socketio.on('disconnect')
+    def socket_disconnect() -> None:
+        socket_sid = getattr(request, 'sid', None)
+        sid = socket_sid if isinstance(socket_sid, str) else ''
+        if not sid:
+            return
+        router.unregister_auth_socket(sid)
+
+
 if __name__ == "__main__":
     router_host = os.getenv("ROUTER_HOST", "0.0.0.0")
     router_port = int(os.getenv("ROUTER_PORT", "5600"))
     router_debug = os.getenv("ROUTER_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
     router_use_reloader = os.getenv("ROUTER_USE_RELOADER", "false").strip().lower() in {"1", "true", "yes", "on"}
-    app.run(
-        host=router_host,
-        port=router_port,
-        debug=router_debug,
-        use_reloader=router_use_reloader,
-    )
+    if socketio is not None:
+        socketio.run(
+            app,
+            host=router_host,
+            port=router_port,
+            debug=router_debug,
+            use_reloader=router_use_reloader,
+        )
+    else:
+        app.run(
+            host=router_host,
+            port=router_port,
+            debug=router_debug,
+            use_reloader=router_use_reloader,
+        )

@@ -2,76 +2,96 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardHPChange, PlayCharacterCard
+
 
 class EvelynWu(AVGECharacterCard):
-    _LAST_ATK1_ROUND_KEY = "evelyn_last_atk1_round"
-    _CONSECUTIVE_USES = "evelyn_consecutive_atks"
-
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.WOODWIND, 1, 1, 2)
-        self.has_atk_1 = True
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = False
+        self.atk_1_name = 'Circular Breathing'
+        self.atk_2_name = 'Small Ensemble Lord'
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        streak = 0
+        turn = card.player.get_last_turn()
+        while streak < 4 and turn >= 0:
+            _, used_last_turn_idx = card.env.check_history(
+                turn,
+                PlayCharacterCard,
+                {
+                    'card': card,
+                    'card_action': ActionTypes.ATK_1,
+                    'caller': card,
+                },
+            )
+            if used_last_turn_idx == -1:
+                break
+            streak += 1
+            turn -= 2
 
-        last_round = card.env.cache.get(card, EvelynWu._LAST_ATK1_ROUND_KEY, None, True)
-        atks_before = card.env.cache.get(card, EvelynWu._CONSECUTIVE_USES, 0, True)
-
-        if last_round is None or card.env.round_id > last_round + 2:
-            atks_before = 0
-        assert isinstance(atks_before, int)
-        damage_bonus = min(atks_before, 4) * 10
-        total_damage = 10 + damage_bonus
-
-        card.env.cache.set(card, EvelynWu._LAST_ATK1_ROUND_KEY, card.env.round_id)
-        card.env.cache.set(card, EvelynWu._CONSECUTIVE_USES, atks_before + 1)
+        bonus = min(40, 10 * streak)
+        total_damage = 10 + bonus
 
         def generate_packet() -> PacketType:
+            packet: PacketType = []
             active = card.player.opponent.get_active_card()
             if isinstance(active, AVGECharacterCard):
-                return [
+                packet.append(
                     AVGECardHPChange(
                         active,
                         total_damage,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.WOODWIND,
                         ActionTypes.ATK_1,
+                        None,
                         card,
                     )
-                ]
-            return []
+                )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EvelynWu)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-
-        opponent_bench = card.player.opponent.cardholders[Pile.BENCH]
-        total_damage = sum(max(0, bench_card.max_hp - bench_card.hp) for bench_card in opponent_bench if isinstance(bench_card, AVGECharacterCard))
-        if total_damage <= 0:
-            return card.generate_response()
-
+    def atk_2(self, card: AVGECharacterCard) -> Response:
         def generate_packet() -> PacketType:
-            active = card.player.opponent.get_active_card()
-            if isinstance(active, AVGECharacterCard):
-                return [
+            packet: PacketType = []
+            opponent = card.player.opponent
+
+            transfer_total = 0
+            for bench_card in opponent.cardholders[Pile.BENCH]:
+                if not isinstance(bench_card, AVGECharacterCard):
+                    continue
+                existing_damage = max(0, bench_card.max_hp - bench_card.hp)
+                if existing_damage <= 0:
+                    continue
+
+                transfer_total += existing_damage
+                packet.append(
+                    AVGECardHPChange(
+                        bench_card,
+                        existing_damage,
+                        AVGEAttributeModifier.ADDITIVE,
+                        CardType.ALL,
+                        ActionTypes.ATK_2,
+                        None,
+                        card,
+                    )
+                )
+
+            active = opponent.get_active_card()
+            if transfer_total > 0 and isinstance(active, AVGECharacterCard):
+                packet.append(
                     AVGECardHPChange(
                         active,
-                        total_damage,
+                        transfer_total,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.WOODWIND,
                         ActionTypes.ATK_2,
+                        None,
                         card,
                     )
-                ]
-            return []
+                )
+            return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, EvelynWu)))
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_2)

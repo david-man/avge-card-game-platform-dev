@@ -4,88 +4,104 @@ import random
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import EmptyEvent, InputEvent, TransferCard
 
 class CastReserve(AVGEItemCard):
-	_PLAYER_ITEM_SELECTION_KEY = "castreserve_player_item_selection"
-	_OPPONENT_SHUFFLE_SELECTION_KEY = "castreserve_opponent_shuffle_selection"
+	_PLAYER_ITEM_SELECTION_KEY = 'castreserve_player_item_selection_'
+	_OPPONENT_SHUFFLE_SELECTION_KEY = 'castreserve_opponent_shuffle_selection_'
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	
-	
-	@staticmethod
-	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		player = card.player
 		opponent = player.opponent
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
 
 		deck_items = [c for c in deck if isinstance(c, AVGEItemCard)]
+		unique_by_type: dict[type[AVGEItemCard], AVGEItemCard] = {}
+		for item in deck_items:
+			item_type = type(item)
+			if item_type not in unique_by_type:
+				unique_by_type[item_type] = item
+
+		if len(unique_by_type) < 3:
+			card.propose(
+				AVGEPacket([
+					EmptyEvent(
+						ActionTypes.NONCHAR,
+						card,
+						ResponseType.CORE,
+						RevealCards('CastReserve: Revealing deck', [card.player.unique_id], default_timeout, list(deck)),
+					)
+				], AVGEEngineID(card, ActionTypes.NONCHAR, CastReserve))
+			)
+			return self.generic_response(card)
+
 		player_keys = [CastReserve._PLAYER_ITEM_SELECTION_KEY + str(i) for i in range(3)]
 		opp_keys = [CastReserve._OPPONENT_SHUFFLE_SELECTION_KEY + str(i) for i in range(2)]
-		selected_three = [card.env.cache.get(card, key, None) for key in player_keys]
+		missing = object()
+		selected_probe = [card.env.cache.get(card, key, missing, False) for key in player_keys]
 
 		def _check_player_choice(result):
-			if(len(result) != 3):
+			if len(result) != 3:
 				return False
-			return result[0] is None or len({type(s) for s in result}) == 3
-		if(selected_three[0] is None):
-			return card.generate_response(
+			if not all(isinstance(s, AVGEItemCard) for s in result):
+				return False
+			if not all(s in deck for s in result):
+				return False
+			return len({type(s) for s in result}) == 3
+
+		if selected_probe[0] is missing:
+			return Response(
 				ResponseType.INTERRUPT,
-				{
-					INTERRUPT_KEY: [
+				Interrupt[AVGEEvent]([
 						InputEvent(
 							player,
 							player_keys,
-							InputType.DETERMINISTIC,
 							_check_player_choice,
 							ActionTypes.NONCHAR,
 							card,
-							{
-								LABEL_FLAG: "cast_reserve_player_item_pick",
-								TARGETS_FLAG: deck_items,
-								DISPLAY_FLAG: deck_items,
-								ALLOW_NONE: True,
-								ALLOW_REPEAT: False
-							},
+							CardSelectionQuery('CastReserve: Choose 3 unique item cards from your deck.', deck_items, list(deck), False, False)
 						)
-					]
-				},
+					]),
 			)
 
-		chosen_for_shuffle = [card.env.cache.get(card, key, None) for key in opp_keys]
-		if(chosen_for_shuffle[0] is None):
-			return card.generate_response(
+		selected_three_raw = [card.env.cache.get(card, key, None, False) for key in player_keys]
+		selected_three: list[AVGEItemCard] = []
+		for c in selected_three_raw:
+			assert isinstance(c, AVGEItemCard)
+			selected_three.append(c)
+		revealed_selected: list[AVGECard] = [c for c in selected_three]
+
+		chosen_for_shuffle_probe = [card.env.cache.get(card, key, missing, False) for key in opp_keys]
+		if chosen_for_shuffle_probe[0] is missing:
+			return Response(
 				ResponseType.INTERRUPT,
-				{
-					INTERRUPT_KEY: [
+				Interrupt[AVGEEvent]([
 						InputEvent(
 							opponent,
 							opp_keys,
-							InputType.SELECTION,
 							lambda b : True,
 							ActionTypes.NONCHAR,
 							card,
-							{
-								LABEL_FLAG: "cast_reserve_opponent_shuffle_choice",
-								TARGETS_FLAG: selected_three,
-								DISPLAY_FLAG: selected_three
-							},
+							CardSelectionQuery('CastReserve: Choose 2 of the chosen items to shuffle back.', selected_three, selected_three, False, False)
 						)
-					]
-				},
+					]),
 			)
+
+		selected_three = [card.env.cache.get(card, key, None, True) for key in player_keys]#type: ignore
+		chosen_for_shuffle = [card.env.cache.get(card, key, None, True) for key in opp_keys]
 
 		card_to_hand = None
 		for c in selected_three:
 			if(c not in chosen_for_shuffle):
 				card_to_hand = c
 				break
-		if(card_to_hand is None or chosen_for_shuffle[1] is None):
-			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "CastReserve selection resolution failed."})
+		if card_to_hand is None or not isinstance(card_to_hand, AVGEItemCard):
+			raise Exception('CastReserve: Could not resolve card to hand')
+
 		def gen_1() -> PacketType:
 			assert isinstance(chosen_for_shuffle[0], AVGECard)
 			return [TransferCard(
@@ -94,6 +110,7 @@ class CastReserve(AVGEItemCard):
 				deck,
 				ActionTypes.NONCHAR,
 				card,
+				None,
 				random.randint(0, len(deck))
 			)]
 		def gen_2() -> PacketType:
@@ -104,16 +121,21 @@ class CastReserve(AVGEItemCard):
 				deck,
 				ActionTypes.NONCHAR,
 				card,
+				None,
 				random.randint(0, len(deck))
 			)]
-		packet = [TransferCard(
+		packet: PacketType = [
+			TransferCard(
 				card_to_hand,
 				deck,
 				hand,
 				ActionTypes.NONCHAR,
 				card,
-			),gen_1, gen_2
-			]
+				None,
+			),
+			gen_1,
+			gen_2,
+		]
 
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, CastReserve)))
-		return card.generate_response()
+		return self.generic_response(card)

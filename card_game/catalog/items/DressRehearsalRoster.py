@@ -4,32 +4,35 @@ import random
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGEEnergyTransfer, InputEvent, TransferCard
 
 class DressRehearsalRoster(AVGEItemCard):
-	_ENERGY_REMOVAL_SELECTION_KEY_1 = "dressrehearsalroster_energy_removal_selection_1"
-	_ENERGY_REMOVAL_SELECTION_KEY_2 = "dressrehearsalroster_energy_removal_selection_2"
+	_ENERGY_REMOVAL_SELECTION_KEY_1 = 'dressrehearsalroster_energy_removal_selection_1'
+	_ENERGY_REMOVAL_SELECTION_KEY_2 = 'dressrehearsalroster_energy_removal_selection_2'
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	
-	
-	@staticmethod
-	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCard, AVGEEnergyTransfer
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		player = card.player
 		deck = player.cardholders[Pile.DECK]
 		discard = player.cardholders[Pile.DISCARD]
 
-		in_play_characters = player.get_cards_in_play()
+		in_play_characters = [c for c in player.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
 
 		total_energy = sum(len(c.energy) for c in in_play_characters)
 		if(total_energy < 2):
-			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "Not enough total energy in play for DressRehearsalRoster."})
+			return Response(
+				ResponseType.FAST_FORWARD,
+				Notify('Not enough total energy in play for DressRehearsalRoster...', [player.unique_id], default_timeout)
+			)
 		
-		selected_chars = [card.env.cache.get(card, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_1, None, one_look=True), card.env.cache.get(card, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_2, None, one_look=True)]
-		if(selected_chars[0] is None):
+		missing = object()
+		selected_probe = [
+			card.env.cache.get(card, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_1, missing, False),
+			card.env.cache.get(card, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_2, missing, False)
+		]
+		if(selected_probe[0] is missing):
 			def _input_valid(result):
 				if len(result) != 2:
 					return False
@@ -41,38 +44,41 @@ class DressRehearsalRoster(AVGEItemCard):
 					return len(result[0].energy) >= 2
 				else:
 					return len(result[0].energy) >= 1 and len(result[1].energy) >= 1
-			return card.generate_response(
+			return Response(
 				ResponseType.INTERRUPT,
-				{
-					INTERRUPT_KEY: [
+				Interrupt[AVGEEvent]([
 						InputEvent(
 							player,
 							[DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_1, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_2],
-							InputType.DETERMINISTIC,
 							_input_valid,
 							ActionTypes.NONCHAR,
 							card,
-							{
-								LABEL_FLAG: "dress_rehearsal_roster_energy_remove",
-								TARGETS_FLAG: in_play_characters,
-								DISPLAY_FLAG: in_play_characters,
-								ALLOW_REPEAT: True,
-								ALLOW_NONE: False
-							},
+							CardSelectionQuery('Dress Rehearsal Roster: Choose 2 (not necessarily distinct) characters to discard energy from.', in_play_characters, in_play_characters, False, True)
 						)
-					]
-				},
+					]),
 			)
+
+		selected_chars = [
+			card.env.cache.get(card, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_1, None, True),
+			card.env.cache.get(card, DressRehearsalRoster._ENERGY_REMOVAL_SELECTION_KEY_2, None, True)
+		]
+		if not all(isinstance(sel, AVGECharacterCard) and sel in in_play_characters for sel in selected_chars):
+			raise Exception('DressRehearsalRoster: invalid selected characters')
+
 		packet : PacketType = []
 		for selected in selected_chars:
 			def gen_1(chosen=selected) -> PacketType:
 				assert isinstance(chosen, AVGECharacterCard) 
+				if len(chosen.energy) == 0:
+					return []
 				return [AVGEEnergyTransfer(
 						chosen.energy[0],
 						chosen,
 						chosen.env,
 						ActionTypes.NONCHAR,
-						card)]
+						card,
+						None,
+					)]
 			packet.append(gen_1)
 
 		cards_to_shuffle = list(discard)
@@ -86,6 +92,7 @@ class DressRehearsalRoster(AVGEItemCard):
 					deck,
 					ActionTypes.NONCHAR,
 					card,
+					None,
 					random.randint(0, len(deck)),
 					)]
 			packet.append(
@@ -93,4 +100,4 @@ class DressRehearsalRoster(AVGEItemCard):
 			)
 
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, DressRehearsalRoster)))
-		return card.generate_response()
+		return self.generic_response(card)

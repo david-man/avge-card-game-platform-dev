@@ -30,27 +30,24 @@ class _BarronEnergyCapPostcheck(AVGEAssessor):
         new_amt = len(target.energy)
 
         if new_amt > 3:
-            return self.generate_response(ResponseType.FAST_FORWARD, {MESSAGE_KEY: "Cannot attach more than 3 energy to opposing characters (BarronLee passive)."})
-        return self.generate_response()
+            return Response(ResponseType.FAST_FORWARD, Notify("Barron Lee's ability prevents opposing characters from receiving 3 energy!", [PlayerID.P1, PlayerID.P2], default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 class BarronLee(AVGECharacterCard):
     _EMBOUCHURE_KEY = 'barron-lee-embouchure'
     def __init__(self, unique_id):
         super().__init__(unique_id, 100, CardType.BRASS, 1, 1)
-        self.has_atk_1 = True
-        self.has_atk_2 = False
+        self.atk_1_name = 'Embouchure'
         self.has_passive = True
-        self.has_active = False
 
-    @staticmethod
-    def passive(card) -> Response:
+    def passive(self) -> Response:
         # attach postcheck modifier
-        card.add_listener(_BarronEnergyCapPostcheck(card))
+        self.add_listener(_BarronEnergyCapPostcheck(self))
 
         def generate_packet():
             packet = []
-            assert(card.player is not None)
-            opponent = card.player.opponent
+            assert(self.player is not None)
+            opponent = self.player.opponent
             assert opponent is not None
             for c in opponent.get_cards_in_play():
                 cur = len(c.energy)
@@ -63,16 +60,16 @@ class BarronLee(AVGECharacterCard):
                                 c,
                                 c.env,
                                 ActionTypes.PASSIVE,
-                                card
+                                self,
+                                None
                             )
                         )
 
             return packet
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.PASSIVE, BarronLee)))
-        return card.generate_response()
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.PASSIVE, BarronLee)))
+        return self.generic_response(self, ActionTypes.PASSIVE)
 
-    @staticmethod
-    def atk_1(card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
         opponent = card.player.opponent
         # deal 20 damage to opponent active
@@ -85,6 +82,7 @@ class BarronLee(AVGECharacterCard):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.BRASS,
                     ActionTypes.ATK_1,
+                    None,
                     card,
                 )
             )
@@ -94,49 +92,46 @@ class BarronLee(AVGECharacterCard):
         chars = card.player.get_cards_in_play()
         total_energy = sum(len(c.energy) for c in chars)
         energy_tokens = [token for c in chars for token in c.energy]
-
-        if total_energy <= 0:
-            card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
-            return card.generate_response(data={MESSAGE_KEY: "Total energy is none!"})
-
-        # prompt player for allocation per character; keys per character
-        keys = [BarronLee._EMBOUCHURE_KEY+str(i) for i in range(total_energy)]
-        vals = [card.env.cache.get(card, key, None, True) for key in keys]
-        if vals[0] is None:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            card.player,
-                            keys,
-                            InputType.SELECTION,
-                            lambda res : True,
-                            ActionTypes.ATK_1,
-                            card,
-                            {LABEL_FLAG: "barron_lee_energy_alloc", 
-                            TARGETS_FLAG: chars,
-                            ALLOW_REPEAT: True,
-                            DISPLAY_FLAG: chars},
-                        )
-                    ]
-                },
-            )
-
         packet : PacketType= [generate_packet]
-        # transfer accordingly
-        for i, token_to in enumerate(vals):
-            assert isinstance(token_to, AVGECharacterCard)
-            cur_holder = energy_tokens[i].holder
-            assert cur_holder is not None and not isinstance(cur_holder, AVGEEnvironment)
-            packet.append(AVGEEnergyTransfer(
-                energy_tokens[i],
-                cur_holder,
-                token_to,
-                ActionTypes.ATK_1,
-                card
-            ))
+        if total_energy > 0:
+            # prompt player for allocation per character; keys per character
+            keys = [BarronLee._EMBOUCHURE_KEY+str(i) for i in range(total_energy)]
+            vals = [card.env.cache.get(card, key, None, True) for key in keys]
+            if vals[0] is None:
+                return Response(
+                    ResponseType.INTERRUPT,
+                    Interrupt[InputEvent](
+                        [
+                            InputEvent(
+                                card.player,
+                                keys,
+                                lambda res : True,
+                                ActionTypes.ATK_1,
+                                card,
+                                CardSelectionQuery(
+                                    "Embouchure: How do you want to rearrange your energy?",
+                                    cast(list[AVGECard], chars),
+                                    cast(list[AVGECard], chars),
+                                    False,
+                                    True,
+                                )
+                            )
+                        ]
+                    )
+                )
+            # transfer accordingly
+            for i, token_to in enumerate(vals):
+                assert isinstance(token_to, AVGECharacterCard)
+                cur_holder = energy_tokens[i].holder
+                assert cur_holder is not None and not isinstance(cur_holder, AVGEEnvironment)
+                packet.append(AVGEEnergyTransfer(
+                    energy_tokens[i],
+                    cur_holder,
+                    token_to,
+                    ActionTypes.ATK_1,
+                    card,
+                    None
+                ))
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, BarronLee)))
-
-        return card.generate_response()
+        return self.generic_response(card, ActionTypes.ATK_1)

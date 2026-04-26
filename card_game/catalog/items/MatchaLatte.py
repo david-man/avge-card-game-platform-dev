@@ -8,10 +8,7 @@ class MatchaLatte(AVGEItemCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	
-	
-	@staticmethod
-	def play_card(card) -> Response:
+	def play_card(self, card) -> Response:
 		from card_game.internal_events import AVGECardHPChange
 		packet = []
 		heal = 10
@@ -25,8 +22,9 @@ class MatchaLatte(AVGEItemCard):
 					AVGEAttributeModifier.ADDITIVE,
 					CardType.ALL,
 					ActionTypes.NONCHAR,
+					None,
 					card,
 				)
 			)
 		card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, MatchaLatte)))
-		return card.generate_response()
+		return self.generic_response(card)

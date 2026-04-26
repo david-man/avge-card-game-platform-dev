@@ -52,3 +52,19 @@ def test_set_selected_deck_rejects_foreign_deck(tmp_path: Path) -> None:
     deck = storage.create_deck(user_a, "A Deck", '{"cards":["A"]}')
     selected_ok = storage.set_selected_deck(user_b, deck.deck_id)
     assert selected_ok is False
+
+
+def test_list_active_sessions_for_user_excludes_revoked(tmp_path: Path) -> None:
+    storage = RouterStorage(str(tmp_path / "router.sqlite3"))
+
+    user_id = storage.get_or_create_user("active-user")
+    storage.create_or_update_session("session-a", user_id, ttl_seconds=60)
+    storage.create_or_update_session("session-b", user_id, ttl_seconds=60)
+
+    active_before = set(storage.list_active_session_ids_for_user(user_id))
+    assert active_before == {"session-a", "session-b"}
+
+    storage.revoke_session("session-a")
+
+    active_after = set(storage.list_active_session_ids_for_user(user_id))
+    assert active_after == {"session-b"}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from random import randint
+from random import randint, sample
 from threading import RLock
 from typing import Any
 import json
@@ -19,16 +19,20 @@ from ..avge_abstracts.AVGECards import (
 )
 from ..constants import Pile
 from ..constants import (
-    ALLOW_NONE,
-    ALLOW_REPEAT,
-    DISPLAY_FLAG,
-    InputType,
-    LABEL_FLAG,
-    MESSAGE_KEY,
-    REVEAL_KEY,
+    Data,
+    Notify,
+    RevealCards,
+    RevealStr,
+    CardSelectionQuery,
+    StrSelectionQuery,
+    OrderingQuery,
+    Phase2Data,
+    AtkPhaseData,
+    IntegerInputData,
+    CoinflipData,
+    D6Data,
     Response,
     ResponseType,
-    TARGETS_FLAG,
     AVGEPlayerAttribute,
     PlayerID,
     ActionTypes,
@@ -59,31 +63,58 @@ from .logging import log_ack_wait
 from .logging import log_ack_trace_bridge
 from .logging import log_energy_move
 from .logging import log_engine_response
+from .logging import log_input_trace
 from card_game.catalog import *
 from card_game.constants import *
 
-start_round = 1
-p1_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [KeiWatanabe],
-    Pile.BENCH: [RobertoGonzales],
-    Pile.HAND: [RobertoGonzales, DavidMan, BenCherekIII, Lucas, Bucket, AVGETShirt, Richard, Victoria],
-    Pile.DISCARD: [MainHall, Johann, IceSkates],
-    Pile.DECK: [MainHall, AVGEBirb, IceSkates, FionaLi, DavidMan, JennieWang,LukeXu, Johann, DanielYang, ],
-    Pile.STADIUM: [],
-}
 p1_username = os.getenv("P1_USERNAME", "Ash")
-p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
-    Pile.ACTIVE: [MatthewWang],
-    Pile.BENCH: [DavidMan],
-    Pile.HAND: [AVGEBirb, SteinertPracticeRoom,  JennieWang, ConcertTicket, FoldingStand],
-    Pile.DISCARD: [VideoCamera, JuliaCiacerelli, MaggieLi],
-    Pile.DECK: [AVGEBirb, SteinertPracticeRoom,  JennieWang, ConcertTicket, FoldingStand],
-}
+starting_round = 0
 p2_username = os.getenv("P2_USERNAME", "Misty")
 
+_DEFAULT_P1_SELECTED_CARDS: list[type[AVGECard]] = [
+    KeiWatanabe,
+    RobertoGonzales,
+    DavidMan,
+    BenCherekIII,
+    Lucas,
+    Bucket,
+    AVGETShirt,
+    Richard,
+    Victoria,
+    MainHall,
+    Johann,
+    IceSkates,
+    AVGEBirb,
+    FionaLi,
+    JennieWang,
+    LukeXu,
+    DanielYang,
+]
 
-def _copy_setup(setup: dict[Pile, list[type[AVGECard]]]) -> dict[Pile, list[type[AVGECard]]]:
-    return {pile: list(cards) for pile, cards in setup.items()}
+_DEFAULT_P2_SELECTED_CARDS: list[type[AVGECard]] = [
+    MatthewWang,
+    DavidMan,
+    AVGEBirb,
+    SteinertPracticeRoom,
+    JennieWang,
+    ConcertTicket,
+    FoldingStand,
+    VideoCamera,
+    JuliaCiacerelli,
+    MaggieLi,
+]
+
+
+def _blank_player_setup() -> dict[Pile, list[type[AVGECard]]]:
+    return {
+        Pile.ACTIVE: [],
+        Pile.BENCH: [],
+        Pile.HAND: [],
+        Pile.DISCARD: [],
+        Pile.DECK: [],
+        Pile.TOOL: [],
+        Pile.STADIUM: [],
+    }
 
 
 def _resolve_catalog_card_class(card_id: str) -> type[AVGECard] | None:
@@ -119,32 +150,40 @@ def _selected_cards_from_env(env_name: str) -> list[type[AVGECard]]:
 
 
 def _apply_selected_cards_to_setup(
-    base_setup: dict[Pile, list[type[AVGECard]]],
     selected_cards: list[type[AVGECard]],
 ) -> dict[Pile, list[type[AVGECard]]]:
-    if not selected_cards:
-        return _copy_setup(base_setup)
 
-    resolved_setup = _copy_setup(base_setup)
-    # Selected deck cards initialize in hand. Keep a valid active character so
-    # engine Phase2 startup does not crash on empty active holder.
-    resolved_setup[Pile.BENCH] = []
-    resolved_setup[Pile.DISCARD] = []
-    resolved_setup[Pile.DECK] = []
-    resolved_setup[Pile.HAND] = list(selected_cards)
+    resolved_setup = _blank_player_setup()
+    remaining_cards = list(selected_cards)
 
-    active_cards = resolved_setup.get(Pile.ACTIVE, [])
-    has_active_character = any(issubclass(card, AVGECharacterCard) for card in active_cards)
-    if not has_active_character:
-        first_character = next((card for card in selected_cards if issubclass(card, AVGECharacterCard)), None)
-        if first_character is not None:
-            resolved_setup[Pile.ACTIVE] = [first_character]
+    character_cards = [card for card in remaining_cards if issubclass(card, AVGECharacterCard)]
+    if not character_cards:
+        return resolved_setup
 
+    active_card = sample(character_cards, 1)[0]
+    remaining_cards.remove(active_card)
+    resolved_setup[Pile.ACTIVE] = [active_card]
+
+    hand_count = min(initial_hand_size, len(remaining_cards))
+    initial_hand = sample(remaining_cards, hand_count) if hand_count > 0 else []
+    for card in initial_hand:
+        remaining_cards.remove(card)
+
+    resolved_setup[Pile.HAND] = initial_hand
+    resolved_setup[Pile.DECK] = remaining_cards
     return resolved_setup
 
 
-p1_setup = _apply_selected_cards_to_setup(p1_setup_default, _selected_cards_from_env('P1_DECK_CARDS_JSON'))
-p2_setup = _apply_selected_cards_to_setup(p2_setup_default, _selected_cards_from_env('P2_DECK_CARDS_JSON'))
+_p1_selected_cards = _selected_cards_from_env('P1_DECK_CARDS_JSON')
+if len(_p1_selected_cards) == 0:
+    _p1_selected_cards = list(_DEFAULT_P1_SELECTED_CARDS)
+
+_p2_selected_cards = _selected_cards_from_env('P2_DECK_CARDS_JSON')
+if len(_p2_selected_cards) == 0:
+    _p2_selected_cards = list(_DEFAULT_P2_SELECTED_CARDS)
+
+p1_setup = _apply_selected_cards_to_setup(_p1_selected_cards)
+p2_setup = _apply_selected_cards_to_setup(_p2_selected_cards)
 # Backwards-compatible aliases for older references.
 
 
@@ -152,7 +191,7 @@ def build_environment_from_default_setups(
     start_turn: PlayerID = PlayerID.P1,
     starting_stadium: type[AVGEStadiumCard] | None = None,
     starting_stadium_player: PlayerID | None = None,
-    round_number: int = start_round,
+    round_number: int = starting_round,
 ) -> AVGEEnvironment:
     """Build an AVGEEnvironment from configured p1/p2 setups."""
     return AVGEEnvironment(
@@ -169,7 +208,7 @@ def build_default_setup_payload_from_environment(
     start_turn: PlayerID = PlayerID.P1,
     starting_stadium: type[AVGEStadiumCard] | None = None,
     starting_stadium_player: PlayerID | None = None,
-    round_number: int = start_round,
+    round_number: int = starting_round,
 ) -> dict[str, Any]:
     """Build a frontend/router-compatible setup payload from the default environment."""
     env = build_environment_from_default_setups(
@@ -202,9 +241,9 @@ def environment_to_setup_json(env: AVGEEnvironment, indent: int = 2) -> str:
 class FrontendGameBridge:
     """Translate frontend events to engine actions and engine responses back to frontend commands."""
 
-    def __init__(self) -> None:
+    def __init__(self, env: AVGEEnvironment | None = None) -> None:
         self._lock = RLock()
-        self.env = build_environment_from_default_setups()
+        self.env = env if isinstance(env, AVGEEnvironment) else build_environment_from_default_setups()
         self._max_forward_steps = 5000
         self._pending_packet_commands: list[str] = []
         self._outbound_command_queue: list[str] = []
@@ -213,11 +252,94 @@ class FrontendGameBridge:
         self._last_emitted_phase_token: str | None = None
         self._pending_engine_input_args: dict[str, Any] | None = None
         self._pending_frontend_events: list[tuple[str, dict[str, Any]]] = []
-        self._last_emitted_input_query_signature: tuple[str, str, str] | None = None
+        self._last_emitted_input_query_signature: tuple[str, str, str, str] | None = None
+        self._pending_ordering_listener_by_token: dict[str, Any] | None = None
+        self._last_emitted_ordering_query_signature: tuple[str, ...] | None = None
         self._force_environment_sync_pending = False
         self._bootstrap_phase_cycle()
         self._prime_engine_for_frontend_inputs()
         self._last_emitted_phase_token = self._frontend_phase_token(self.env.game_phase)
+
+    def clone_with_init_setup(self, setup_by_slot: dict[str, dict[str, Any]]) -> 'FrontendGameBridge':
+        with self._lock:
+            p1_setup = self._build_player_setup_for_init('p1', setup_by_slot.get('p1', {}))
+            p2_setup = self._build_player_setup_for_init('p2', setup_by_slot.get('p2', {}))
+            next_env = AVGEEnvironment(
+                deepcopy(p1_setup),
+                deepcopy(p2_setup),
+                self.env.player_turn.unique_id,
+                start_round=self.env.round_id,
+            )
+
+        return FrontendGameBridge(env=next_env)
+
+    def _build_player_setup_for_init(self, slot: str, setup: dict[str, Any]) -> dict[Pile, list[type[AVGECard]]]:
+        if slot not in {'p1', 'p2'}:
+            raise ValueError('init setup slot is invalid')
+
+        player = self.env.players[slot]
+        hand_holder = player.cardholders[Pile.HAND]
+        bench_holder = player.cardholders[Pile.BENCH]
+        active_holder = player.cardholders[Pile.ACTIVE]
+        deck_holder = player.cardholders[Pile.DECK]
+        discard_holder = player.cardholders[Pile.DISCARD]
+
+        active_card_id_raw = setup.get('active_card_id')
+        bench_card_ids_raw = setup.get('bench_card_ids')
+        active_card_id = active_card_id_raw.strip() if isinstance(active_card_id_raw, str) else ''
+        bench_card_ids = [
+            card_id.strip()
+            for card_id in bench_card_ids_raw
+            if isinstance(card_id, str) and card_id.strip()
+        ] if isinstance(bench_card_ids_raw, list) else []
+
+        if not active_card_id:
+            raise ValueError(f'{slot} init setup missing active card id')
+
+        if len(bench_card_ids) > max_bench_size:
+            raise ValueError(f'{slot} init setup exceeds bench size cap')
+
+        selected_ids = [active_card_id, *bench_card_ids]
+        if len(set(selected_ids)) != len(selected_ids):
+            raise ValueError(f'{slot} init setup has duplicate selected card ids')
+
+        candidate_by_id: dict[str, AVGECharacterCard] = {}
+        for holder in (hand_holder, bench_holder, active_holder):
+            for card in holder:
+                if isinstance(card, AVGECharacterCard):
+                    candidate_by_id[card.unique_id] = card
+
+        if active_card_id not in candidate_by_id:
+            raise ValueError(f'{slot} init setup active card is not selectable')
+
+        for bench_id in bench_card_ids:
+            if bench_id not in candidate_by_id:
+                raise ValueError(f'{slot} init setup bench card is not selectable')
+
+        selected_id_set = set(selected_ids)
+
+        resolved_setup = _blank_player_setup()
+        resolved_setup[Pile.ACTIVE] = [type(candidate_by_id[active_card_id])]
+        resolved_setup[Pile.BENCH] = [type(candidate_by_id[bench_id]) for bench_id in bench_card_ids]
+
+        hand_cards: list[type[AVGECard]] = []
+        for card in hand_holder:
+            if isinstance(card, AVGECharacterCard) and card.unique_id in selected_id_set:
+                continue
+            hand_cards.append(type(card))
+
+        for holder in (bench_holder, active_holder):
+            for card in holder:
+                if not isinstance(card, AVGECharacterCard):
+                    continue
+                if card.unique_id in selected_id_set:
+                    continue
+                hand_cards.append(type(card))
+
+        resolved_setup[Pile.HAND] = hand_cards
+        resolved_setup[Pile.DECK] = [type(card) for card in deck_holder]
+        resolved_setup[Pile.DISCARD] = [type(card) for card in discard_holder]
+        return resolved_setup
 
     def get_setup_payload(self) -> dict[str, Any]:
         with self._lock:
@@ -296,15 +418,102 @@ class FrontendGameBridge:
             return f'{source_type}(unique_id={source_id})'
         return source_type
 
+    def _current_response_source(self, response: Response) -> Any:
+        source = getattr(response, 'source', None)
+        if source is not None:
+            return source
+        return getattr(self.env._engine, 'event_running', None)
+
+    def _response_data_keys(self, data: Any) -> list[str]:
+        if isinstance(data, Data):
+            try:
+                return [str(key) for key in vars(data).keys()]
+            except Exception:
+                return []
+        return []
+
+    def _is_plain_data_payload(self, payload: Any) -> bool:
+        return isinstance(payload, Data) and type(payload) is Data
+
+    def _has_nonempty_payload(self, payload: Any) -> bool:
+        if self._is_plain_data_payload(payload):
+            return False
+        return isinstance(payload, Data)
+
+    def _notify_targets_from_players(self, players: list[PlayerID]) -> list[str]:
+        targets: list[str] = []
+        for player in players:
+            token = self._player_id_to_frontend(player)
+            if token not in targets:
+                targets.append(token)
+        return targets
+
+    def _normalize_notify_timeout(self, timeout: int | None) -> int:
+        if timeout is None:
+            return -1
+        try:
+            parsed = int(timeout)
+        except Exception:
+            return -1
+        return parsed if parsed >= -1 else -1
+
+    def _notify_from_notify(self, notify_data: Notify) -> list[str]:
+        timeout = self._normalize_notify_timeout(notify_data.timeout)
+        targets = self._notify_targets_from_players(notify_data.players)
+        if not targets or len(targets) >= 2:
+            return self._notify_both(notify_data.message, timeout=timeout)
+        return [
+            f'notify {target} {self._command_token(notify_data.message)} {timeout}'
+            for target in targets
+        ]
+
+    def _reveal_commands_for_players(
+        self,
+        players: list[PlayerID],
+        card_ids: list[str],
+        message: str | None = None,
+        timeout: int | None = None,
+    ) -> list[str]:
+        if len(card_ids) == 0:
+            return []
+        cards_csv = ','.join(card_ids)
+        message_token = self._command_token(message) if isinstance(message, str) and message.strip() else None
+        timeout_token = self._normalize_notify_timeout(timeout)
+        targets = self._notify_targets_from_players(players)
+        target_token = 'both' if len(targets) >= 2 or len(targets) == 0 else targets[0]
+        if isinstance(message_token, str):
+            return [f'reveal {target_token} [{cards_csv}] {message_token} {timeout_token}']
+        return [f'reveal {target_token} [{cards_csv}] {timeout_token}']
+
+    def _fallback_payload_command(self, response: Response, payload: Any) -> list[str]:
+        if response.response_type in {ResponseType.GAME_END, ResponseType.INTERRUPT}:
+            return []
+        if isinstance(payload, RevealCards):
+            card_ids = [getattr(card, 'unique_id', str(card)) for card in payload.cards]
+            return self._reveal_commands_for_players(payload.players, card_ids, payload.message, payload.timeout)
+        if isinstance(payload, RevealStr):
+            msg = f"{payload.message}: {', '.join(payload.items)}" if len(payload.items) > 0 else payload.message
+            return self._notify_from_notify(Notify(msg, payload.players, payload.timeout))
+        if isinstance(payload, Notify):
+            return self._notify_from_notify(payload)
+        if self._has_nonempty_payload(payload):
+            payload_name = type(payload).__name__
+            log_ack_trace_bridge(
+                'uncovered_nonempty_payload',
+                response_type=str(response.response_type),
+                payload_type=payload_name,
+            )
+            return self._notify_both(f'UNHANDLED_{payload_name}')
+        return []
+
     def _log_engine_response(self, response: Response, step: int, stage: str, input_args: dict[str, Any] | None) -> None:
         response_type = getattr(response.response_type, 'value', str(response.response_type))
-        source = getattr(response, 'source', None)
+        source = self._current_response_source(response)
         source_type = type(source).__name__ if source is not None else 'None'
-        response_data = response.data if isinstance(response.data, dict) else None
-        data_keys = list(response_data.keys()) if response_data is not None else []
+        data_keys = self._response_data_keys(response.data)
 
         # Skip noisy accept-without-payload steps; keep all meaningful responses.
-        if response.response_type == ResponseType.ACCEPT and not data_keys:
+        if response.response_type == ResponseType.ACCEPT and self._is_plain_data_payload(response.data):
             return
 
         log_engine_response(
@@ -337,6 +546,14 @@ class FrontendGameBridge:
         if self._pending_frontend_events:
             queued_event_name, queued_payload = self._pending_frontend_events.pop(0)
             self._enqueue_frontend_event_work(queued_event_name, queued_payload)
+            return
+
+        pending_ordering_map = getattr(self, '_pending_ordering_listener_by_token', None)
+        if isinstance(pending_ordering_map, dict) and pending_ordering_map and self._pending_engine_input_args is None:
+            log_ack_trace_bridge(
+                'waiting_for_ordering_result',
+                pending_tokens=len(pending_ordering_map),
+            )
             return
 
         running_event = self.env._engine.event_running
@@ -430,8 +647,8 @@ class FrontendGameBridge:
     def _bootstrap_phase_cycle(self) -> None:
         self.env.propose(
             AVGEPacket([
-                Phase2(self.env.player_turn, ActionTypes.ENV, None)
-            ], AVGEEngineID(None, ActionTypes.ENV, None))
+                Phase2(self.env, ActionTypes.ENV, self.env)
+            ], AVGEEngineID(self.env, ActionTypes.ENV, None))
         )
         self.env.force_flush()
 
@@ -455,6 +672,20 @@ class FrontendGameBridge:
         engine = self.env._engine
         running = engine.event_running
 
+        if event_name == 'input_result':
+            log_input_trace(
+                'bridge_apply_input_result_start',
+                running_type=type(running).__name__ if running is not None else 'None',
+                payload_keys=sorted(data.keys()),
+            )
+            ordering_args = self._parse_ordering_query_result(data)
+            if ordering_args is not None:
+                log_input_trace(
+                    'bridge_apply_input_result_ordering_query',
+                    result_keys=sorted(ordering_args.keys()),
+                )
+                return commands, ordering_args
+
         # Backend state is authoritative for phase navigation.
         if event_name in {'phase2_attack_button_clicked', 'phase_2_attack_button_clicked'}:
             if self.env.game_phase == GamePhase.PHASE_2:
@@ -465,6 +696,8 @@ class FrontendGameBridge:
 
         if event_name in {'atk_skip_button_clicked', 'atk_phase_skip_button_clicked'}:
             if self.env.game_phase == GamePhase.ATK_PHASE:
+                if(self.env.round_id == 0):
+                    commands.extend(self._notify_both('Player 1 turn end request received.'))
                 commands.extend(self._notify_both('Attack phase skip request received.'))
                 return commands, {'type': ActionTypes.SKIP}
             commands.extend(self._notify_both(f'Ignored attack skip request: backend phase is {self._frontend_phase_token(self.env.game_phase)}'))
@@ -479,8 +712,20 @@ class FrontendGameBridge:
         if isinstance(running, InputEvent) and event_name == 'input_result':
             input_args = self._parse_frontend_input_result(running, data)
             if input_args is not None:
+                log_input_trace(
+                    'bridge_apply_input_result_accepted',
+                    input_keys=sorted(input_args.keys()),
+                )
                 return commands, input_args
+            log_input_trace('bridge_apply_input_result_rejected')
             commands.extend(self._notify_both('Input result rejected by backend parser.'))
+            return commands, None
+
+        if event_name == 'input_result':
+            log_input_trace(
+                'bridge_apply_input_result_no_running_input_event',
+                running_type=type(running).__name__ if running is not None else 'None',
+            )
             return commands, None
 
         if event_name == 'energy_moved':
@@ -652,8 +897,8 @@ class FrontendGameBridge:
         if self.env.game_phase in {GamePhase.INIT, GamePhase.TURN_END, GamePhase.PICK_CARD}:
             self.env.propose(
                 AVGEPacket([
-                    Phase2(self.env.player_turn, ActionTypes.ENV, None)
-                ], AVGEEngineID(None, ActionTypes.ENV, None))
+                    Phase2(self.env, ActionTypes.ENV, self.env)
+                ], AVGEEngineID(self.env, ActionTypes.ENV, None))
             )
             self.env.force_flush()
             log_ack_trace_bridge(
@@ -665,16 +910,16 @@ class FrontendGameBridge:
 
         if self.env.game_phase == GamePhase.ATK_PHASE:
             attacks_left = int(self.env.player_turn.attributes.get(AVGEPlayerAttribute.ATTACKS_LEFT, 0))
-            next_event = AtkPhase(self.env.player_turn, ActionTypes.ENV, None) if attacks_left > 0 else TurnEnd(self.env, ActionTypes.ENV, None)
-            self.env.propose(AVGEPacket([next_event], AVGEEngineID(None, ActionTypes.ENV, None)))
+            next_event = AtkPhase(self.env, ActionTypes.ENV, self.env) if attacks_left > 0 else TurnEnd(self.env, ActionTypes.ENV, self.env)
+            self.env.propose(AVGEPacket([next_event], AVGEEngineID(self.env, ActionTypes.ENV, None)))
             self.env.force_flush()
             return True
 
         if self.env.game_phase == GamePhase.PHASE_2:
             self.env.propose(
                 AVGEPacket([
-                    Phase2(self.env.player_turn, ActionTypes.ENV, None)
-                ], AVGEEngineID(None, ActionTypes.ENV, None))
+                    Phase2(self.env, ActionTypes.ENV, self.env)
+                ], AVGEEngineID(self.env, ActionTypes.ENV, None))
             )
             self.env.force_flush()
             return True
@@ -688,41 +933,95 @@ class FrontendGameBridge:
 
     def _commands_from_response(self, response: Response) -> list[str]:
         commands: list[str] = []
-        response_data = response.data if isinstance(response.data, dict) else {}
+        response_data = response.data
+        source = self._current_response_source(response)
+
+        if response.response_type != ResponseType.REQUIRES_QUERY:
+            self._clear_pending_ordering_query_state()
 
         if response.response_type == ResponseType.ACCEPT:
-            message = response_data.get(MESSAGE_KEY)
-            if isinstance(message, str) and message.strip():
-                commands.extend(self._notify_for_source_player(response.source, message.strip()))
+            if isinstance(response_data, RevealCards):
+                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
+                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
+            elif isinstance(response_data, RevealStr):
+                msg = f"{response_data.message}: {', '.join(response_data.items)}" if len(response_data.items) > 0 else response_data.message
+                commands.extend(self._notify_from_notify(Notify(msg, response_data.players, response_data.timeout)))
+            elif isinstance(response_data, Notify):
+                commands.extend(self._notify_from_notify(response_data))
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
             return commands
 
         if response.response_type == ResponseType.SKIP:
-            message = response_data.get(MESSAGE_KEY)
-            skip_message = message if isinstance(message, str) and message.strip() else 'EVENT SKIPPED'
-            if bool(getattr(response.source, 'internal', False)):
-                commands.extend(self._notify_current_turn_player(skip_message))
+            if isinstance(response_data, RevealCards):
+                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
+                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
+            elif isinstance(response_data, Notify):
+                commands.extend(self._notify_from_notify(response_data))
             else:
-                commands.extend(self._notify_both(skip_message))
+                skip_message = 'EVENT SKIPPED'
+                if bool(getattr(source, 'internal', False)):
+                    commands.extend(self._notify_current_turn_player(skip_message))
+                else:
+                    commands.extend(self._notify_both(skip_message))
             self._force_environment_sync_pending = True
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
             return commands
 
         if response.response_type == ResponseType.FAST_FORWARD:
-            message = response_data.get(MESSAGE_KEY)
-            commands.extend(self._notify_both(message if isinstance(message, str) and message.strip() else 'EVENT FAST FORWARDED'))
+            if isinstance(response_data, RevealCards):
+                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
+                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
+            elif isinstance(response_data, Notify):
+                commands.extend(self._notify_from_notify(response_data))
+            else:
+                commands.extend(self._notify_both('EVENT FAST FORWARDED'))
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
+            return commands
+
+        if response.response_type == ResponseType.GAME_END:
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
             return commands
 
         if response.response_type == ResponseType.REQUIRES_QUERY:
-            source = response.source
-            if isinstance(source, (PhasePickCard, Phase2, AtkPhase)):
+            if isinstance(response_data, OrderingQuery):
+                ordering_command = self._build_ordering_query_command(response_data)
+                if ordering_command is not None:
+                    commands.append(ordering_command)
+                return commands
+
+            self._clear_pending_ordering_query_state()
+
+            if isinstance(response_data, Phase2Data):
+                self._append_phase_command_if_changed(commands, GamePhase.PHASE_2)
+                return commands
+
+            if isinstance(response_data, AtkPhaseData):
+                self._append_phase_command_if_changed(commands, GamePhase.ATK_PHASE)
+                return commands
+
+            if isinstance(source, (PhasePickCard, Phase2, AtkPhase)) or isinstance(response_data, (Phase2Data, AtkPhaseData)):
                 # Phase events may surface as REQUIRES_QUERY (for example Phase2
                 # waiting for player action) without emitting a CORE response.
                 # Keep frontend phase HUD/state in sync in this path too.
                 self._append_phase_command_if_changed(commands, self.env.game_phase)
             if isinstance(source, InputEvent):
-                query_label = str(response_data.get(LABEL_FLAG, ''))
+                query_data = getattr(source, 'query_data', Data())
+                if not isinstance(query_data, Data):
+                    log_ack_trace_bridge(
+                        'uncovered_input_query_data',
+                        payload_type=type(query_data).__name__,
+                    )
+                    commands.extend(self._notify_both('UNHANDLED_QUERY_DATA'))
+                    return commands
+
+                query_header = str(getattr(query_data, 'header_msg', ''))
                 input_keys = ','.join(str(key) for key in getattr(source, 'input_keys', []))
                 player_id = str(getattr(getattr(source, 'player_for', None), 'unique_id', ''))
-                query_signature = (player_id, query_label, input_keys)
+                query_signature = (player_id, type(query_data).__name__, query_header, input_keys)
 
                 if self._last_emitted_input_query_signature == query_signature:
                     log_ack_trace_bridge(
@@ -731,21 +1030,29 @@ class FrontendGameBridge:
                     )
                     return commands
 
-                input_command = self._build_input_command(source, response_data)
+                input_command = self._build_input_command(source, query_data)
                 if input_command:
                     commands.append(input_command)
                     self._last_emitted_input_query_signature = query_signature
+                else:
+                    payload_name = type(query_data).__name__
+                    log_ack_trace_bridge(
+                        'uncovered_input_query_data',
+                        payload_type=payload_name,
+                    )
+                    commands.extend(self._notify_both(f'UNHANDLED_{payload_name}'))
                 return commands
 
-            message = response_data.get(MESSAGE_KEY)
-            if isinstance(message, str) and message.strip():
-                commands.extend(self._notify_for_source_player(response.source, message.strip()))
+            if isinstance(response_data, Notify):
+                commands.extend(self._notify_from_notify(response_data))
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
             return commands
 
         if response.response_type != ResponseType.CORE:
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
             return commands
-
-        source = response.source
 
         if isinstance(source, AVGECardHPChange):
             commands.append(f'hp {source.target_card.unique_id} {int(source.target_card.hp)} {int(source.target_card.max_hp)}')
@@ -789,10 +1096,26 @@ class FrontendGameBridge:
             return commands
 
         if isinstance(source, ReorderCardholder):
-            commands.append('shuffle-animation')
+            target_holder_id = self._reorder_target_command_arg(source)
+            if target_holder_id:
+                commands.append(f'shuffle-animation {target_holder_id}')
+            else:
+                commands.append('shuffle-animation')
             return commands
 
-        if isinstance(source, (PlayCharacterCard, PlayNonCharacterCard)):
+        if isinstance(source, PlayCharacterCard):
+            if isinstance(response_data, RevealCards):
+                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
+                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
+            elif isinstance(response_data, RevealStr):
+                msg = f"{response_data.message}: {', '.join(response_data.items)}" if len(response_data.items) > 0 else response_data.message
+                commands.extend(self._notify_from_notify(Notify(msg, response_data.players, response_data.timeout)))
+            elif isinstance(response_data, Notify):
+                commands.extend(self._notify_from_notify(response_data))
+
+            if len(commands) == 0:
+                commands.extend(self._fallback_payload_command(response, response_data))
+
             return commands
 
         if isinstance(source, PhasePickCard):
@@ -818,17 +1141,22 @@ class FrontendGameBridge:
             return commands
 
         if isinstance(source, EmptyEvent):
-            reveal_data = response_data.get(REVEAL_KEY)
-            if isinstance(reveal_data, list) and reveal_data:
-                card_ids = [getattr(card, 'unique_id', str(card)) for card in reveal_data]
-                cards_csv = ','.join(card_ids)
-                commands.append(f'reveal player-1 [{cards_csv}]')
-                commands.append(f'reveal player-2 [{cards_csv}]')
+            if isinstance(response_data, RevealCards):
+                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
+                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
             return commands
 
-        message = response_data.get(MESSAGE_KEY)
-        if isinstance(message, str) and message.strip():
-            commands.extend(self._notify_for_source_player(response.source, message.strip()))
+        if isinstance(response_data, RevealCards):
+            card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
+            commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
+        elif isinstance(response_data, RevealStr):
+            msg = f"{response_data.message}: {', '.join(response_data.items)}" if len(response_data.items) > 0 else response_data.message
+            commands.extend(self._notify_from_notify(Notify(msg, response_data.players, response_data.timeout)))
+        elif isinstance(response_data, Notify):
+            commands.extend(self._notify_from_notify(response_data))
+
+        if len(commands) == 0:
+            commands.extend(self._fallback_payload_command(response, response_data))
 
         return commands
 
@@ -900,81 +1228,110 @@ class FrontendGameBridge:
 
         return None
 
-    def _build_input_command(self, event: InputEvent, response_data: dict[str, Any]) -> str | None:
+    def _build_input_command(self, event: InputEvent, query_data: Data) -> str | None:
         player_token = self._player_id_to_frontend(event.player_for.unique_id)
-        message = self._command_token(str(response_data.get(MESSAGE_KEY, 'input_required')))
-        query_label = str(response_data.get(LABEL_FLAG, ''))
+        message_source = 'input_required'
 
-        if query_label in {'kei_watanabe_drumkidworkshop'}:
-            display = response_data.get(DISPLAY_FLAG, [])
-            display_ids = self._csv_from_display_entries(display)
-            if display_ids:
-                return f'input kei_watanabe_drumkidworkshop {player_token} {message} [{display_ids}]'
-
-        input_type = response_data.get('input_type')
-        num_inputs = int(response_data.get('num_inputs', len(event.input_keys)))
-
-        if input_type == InputType.SELECTION:
-            display = response_data.get(DISPLAY_FLAG, [])
-            targets = response_data.get(TARGETS_FLAG, [])
-            allow_repeat = bool(response_data.get(ALLOW_REPEAT, False))
-            allow_none = bool(response_data.get(ALLOW_NONE, response_data.get('allow_none', False)))
-            display_ids = self._csv_from_display_entries(display)
-            highlight_ids = self._csv_from_display_entries(targets)
+        if isinstance(query_data, CardSelectionQuery):
+            message_source = query_data.header_msg
+            display_ids = self._csv_from_display_entries(list(query_data.display))
+            highlight_ids = self._csv_from_display_entries(list(query_data.targets))
             return (
-                f'input selection {player_token} {message} '
-                f'[{display_ids}], [{highlight_ids}], {num_inputs} '
-                f'{str(allow_repeat).lower()} {str(allow_none).lower()}'
+                f'input selection {player_token} {self._command_token(message_source)} '
+                f'[{display_ids}], [{highlight_ids}], {len(event.input_keys)} '
+                f'{str(query_data.allows_repeat).lower()} {str(query_data.allows_none).lower()}'
             )
 
-        if isinstance(input_type, list):
-            flat_type = input_type[0] if len(input_type) > 0 else InputType.DETERMINISTIC
-        else:
-            flat_type = input_type
+        if isinstance(query_data, StrSelectionQuery):
+            message_source = query_data.header_msg
+            display_ids = self._csv_from_display_entries(list(query_data.display))
+            highlight_ids = self._csv_from_display_entries(list(query_data.targets))
+            return (
+                f'input selection {player_token} {self._command_token(message_source)} '
+                f'[{display_ids}], [{highlight_ids}], {len(event.input_keys)} '
+                f'{str(query_data.allows_repeat).lower()} {str(query_data.allows_none).lower()}'
+            )
 
-        if flat_type == InputType.D6:
-            value = randint(1, 6)
-            return f'input d6 {player_token} {message} {value}'
+        if isinstance(query_data, IntegerInputData):
+            message_source = query_data.header_msg
+            return f'input numerical-entry {player_token} {self._command_token(message_source)}'
 
-        if flat_type == InputType.COIN:
+        if isinstance(query_data, CoinflipData):
+            message_source = query_data.header_msg
             value = randint(0, 1)
-            return f'input coin {player_token} {message} {value}'
+            return f'input coin {player_token} {self._command_token(message_source)} {value}'
 
-        if flat_type == InputType.BINARY:
-            return f'input binary {player_token} {message}'
+        if isinstance(query_data, D6Data):
+            message_source = query_data.header_msg
+            value = randint(1, 6)
+            return f'input d6 {player_token} {self._command_token(message_source)} {value}'
 
-        if query_label in {'daniel_redirect', 'ryan_lee_atk1'} or flat_type == InputType.DETERMINISTIC:
-            return f'input numerical-entry {player_token} {message}'
+        if isinstance(query_data, OrderingQuery):
+            return f'input numerical-entry {player_token} order_listeners'
 
-        return f'input numerical-entry {player_token} {message}'
+        return None
 
     def _parse_frontend_input_result(self, event: InputEvent, data: dict[str, Any]) -> dict[str, Any] | None:
         # Frontend supplied an input answer, so allow the next query cycle to emit.
         self._last_emitted_input_query_signature = None
 
-        query_label = str(event.query_data.get(LABEL_FLAG, ''))
-        if query_label == 'kei_watanabe_drumkidworkshop':
-            card_id = self._pick_str(data, 'card_id', 'cardId')
-            attack = self._normalize_action_name(data.get('attack'))
-            card = self._get_character_card(card_id)
-            if card is None:
-                return None
-            if attack == 'atk1':
-                return {'input_result': [card, ActionTypes.ATK_1]}
-            if attack == 'atk2':
-                return {'input_result': [card, ActionTypes.ATK_2]}
+        query_data = getattr(event, 'query_data', Data())
+        query_type = type(query_data).__name__
+        payload_keys = sorted(data.keys())
+        expected_input_count = len(event.input_keys)
+
+        log_input_trace(
+            'bridge_parse_input_result_start',
+            query_type=query_type,
+            payload_keys=payload_keys,
+            expected_input_count=expected_input_count,
+        )
+
+        def _reject(reason: str, **extra: Any) -> None:
+            log_input_trace(
+                'bridge_parse_input_result_rejected',
+                reason=reason,
+                query_type=query_type,
+                payload_keys=payload_keys,
+                expected_input_count=expected_input_count,
+                **extra,
+            )
+
+        def _accept(parsed_values: list[Any]) -> dict[str, Any]:
+            preview: list[Any] = []
+            for value in parsed_values:
+                if isinstance(value, AVGECard):
+                    preview.append(value.unique_id)
+                else:
+                    preview.append(value)
+            log_input_trace(
+                'bridge_parse_input_result_accepted',
+                query_type=query_type,
+                parsed_count=len(parsed_values),
+                parsed_preview=preview,
+            )
+            return {'input_result': parsed_values}
+
+        def _ordered_entries(*keys: str) -> list[Any] | None:
+            for key in keys:
+                raw_value = data.get(key)
+                if isinstance(raw_value, list):
+                    return list(raw_value)
+                if isinstance(raw_value, tuple):
+                    return list(raw_value)
+                if isinstance(raw_value, str) and raw_value.strip():
+                    text = raw_value.strip()
+                    if text.startswith('[') and text.endswith(']'):
+                        text = text[1:-1]
+                    parts = [part.strip() for part in text.split(',')]
+                    cleaned = [part for part in parts if part]
+                    return cleaned if cleaned else [text]
             return None
 
-        if query_label in {'daniel_redirect', 'ryan_lee_atk1'}:
-            value = data.get('value')
-            if isinstance(value, (int, float)):
-                return {'input_result': [int(value)]}
-            return None
-
-        input_type = event.input_type
-        if input_type == InputType.SELECTION:
-            ordered = data.get('ordered_selections', [])
-            if not isinstance(ordered, list):
+        if isinstance(query_data, CardSelectionQuery):
+            ordered = _ordered_entries('ordered_selections', 'orderedSelections')
+            if ordered is None:
+                _reject('missing_ordered_selections')
                 return None
             parsed: list[Any] = []
             for raw in ordered:
@@ -982,46 +1339,144 @@ class FrontendGameBridge:
                     parsed.append(None)
                     continue
                 if not isinstance(raw, str):
+                    _reject('invalid_card_selection_entry_type', entry_type=type(raw).__name__)
                     return None
                 normalized_raw = self._sanitize_identifier_token(raw)
                 card = self._get_card(normalized_raw)
-                parsed.append(card if card is not None else raw)
+                parsed.append(card if card is not None else normalized_raw)
             if len(parsed) != len(event.input_keys):
+                _reject('card_selection_length_mismatch', parsed_count=len(parsed))
                 return None
-            return {'input_result': parsed}
+            return _accept(parsed)
 
-        if isinstance(input_type, list):
-            normalized_types = input_type
-        else:
-            normalized_types = [input_type] * len(event.input_keys)
+        if isinstance(query_data, StrSelectionQuery):
+            ordered = _ordered_entries('ordered_selections', 'orderedSelections')
+            if ordered is None:
+                _reject('missing_ordered_selections')
+                return None
+            parsed: list[Any] = []
+            for raw in ordered:
+                if raw is None or (isinstance(raw, str) and raw.strip().lower() in {'none', 'null', '-1'}):
+                    parsed.append(None)
+                    continue
+                if not isinstance(raw, str):
+                    _reject('invalid_str_selection_entry_type', entry_type=type(raw).__name__)
+                    return None
+                parsed.append(raw)
+            if len(parsed) != len(event.input_keys):
+                _reject('str_selection_length_mismatch', parsed_count=len(parsed))
+                return None
+            return _accept(parsed)
 
-        if len(normalized_types) != len(event.input_keys):
+        if isinstance(query_data, IntegerInputData):
+            value = data.get('value', data.get('result'))
+            if not isinstance(value, (int, float)):
+                _reject('invalid_integer_value', received_type=type(value).__name__ if value is not None else 'None')
+                return None
+            return _accept([int(value)])
+
+        if isinstance(query_data, CoinflipData):
+            value = data.get('result_value', data.get('result'))
+            if not isinstance(value, (int, float)):
+                _reject('invalid_coinflip_value', received_type=type(value).__name__ if value is not None else 'None')
+                return None
+            return _accept([int(value)])
+
+        if isinstance(query_data, D6Data):
+            value = data.get('result')
+            if not isinstance(value, (int, float)):
+                _reject('invalid_d6_value', received_type=type(value).__name__ if value is not None else 'None')
+                return None
+            return _accept([int(value)])
+
+        _reject('unsupported_query_type')
+        return None
+
+    def _clear_pending_ordering_query_state(self) -> None:
+        self._pending_ordering_listener_by_token = None
+        self._last_emitted_ordering_query_signature = None
+
+    def _build_ordering_query_command(self, query_data: OrderingQuery) -> str | None:
+        unordered = list(getattr(query_data, 'unordered_listeners', []) or [])
+        if len(unordered) == 0:
+            self._clear_pending_ordering_query_state()
             return None
 
-        results: list[Any] = []
-        for t in normalized_types:
-            if t == InputType.D6:
-                value = data.get('result')
-                if not isinstance(value, (int, float)):
-                    return None
-                results.append(int(value))
-            elif t == InputType.COIN:
-                value = data.get('result_value', data.get('result'))
-                if not isinstance(value, (int, float)):
-                    return None
-                results.append(int(value))
-            elif t == InputType.BINARY:
-                value = data.get('result_value', data.get('result'))
-                if not isinstance(value, (int, float, bool)):
-                    return None
-                results.append(bool(value))
-            else:
-                value = data.get('value')
-                if value is None:
-                    return None
-                results.append(value)
+        listener_by_token: dict[str, Any] = {}
+        ordered_tokens: list[str] = []
+        for idx, listener in enumerate(unordered):
+            package_fn = getattr(listener, 'package', None)
+            package_name = package_fn() if callable(package_fn) else type(listener).__name__
+            if not isinstance(package_name, str) or not package_name.strip():
+                package_name = type(listener).__name__
+            token = f'l{idx}_{self._command_token(package_name)}'
+            listener_by_token[token] = listener
+            ordered_tokens.append(token)
 
-        return {'input_result': results}
+        signature = tuple(ordered_tokens)
+        if (
+            self._last_emitted_ordering_query_signature == signature
+            and isinstance(self._pending_ordering_listener_by_token, dict)
+            and len(self._pending_ordering_listener_by_token) == len(listener_by_token)
+        ):
+            return None
+
+        self._pending_ordering_listener_by_token = listener_by_token
+        self._last_emitted_ordering_query_signature = signature
+
+        player_token = self._player_id_to_frontend(self.env.player_turn.unique_id)
+        token_csv = ','.join(ordered_tokens)
+        return (
+            f'input selection {player_token} order_listeners '
+            f'[{token_csv}], [{token_csv}], {len(ordered_tokens)} false false'
+        )
+
+    def _parse_ordering_query_result(self, data: dict[str, Any]) -> dict[str, Any] | None:
+        pending_map = getattr(self, '_pending_ordering_listener_by_token', None)
+        if not isinstance(pending_map, dict) or len(pending_map) == 0:
+            return None
+
+        ordered_tokens = None
+        for key in ('ordered_selections', 'orderedSelections', 'ordered_listener_tokens', 'orderedListenerTokens'):
+            raw_value = data.get(key)
+            if isinstance(raw_value, list):
+                ordered_tokens = list(raw_value)
+                break
+            if isinstance(raw_value, tuple):
+                ordered_tokens = list(raw_value)
+                break
+            if isinstance(raw_value, str) and raw_value.strip():
+                text = raw_value.strip()
+                if text.startswith('[') and text.endswith(']'):
+                    text = text[1:-1]
+                ordered_tokens = [part.strip() for part in text.split(',') if part.strip()]
+                if len(ordered_tokens) == 0:
+                    ordered_tokens = [text]
+                break
+        if not isinstance(ordered_tokens, list):
+            return None
+        if len(ordered_tokens) != len(pending_map):
+            return None
+
+        seen_tokens: set[str] = set()
+        resolved_listeners: list[Any] = []
+        for raw_token in ordered_tokens:
+            if not isinstance(raw_token, str):
+                return None
+            token = self._sanitize_identifier_token(raw_token)
+            if token in seen_tokens:
+                return None
+            listener = pending_map.get(token)
+            if listener is None:
+                return None
+            seen_tokens.add(token)
+            resolved_listeners.append(listener)
+
+        if len(resolved_listeners) != len(pending_map):
+            return None
+
+        self._clear_pending_ordering_query_state()
+        return {'group_ordering': resolved_listeners}
 
     def _sync_environment_commands(self) -> list[str]:
         payload = environment_to_setup_payload(self.env)
@@ -1096,7 +1551,7 @@ class FrontendGameBridge:
         if not isinstance(running_event, (Phase2, AtkPhase)):
             return
         try:
-            if not bool(card.can_play_active(card)):
+            if not bool(card.can_play_active()):
                 return
         except Exception:
             return
@@ -1106,26 +1561,29 @@ class FrontendGameBridge:
         packet = AVGEPacket(p, AVGEEngineID(card, ActionTypes.PLAYER_CHOICE, type(card)))
         self.env._engine.external_interrupt(packet)
 
-    def _notify_for_source_player(self, source: Any, message: str) -> list[str]:
+    def _notify_for_source_player(self, source: Any, message: str, timeout: int | None = -1) -> list[str]:
         player = getattr(source, 'player', None)
         if player is None:
             player = getattr(source, 'player_for', None)
+        normalized_timeout = self._normalize_notify_timeout(timeout)
         if player is not None and hasattr(player, 'unique_id'):
             token = self._player_id_to_frontend(player.unique_id)
-            return [f'notify {token} {self._command_token(message)}']
-        return self._notify_both(message)
+            return [f'notify {token} {self._command_token(message)} {normalized_timeout}']
+        return self._notify_both(message, timeout=normalized_timeout)
 
-    def _notify_both(self, message: str) -> list[str]:
+    def _notify_both(self, message: str, timeout: int | None = -1) -> list[str]:
         msg = self._command_token(message)
-        return [f'notify both {msg}']
+        normalized_timeout = self._normalize_notify_timeout(timeout)
+        return [f'notify both {msg} {normalized_timeout}']
 
-    def _notify_current_turn_player(self, message: str) -> list[str]:
+    def _notify_current_turn_player(self, message: str, timeout: int | None = -1) -> list[str]:
         turn_player = getattr(self.env, 'player_turn', None)
         turn_player_id = getattr(turn_player, 'unique_id', None)
         if turn_player_id is None:
-            return self._notify_both(message)
+            return self._notify_both(message, timeout=timeout)
         token = self._player_id_to_frontend(turn_player_id)
-        return [f'notify {token} {self._command_token(message)}']
+        normalized_timeout = self._normalize_notify_timeout(timeout)
+        return [f'notify {token} {self._command_token(message)} {normalized_timeout}']
 
     def _winner_command_from_surrender_payload(self, data: dict[str, Any]) -> str | None:
         loser_token = self._frontend_player_token(data.get('loser_view'))
@@ -1229,6 +1687,21 @@ class FrontendGameBridge:
         if player is None or pile_type is None:
             return None
         return f'{player.unique_id}-{pile_type}'
+
+    def _reorder_target_command_arg(self, event: ReorderCardholder) -> str | None:
+        holder = getattr(event, 'cardholder', None)
+        if holder is None:
+            return None
+
+        if holder == self.env.stadium_cardholder:
+            return 'stadium'
+
+        player = getattr(holder, 'player', None)
+        pile_type = getattr(holder, 'pile_type', None)
+        if player is None or pile_type is None:
+            return None
+
+        return self._normalize_zone_id(f'{player.unique_id}-{pile_type}')
 
     def _card_zone_id(self, card: AVGECard | None) -> str | None:
         if card is None:

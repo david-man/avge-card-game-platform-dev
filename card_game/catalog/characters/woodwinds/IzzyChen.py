@@ -2,110 +2,119 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import AVGECardHPChange, InputEvent, PlayCharacterCard, TransferCard
+
 
 class IzzyChen(AVGECharacterCard):
-    _COIN_FLIP_1_KEY = "izzy_coin_flip_1"
-    _COIN_FLIP_2_KEY = "izzy_coin_flip_2"
-    _ACTIVE_USED_KEY = "izzy_active_used"
-    _ACTIVE_STADIUM_CHOICE = "izzy_stadium_choice"
+    _ACTIVE_STADIUM_CHOICE = 'izzy_stadium_choice'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.WOODWIND, 2, 0, 3)
-        self.has_atk_1 = False
-        self.has_atk_2 = True
-        self.has_passive = False
-        self.has_active = True
+        super().__init__(unique_id, 110, CardType.WOODWIND, 2, 2)
+        self.active_name = 'BAI Wrangler'
+        self.atk_1_name = 'Overblow'
 
-    @staticmethod
-    def can_play_active(card) -> bool:
-        if card.env.player_turn != card.player:
+    def can_play_active(self) -> bool:
+        if self.env is None or self.player is None:
             return False
-        already_used = card.env.cache.get(card, IzzyChen._ACTIVE_USED_KEY, None)
-        if card.env.round_id == already_used:
+        if self.env.player_turn != self.player:
             return False
-        return True
 
-    @staticmethod
-    def active(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import InputEvent, TransferCard
+        discard = self.player.cardholders[Pile.DISCARD]
+        if len([c for c in discard if isinstance(c, AVGEStadiumCard)]) == 0:
+            return False
 
-        player = card.player
+        _, used_idx = self.env.check_history(
+            self.env.round_id,
+            PlayCharacterCard,
+            {
+                'card': self,
+                'card_action': ActionTypes.ACTIVATE_ABILITY,
+                'caller': self,
+            },
+        )
+        return used_idx == -1
+
+    def active(self) -> Response:
+        player = self.player
         discard = player.cardholders[Pile.DISCARD]
         deck = player.cardholders[Pile.DECK]
-        stadiums = [c for c in discard.cards_by_id.values() if isinstance(c, AVGEStadiumCard)]
-        if len(stadiums) == 0:
-            return card.generate_response()
-        chosen_stadium = card.env.cache.get(card, IzzyChen._ACTIVE_STADIUM_CHOICE, None, True)
+        stadiums = [c for c in discard if isinstance(c, AVGEStadiumCard)]
+
+        missing = object()
+        chosen_stadium = self.env.cache.get(self, IzzyChen._ACTIVE_STADIUM_CHOICE, missing, True)
+        if chosen_stadium is missing:
+            display_cards = list(discard)
+            valid_targets = list(stadiums)
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        player,
+                        [IzzyChen._ACTIVE_STADIUM_CHOICE],
+                        lambda r: True,
+                        ActionTypes.ACTIVATE_ABILITY,
+                        self,
+                        CardSelectionQuery(
+                            'BAI Wrangler: You may put a Stadium card from your discard pile on top of your deck.',
+                            valid_targets,
+                            display_cards,
+                            True,
+                            False,
+                        ),
+                    )
+                ]),
+            )
+
         if chosen_stadium is None:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            player,
-                            [IzzyChen._ACTIVE_STADIUM_CHOICE],
-                            InputType.SELECTION,
-                            lambda r: True,
-                            ActionTypes.ACTIVATE_ABILITY,
-                            card,
-                            {
-                                LABEL_FLAG: "izzy_stadium_recover",
-                                TARGETS_FLAG: stadiums,
-                                DISPLAY_FLAG: list(discard)
-                            },
-                        )
-                    ]
-                },
-            )
+            return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-        card.propose(AVGEPacket([TransferCard(chosen_stadium, discard, deck, ActionTypes.ACTIVATE_ABILITY, card, 0)], AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, IzzyChen)))
-        card.env.cache.set(card, IzzyChen._ACTIVE_USED_KEY, card.env.round_id)
-        return card.generate_response()
+        if not isinstance(chosen_stadium, AVGEStadiumCard) or chosen_stadium not in discard:
+            return Response(ResponseType.CORE, Data())
 
-    @staticmethod
-    def atk_2(card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, InputEvent
-
-        opponent_bench = card.player.opponent.cardholders[Pile.BENCH]
-        flip_result_1 = card.env.cache.get(card, IzzyChen._COIN_FLIP_1_KEY, None, True)
-        flip_result_2 = card.env.cache.get(card, IzzyChen._COIN_FLIP_2_KEY, None, True)
-        if flip_result_1 is None:
-            return card.generate_response(
-                ResponseType.INTERRUPT,
-                {
-                    INTERRUPT_KEY: [
-                        InputEvent(
-                            card.player,
-                            [IzzyChen._COIN_FLIP_1_KEY, IzzyChen._COIN_FLIP_2_KEY],
-                            InputType.COIN,
-                            lambda r: True,
-                            ActionTypes.ATK_2,
-                            card,
-                            {LABEL_FLAG: "izzychen_2coin"},
-                        )
-                    ]
-                },
-            )
-
-        if flip_result_1 == 1 and flip_result_2 == 1:
-            damage = 50
-        elif flip_result_1 == 0 and flip_result_2 == 0:
-            damage = 100
-        else:
-            return card.generate_response()
-        def gen() -> PacketType:
+        def generate_packet() -> PacketType:
             return [
+                TransferCard(
+                    chosen_stadium,
+                    discard,
+                    deck,
+                    ActionTypes.ACTIVATE_ABILITY,
+                    self,
+                    None,
+                    0,
+                )
+            ]
+
+        self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, IzzyChen)))
+        return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
+
+    def atk_1(self, card: AVGECharacterCard) -> Response:
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        50,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.WOODWIND,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
+                )
+            packet.append(
                 AVGECardHPChange(
-                    bench_target,
-                    damage,
+                    card,
+                    10,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.WOODWIND,
-                    ActionTypes.ATK_2,
+                    ActionTypes.ATK_1,
+                    None,
                     card,
                 )
-                for bench_target in opponent_bench if isinstance(bench_target, AVGECharacterCard)
-            ]
-        packet : PacketType = [gen]
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, IzzyChen)))
-        return card.generate_response()
+            )
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, IzzyChen)))
+        return self.generic_response(card, ActionTypes.ATK_1)

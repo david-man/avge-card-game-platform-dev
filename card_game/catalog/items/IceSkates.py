@@ -2,19 +2,15 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.constants import ActionTypes
+from card_game.internal_events import InputEvent, TransferCard
 
 class IceSkates(AVGEItemCard):
-	_BENCH_TARGET_KEY = "iceskates_bench_target"
+	_BENCH_TARGET_KEY = 'iceskates_bench_target'
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	
-	
-	@staticmethod
-	def play_card(card) -> Response:
-		from card_game.internal_events import InputEvent, TransferCard
+	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		player = card.player
 		active = player.get_active_card()
 
@@ -23,30 +19,32 @@ class IceSkates(AVGEItemCard):
 		bench_targets = [c for c in bench if isinstance(c, AVGECharacterCard)]
 
 		if(len(bench_targets) == 0):
-			return card.generate_response(ResponseType.SKIP, {MESSAGE_KEY: "No benched characters to switch with."})
+			return Response(
+				ResponseType.CORE,
+				Notify('Ice Skates was used, but there are no benched characters to switch with...', [player.unique_id], default_timeout)
+			)
 
-		bench_target = card.env.cache.get(card, IceSkates._BENCH_TARGET_KEY, None, one_look=True)
-		if(bench_target is None):
-			return card.generate_response(
+		missing = object()
+		bench_target = card.env.cache.get(card, IceSkates._BENCH_TARGET_KEY, missing, one_look=True)
+		if(bench_target is missing):
+			return Response(
 				ResponseType.INTERRUPT,
-				{
-					INTERRUPT_KEY: [
+				Interrupt[AVGEEvent]([
 						InputEvent(
 							player,
 							[IceSkates._BENCH_TARGET_KEY],
-							InputType.SELECTION,
 							lambda re : True,
 							ActionTypes.NONCHAR,
 							card,
-							{
-								LABEL_FLAG: "iceskates_switch_bench",
-								TARGETS_FLAG: bench_targets,
-								DISPLAY_FLAG: bench_targets
-							},
+							CardSelectionQuery('Ice Skates: Choose one benched character to switch with your active.', bench_targets, bench_targets, False, False)
 						)
-					]
-				},
+					]),
 			)
+
+		if not isinstance(bench_target, AVGECharacterCard) or bench_target not in bench_targets:
+			raise Exception('IceSkates: invalid bench selection')
+		if not isinstance(active, AVGECharacterCard):
+			raise Exception('IceSkates: active card is invalid')
 
 		card.propose(
 			AVGEPacket([
@@ -56,6 +54,7 @@ class IceSkates(AVGEItemCard):
 					active_holder,
 					ActionTypes.NONCHAR,
 					card,
+					None,
 				),
 				TransferCard(
 					active,
@@ -63,8 +62,9 @@ class IceSkates(AVGEItemCard):
 					bench,
 					ActionTypes.NONCHAR,
 					card,
+					None,
 				),
 			], AVGEEngineID(card, ActionTypes.NONCHAR, IceSkates))
 		)
 
-		return card.generate_response()
+		return self.generic_response(card)
