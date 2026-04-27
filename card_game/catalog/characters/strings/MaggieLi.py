@@ -18,6 +18,8 @@ class _MaggieTurnBeginReactor(AVGEReactor):
             return False
         if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type not in [Pile.ACTIVE, Pile.BENCH]:
             return False
+        if(self.owner_card.hp >= self.owner_card.max_hp):
+            return False
         return self.owner_card.player == self.owner_card.env.player_turn
 
     def event_effect(self) -> bool:
@@ -29,13 +31,7 @@ class _MaggieTurnBeginReactor(AVGEReactor):
     def react(self, args=None):
         if args is None:
             args = {}
-
         owner = self.owner_card
-        if owner.hp >= owner.max_hp:
-            return Response(
-                ResponseType.ACCEPT, Data()
-            )
-
         heal_choice = owner.env.cache.get(owner, MaggieLi._HEAL_CHOICE_KEY, None, True)
         if heal_choice is None:
             return Response(
@@ -59,7 +55,7 @@ class _MaggieTurnBeginReactor(AVGEReactor):
             )
 
         if heal_choice != 'Yes':
-            return Response(ResponseType.ACCEPT, Notify('Midday Nap used: chose not to heal.', all_players, default_timeout))
+            return Response(ResponseType.ACCEPT, Data())
 
         def heal_packet() -> PacketType:
             packet: PacketType = []
@@ -88,7 +84,7 @@ class MaggieLi(AVGECharacterCard):
     _HEAL_CHOICE_KEY = 'maggieli_turn_heal_choice'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.STRING, 3, 3)
+        super().__init__(unique_id, 110, CardType.STRING, 2, 3)
         self.atk_1_name = 'Snap Pizz'
         self.has_passive = True
 

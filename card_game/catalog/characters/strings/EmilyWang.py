@@ -11,7 +11,7 @@ class EmilyWang(AVGECharacterCard):
     _TOOL_DISCARD_KEY = "emilywang_tool_discard"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 3, 3)
+        super().__init__(unique_id, 100, CardType.STRING, 1, 3)
         self.atk_1_name = 'Triple Stop'
         self.active_name = 'Profit Margins'
 

@@ -118,6 +118,7 @@ class AVGEEnvironment():
 
         self.game_phase : GamePhase = GamePhase.INIT 
         self.round_id = start_round
+        self._pending_end_of_turn_chapter = False
 
         self.cache = EnvironmentCache(list(self.cards.keys()))
 
@@ -303,6 +304,8 @@ class AVGEEnvironment():
                 self.propose(AVGEPacket(p, AVGEEngineID(self, ActionTypes.ENV, None)), 10)#act as soon as this packet is done.
                 
         resp = self._engine.forward(args)
+        if(resp.response_type == ResponseType.CORE and isinstance(resp.data, EndOfTurn)):
+            self._pending_end_of_turn_chapter = True
         if(resp.response_type == ResponseType.GAME_END):
             #cut immediately on GAME_END
             return resp
@@ -321,6 +324,9 @@ class AVGEEnvironment():
                         modified_constraints.append(constraint)
                 card.owned_listeners = modified_listeners
                 card.owned_constraints = modified_constraints
+            if(self._pending_end_of_turn_chapter):
+                self._engine.event_history.new_chapter()
+                self._pending_end_of_turn_chapter = False
         elif(resp.response_type == ResponseType.NEXT_PACKET):
             #begins capturing changes
             self.cache.release()
@@ -328,6 +334,7 @@ class AVGEEnvironment():
         elif(resp.response_type == ResponseType.SKIP):
             #when response is failed, drop changes manually 
             self.cache.rewind()
+            self._pending_end_of_turn_chapter = False
 
             #next, note that the engine has reverted all listeners & constraints
             #thus, all cards' owned listeners & constraints need to revert to how they were before

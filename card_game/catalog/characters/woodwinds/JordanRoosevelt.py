@@ -3,7 +3,7 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import AVGECardHPChange
+from card_game.internal_events import AVGECardHPChange, EmptyEvent
 
 
 class JordanOpponentAttackBoost(AVGEModifier):
@@ -85,7 +85,15 @@ class JordanRoosevelt(AVGECharacterCard):
         next_player_round = card.player.get_next_turn()
         card.add_listener(JordanOpponentAttackBoost(card, next_opp_round))
         card.add_listener(JordanSelfAttackBoost(card, next_player_round))
-        return self.generic_response(card, ActionTypes.ATK_1)
+        packet : PacketType = []
+        packet.append(EmptyEvent(
+                ActionTypes.ATK_1,
+                card,
+                ResponseType.CORE,
+                self.generic_response(card, ActionTypes.ATK_1).data
+            ))
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, JordanRoosevelt)))
+        return Response(ResponseType.CORE, Data())
 
     def atk_2(self, card: AVGECharacterCard) -> Response:
         def generate_packet() -> PacketType:

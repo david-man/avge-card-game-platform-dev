@@ -14,7 +14,7 @@ class JennieWang(AVGECharacterCard):
     TARGET_CLASSES: tuple[type[AVGECharacterCard], ...] = (DavidMan, EvelynWu, BokaiBi, RobertoGonzales, LukeXu)
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PIANO, 1, 2, 3)
+        super().__init__(unique_id, 100, CardType.PIANO, 2, 2, 3)
         self.atk_1_name = 'Small Ensemble Committee'
         self.atk_2_name = 'Grand Piano'
 
@@ -27,7 +27,7 @@ class JennieWang(AVGECharacterCard):
             if isinstance(c, JennieWang.TARGET_CLASSES):
                 count += 1
 
-        per_target = min(20 * count, 40)
+        per_target = min(10 * count, 30)
         if per_target <= 0:
             return self.generic_response(card, ActionTypes.ATK_1)
 

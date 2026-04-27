@@ -11,7 +11,7 @@ class KeiWatanabe(AVGECharacterCard):
     _ATK2_MOVE_KEY = "kei_atk2_move_choice"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.PERCUSSION, 0, 1, 3)
+        super().__init__(unique_id, 100, CardType.PERCUSSION, 1, 1, 3)
         self.atk_1_name = 'Rudiments'
         self.atk_2_name = 'Drum Kid Workshop'
 
@@ -62,18 +62,16 @@ class KeiWatanabe(AVGECharacterCard):
         return self.generic_response(card, ActionTypes.ATK_1)
 
     def atk_2(self, card: AVGECharacterCard) -> Response:
-        in_play: list[AVGECharacterCard] = []
-        for player in card.env.players.values():
-            for c in player.get_cards_in_play():
-                if isinstance(c, AVGECharacterCard):
-                    in_play.append(c)
-
-        candidates = [c for c in in_play if c.card_type == CardType.PERCUSSION]
+        candidates = [
+            c
+            for c in card.player.get_cards_in_play()
+            if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION
+        ]
         if len(candidates) == 0:
             return self.generic_response(card, ActionTypes.ATK_2)
 
         missing = object()
-        chosen = card.env.cache.get(card, KeiWatanabe._ATK2_COPY_KEY, missing, True)
+        chosen = card.env.cache.get(card, KeiWatanabe._ATK2_COPY_KEY, missing)
 
         if chosen is missing:
             return Response(
@@ -86,7 +84,7 @@ class KeiWatanabe(AVGECharacterCard):
                             ActionTypes.ATK_2,
                             card,
                             CardSelectionQuery(
-                                'Drum Kid Workshop: Choose a percussion character in play whose attack you\'d like to use.',
+                                'Drum Kid Workshop: Choose one of your percussion characters in play whose attack you\'d like to use.',
                                 list(candidates),
                                 list(candidates),
                                 False,
@@ -101,9 +99,9 @@ class KeiWatanabe(AVGECharacterCard):
 
         move_options: list[str] = []
         if chosen.atk_1_name is not None:
-            move_options.append('ATK_1')
+            move_options.append(chosen.atk_1_name)
         if chosen.atk_2_name is not None and chosen != card:
-            move_options.append('ATK_2')
+            move_options.append(chosen.atk_2_name)
 
         if len(move_options) == 0:
             return self.generic_response(card, ActionTypes.ATK_2)
@@ -111,9 +109,9 @@ class KeiWatanabe(AVGECharacterCard):
         chosen_move = card.env.cache.get(card, KeiWatanabe._ATK2_MOVE_KEY, missing, True)
         if chosen_move is missing:
             display: list[str] = []
-            if 'ATK_1' in move_options:
+            if chosen.atk_1_name in move_options:
                 display.append(f'{chosen.atk_1_name}')
-            if 'ATK_2' in move_options:
+            if chosen.atk_2_name in move_options:
                 display.append(f'{chosen.atk_2_name}')
 
             return Response(
@@ -146,7 +144,7 @@ class KeiWatanabe(AVGECharacterCard):
             for token in list(card.energy):
                 packet.append(AVGEEnergyTransfer(token, card, chosen, ActionTypes.ATK_2, card, None))
             return packet
-
+        card.env.cache.delete(card, KeiWatanabe._ATK2_COPY_KEY)
         card.propose(AVGEPacket([PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card)], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
         card.propose(AVGEPacket([generate_transfer_packet], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)), -1)
         return self.generic_response(card, ActionTypes.ATK_2)

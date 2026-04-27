@@ -4,19 +4,18 @@ from card_game.avge_abstracts import *
 
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.catalog.items import ConcertProgram, ConcertTicket
+from card_game.catalog.items import ConcertProgram, ConcertRoster, ConcertTicket
 
 class RachelChen(AVGECharacterCard):
     _CARD_PICK_KEY = "rachel_chen_card_pick"
     _TARGET_BASE_KEY = "rachel_chen_satb_key"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.CHOIR, 1, 1)
+        super().__init__(unique_id, 100, CardType.CHOIR, 1, 3)
         self.atk_1_name = 'SATB'
         self.has_active = True
 
     def can_play_active(self) -> bool:
-        env = self.env
         # once per turn check
         if self.env.player_turn != self.player:
             return False
@@ -31,20 +30,20 @@ class RachelChen(AVGECharacterCard):
         )
         if already_used_idx != -1:
             return False
-        # check discard for ConcertProgram or ConcertTicket
+        # check discard for ConcertProgram, ConcertRoster, or ConcertTicket
         discard = self.player.cardholders[Pile.DISCARD]
         for c in discard:
-            if isinstance(c, (ConcertTicket, ConcertProgram)):
+            if isinstance(c, (ConcertProgram, ConcertRoster, ConcertTicket)):
                 return True
         return False
 
     def active(self) -> Response:
         from card_game.internal_events import InputEvent, TransferCard
         discard = self.player.cardholders[Pile.DISCARD]
-        hand = self.player.cardholders[Pile.HAND]
+        deck = self.player.cardholders[Pile.DECK]
 
         # collect candidate items in discard
-        candidates = [c for c in list(discard) if isinstance(c, (ConcertProgram, ConcertTicket))]
+        candidates = [c for c in list(discard) if isinstance(c, (ConcertProgram, ConcertRoster, ConcertTicket))]
         chosen = self.env.cache.get(self, RachelChen._CARD_PICK_KEY, None, True)
         if chosen is None:
             return Response(
@@ -56,14 +55,14 @@ class RachelChen(AVGECharacterCard):
                             lambda r : True,
                             ActionTypes.ACTIVATE_ABILITY,
                             self,
-                            CardSelectionQuery("Program Production: Retrieve a concert program or concert ticket from your discard pile into your hand.", candidates, list(discard), True, False)
+                            CardSelectionQuery("Program Production: Retrieve a Concert Program, Concert Roster, or Concert Ticket from your discard pile and place it on top of your deck.", candidates, list(discard), True, False)
                         )
                     ]),
             )
-        if(isinstance(chosen, AVGECard)):
+        if isinstance(chosen, (ConcertProgram, ConcertRoster, ConcertTicket)) and chosen in discard:
             self.propose(
                 AVGEPacket(
-                    [TransferCard(chosen, discard, hand, ActionTypes.ACTIVATE_ABILITY, self, None)],
+                    [TransferCard(chosen, discard, deck, ActionTypes.ACTIVATE_ABILITY, self, None, 0)],
                     AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, RachelChen),
                 )
             )

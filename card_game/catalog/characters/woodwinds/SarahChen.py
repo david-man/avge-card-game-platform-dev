@@ -13,7 +13,7 @@ class SarahChen(AVGECharacterCard):
     _TARGET_SELECTION_KEY = 'sarahchen_target_selection_'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 3, 3)
+        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 1, 3)
         self.atk_1_name = 'Double Tongue'
         self.atk_2_name = 'Artist Alley'
 
@@ -36,7 +36,10 @@ class SarahChen(AVGECharacterCard):
             return packet
 
         card.propose(
-            AVGEPacket([gen for _ in range(2)], AVGEEngineID(card, ActionTypes.ATK_1, SarahChen))
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, SarahChen))
+        )
+        card.propose(
+            AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, SarahChen))
         )
         return self.generic_response(card, ActionTypes.ATK_1)
 

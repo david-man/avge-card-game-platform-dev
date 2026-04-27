@@ -11,7 +11,7 @@ class BettySolomon(AVGECharacterCard):
     _COIN_KEY_1 = 'bettysolomon_coin_1'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.WOODWIND, 1, 1, 3)
+        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 1, 3)
         self.atk_1_name = 'Outreach'
         self.atk_2_name = 'Multiphonics'
 
@@ -21,7 +21,7 @@ class BettySolomon(AVGECharacterCard):
 
         missing = object()
         chosen_card = card.env.cache.get(card, BettySolomon._ATK_1_KEY, missing, True)
-        if chosen_card is missing and len(character_cards) > 0:
+        if chosen_card is missing:
             return Response(
                 ResponseType.INTERRUPT,
                 Interrupt[AVGEEvent]([
@@ -35,7 +35,7 @@ class BettySolomon(AVGECharacterCard):
                                 'Outreach: Search for any character card and put it on top of your deck.',
                                 character_cards,
                                 list(deck),
-                                False,
+                                True,
                                 False,
                             )
                         )

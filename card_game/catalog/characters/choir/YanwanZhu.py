@@ -17,11 +17,17 @@ class _YanwanStartReactor(AVGEReactor):
 
         if not isinstance(event, PhasePickCard):
             return False
-        if self.owner_card.cardholder.pile_type != Pile.ACTIVE:
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.ACTIVE:
             return False
-        if (event.env.player_turn == self.owner_card.player and len(self.owner_card.player.cardholders[Pile.DECK]) <= 1):
+        if self.owner_card.player is None or event.env.player_turn != self.owner_card.player:
             return False
         if len(self.owner_card.energy) != 2:
+            return False
+        damaged_teammates = [
+            c for c in self.owner_card.player.get_cards_in_play()
+            if isinstance(c, AVGECharacterCard) and c != self.owner_card and c.hp < c.max_hp
+        ]
+        if len(damaged_teammates) == 0:
             return False
         return True
 
@@ -32,51 +38,72 @@ class _YanwanStartReactor(AVGEReactor):
         return
 
     def react(self, args=None):
-        from card_game.internal_events import InputEvent, TransferCard
+        from card_game.internal_events import InputEvent, AVGECardHPChange
 
         owner = self.owner_card
         env = owner.env
-        deck = owner.player.cardholders[Pile.DECK]
-        hand = owner.player.cardholders[Pile.HAND]
-        yn = env.cache.get(owner, YanwanZhu._DRAW_CHOICE_KEY, None, True)
-        if yn is None:
+        candidates = [
+            c for c in owner.player.get_cards_in_play()
+            if isinstance(c, AVGECharacterCard) and c != owner and c.hp < c.max_hp
+        ]
+        if len(candidates) == 0:
+            return Response(ResponseType.ACCEPT, Data())
+
+        missing = object()
+        chosen = env.cache.get(owner, YanwanZhu._HEAL_TARGET_KEY, missing, True)
+        if chosen is missing:
             return Response(
                 ResponseType.INTERRUPT,
                 Interrupt[InputEvent]([
                         InputEvent(
                             owner.player,
-                            [YanwanZhu._DRAW_CHOICE_KEY],
+                            [YanwanZhu._HEAL_TARGET_KEY],
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             owner,
-                            StrSelectionQuery("Bass Boost: Do you want to draw an extra card?",
-                                              ["Yes", "No"],
-                                              ["Yes", "No"],
-                                              False,
-                                              False)
+                            CardSelectionQuery(
+                                "Bass Boost: Choose a different character to heal 30 damage (or None).",
+                                candidates,
+                                candidates,
+                                True,
+                                False,
+                            )
                         )
                     ]),
             )
-        if yn == "Yes":
+        if chosen is None:
+            return Response(ResponseType.ACCEPT, Data())
+
+        if isinstance(chosen, AVGECharacterCard) and chosen in candidates:
             def generate() -> PacketType:
-                if(len(deck) > 0):
-                    return [TransferCard(deck.peek(), deck, hand, ActionTypes.PASSIVE, owner, None)]
-                return []
+                return [
+                    AVGECardHPChange(
+                        chosen,
+                        30,
+                        AVGEAttributeModifier.ADDITIVE,
+                        CardType.CHOIR,
+                        ActionTypes.PASSIVE,
+                        None,
+                        owner,
+                    )
+                ]
+
             self.propose(
                 AVGEPacket(
                     [generate],
                     AVGEEngineID(owner, ActionTypes.PASSIVE, YanwanZhu),
-                ), 1
+                ),
+                1,
             )
         return Response(ResponseType.ACCEPT, Data())
 
 
 class YanwanZhu(AVGECharacterCard):
-    _DRAW_CHOICE_KEY = "yanwan_draw_choice"
+    _HEAL_TARGET_KEY = "yanwan_heal_target"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.CHOIR, 1, 1)
-        self.atk_1_name = 'Intense Echo'
+        super().__init__(unique_id, 100, CardType.CHOIR, 1, 3)
+        self.atk_1_name = 'Intense Voice'
         self.has_passive = True
 
     def passive(self) -> Response:
@@ -89,7 +116,7 @@ class YanwanZhu(AVGECharacterCard):
             return [
                     AVGECardHPChange(
                         card.player.opponent.get_active_card(),
-                        50,
+                        60,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.CHOIR,
                         ActionTypes.ATK_1,
@@ -117,4 +144,4 @@ class YanwanZhu(AVGECharacterCard):
             )
         )
 
-        return Response(ResponseType.CORE, Notify(f"{str(card)} used Intense Echo!", all_players, default_timeout))
+        return Response(ResponseType.CORE, Notify(f"{str(card)} used Intense Voice!", all_players, default_timeout))

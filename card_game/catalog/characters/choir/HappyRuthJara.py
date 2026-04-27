@@ -7,40 +7,39 @@ from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import TransferCard
 
 class HappyRuthJara(AVGECharacterCard):
-    _TARGET_BASE_KEY = "happy_satb_key"
+    _COIN_KEY_0 = "happyruthjara_coin_0"
+    _COIN_KEY_1 = "happyruthjara_coin_1"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.CHOIR, 1, 1)
-        self.atk_1_name = 'SATB'
+        super().__init__(unique_id, 100, CardType.CHOIR, 1, 3)
+        self.atk_1_name = 'Coloratura'
+        self.active_name = 'Leave Rehearsal Early'
         self.has_active = True
 
     def can_play_active(self) -> bool:
-        # once per turn, must be on bench and have no tools attached
-        # on bench
+        if self.env is None or self.player is None or self.cardholder is None:
+            return False
         if self.env.player_turn != self.player:
             return False
         if self.cardholder.pile_type != Pile.BENCH:
             return False
-        # no tools attached
         if len(self.tools_attached) > 0:
             return False
-        # once per turn: this active must not already be recorded in this round.
-        _, already_used_idx = self.env.check_history(
+
+        _, played_from_hand_to_bench_idx = self.env.check_history(
             self.env.round_id,
-            PlayCharacterCard,
+            TransferCard,
             {
-                "card": self,
-                "card_action": ActionTypes.ACTIVATE_ABILITY,
-                "caller": self
+                'card': self,
+                'pile_from': self.player.cardholders[Pile.HAND],
+                'pile_to': self.player.cardholders[Pile.BENCH],
             },
         )
-        if already_used_idx != -1:
+        if played_from_hand_to_bench_idx != -1:
             return False
         return True
 
     def active(self) -> Response:
-        # activating: remove all statuses, reset HP, move to owner's hand(reactor does all of this)
-        # move to hand
         hand = self.player.cardholders[Pile.HAND]
         self.propose(
             AVGEPacket(
@@ -48,58 +47,40 @@ class HappyRuthJara(AVGECharacterCard):
                 AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, HappyRuthJara),
             )
         )
-        return Response(ResponseType.ACCEPT, Notify(f"{str(self)} left rehearsal early...", all_players, default_timeout))
+        return Response(ResponseType.CORE, Notify(f"{str(self)} left rehearsal early...", all_players, default_timeout))
 
     def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
-        player = card.player
-        opponent = player.opponent
-
-        # collect player's choir characters in play
-        choir_count = 0
-        for c in player.get_cards_in_play():
-            if c.card_type == CardType.CHOIR:
-                choir_count += 1
-
-        if choir_count <= 0:
-            return Response(ResponseType.CORE, Notify(f"{str(card)} used SATB, but it did nothing...", all_players, default_timeout))
-
-        # build list of opponent character targets (can be chosen multiple times)
-        packet = []
- 
-        # multiple opponent choices: ask player to pick `choir_count` targets (allow repeats)
-        keys = [HappyRuthJara._TARGET_BASE_KEY + str(i) for i in range(choir_count)]
-        chars = [card.env.cache.get(card, key, None, True) for key in keys]
-        if(chars[0] is None):
+        r0 = card.env.cache.get(card, HappyRuthJara._COIN_KEY_0, None, True)
+        r1 = card.env.cache.get(card, HappyRuthJara._COIN_KEY_1, None, True)
+        if r0 is None or r1 is None:
             return Response(
                 ResponseType.INTERRUPT,
                 Interrupt[InputEvent](
                     [
                         InputEvent(
                             card.player,
-                            keys,
-                            lambda r :  True,
+                            [HappyRuthJara._COIN_KEY_0, HappyRuthJara._COIN_KEY_1],
+                            lambda r: True,
                             ActionTypes.ATK_1,
                             card,
-                            CardSelectionQuery(
-                                "SATB: Deal +20 damage to each selected character",
-                                opponent.get_cards_in_play(),
-                                opponent.get_cards_in_play(),
-                                False,
-                                True
-                            )
+                            CoinflipData('Coloratura: Flip 2 coins.')
                         )
                     ]
                 )
             )
-        else:
-            for char in chars:
-                assert(isinstance(char, AVGECharacterCard))
+
+        damage = 30 + (40 if int(r0) + int(r1) == 2 else 0)
+
+        def generate_packet() -> PacketType:
+            packet: PacketType = []
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
                 packet.append(
                     AVGECardHPChange(
-                        char,
-                        20,
+                        active,
+                        damage,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.CHOIR,
                         ActionTypes.ATK_1,
@@ -107,5 +88,7 @@ class HappyRuthJara(AVGECharacterCard):
                         card,
                     )
                 )
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, HappyRuthJara)))
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, HappyRuthJara)))
         return self.generic_response(card, ActionTypes.ATK_1)

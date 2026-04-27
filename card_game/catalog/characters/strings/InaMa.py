@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import AVGEEnergyTransfer, InputEvent, AVGECardHPChange, PlayCharacterCard
+from card_game.internal_events import AVGEEnergyTransfer, InputEvent, AVGECardHPChange, PlayCharacterCard, EmptyEvent
 
 
 class InaMa(AVGECharacterCard):
@@ -12,7 +12,7 @@ class InaMa(AVGECharacterCard):
     _COIN_KEY_2 = "inama_coin_2"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 3, 3)
+        super().__init__(unique_id, 100, CardType.STRING, 2, 3)
         self.atk_1_name = 'Triple Stop'
         self.active_name = 'Borrow a Bow'
 
@@ -44,8 +44,6 @@ class InaMa(AVGECharacterCard):
             c for c in self.player.get_cards_in_play()
             if isinstance(c, AVGECharacterCard) and c.card_type == CardType.STRING and c != self and len(c.energy) >= 1
         ]
-        if len(candidates) == 0:
-            return Response(ResponseType.CORE, Data())
 
         chosen = self.env.cache.get(self, InaMa._ENERGY_MOVE_SELECTION_KEY, None, True)
         if chosen is None:
@@ -100,7 +98,15 @@ class InaMa(AVGECharacterCard):
             )
 
         heads = int(r0) + int(r1) + int(r2)
-        packet: PacketType = []
+        if(heads == 0):
+            card.propose(AVGEPacket([
+                EmptyEvent(
+                    ActionTypes.ATK_1,
+                    card,
+                    ResponseType.CORE,
+                    self.generic_response(card, ActionTypes.ATK_1).data
+                )
+            ], AVGEEngineID(card, ActionTypes.ATK_1, InaMa)))
         for _ in range(max(0, heads)):
             def generate_packet() -> PacketType:
                 active = card.player.opponent.get_active_card()
@@ -119,9 +125,6 @@ class InaMa(AVGECharacterCard):
                     )
                 return ret
 
-            packet.append(generate_packet)
-
-        if len(packet) > 0:
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, InaMa)))
+            card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, InaMa)))
 
         return self.generic_response(card, ActionTypes.ATK_1)

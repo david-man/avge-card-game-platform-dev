@@ -97,7 +97,7 @@ class AliceWang(AVGECharacterCard):
     _CARDS_TO_DISCARD_BASE_KEY = "alice_cards_to_discard_"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 1, 2)
+        super().__init__(unique_id, 110, CardType.STRING, 2, 2)
         self.atk_1_name = 'Vibrato'
         self.has_passive = True
 

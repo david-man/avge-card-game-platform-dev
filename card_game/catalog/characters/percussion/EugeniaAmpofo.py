@@ -14,15 +14,51 @@ class EugeniaAmpofo(AVGECharacterCard):
         self.atk_1_name = 'Stick Trick'
         self.active_name = 'Fermentation'
 
+    def _first_attached_character_this_turn(self) -> AVGECharacterCard | None:
+        idx = 0
+        while True:
+            event, found_idx = self.env.check_history(self.env.round_id, AVGEEnergyTransfer, {}, idx)
+            if found_idx == -1 or event is None:
+                break
+            idx = found_idx + 1
+
+            if not isinstance(event, AVGEEnergyTransfer):
+                continue
+            if event.catalyst_action != ActionTypes.PLAYER_CHOICE:
+                continue
+            if event.caller != self.player:
+                continue
+            if event.source != self.env:
+                continue
+            if not isinstance(event.target, AVGECharacterCard):
+                continue
+            if event.target.player != self.player:
+                continue
+
+            return event.target
+        return None
+
     def can_play_active(self) -> bool:
         if self.env.player_turn != self.player:
             return False
         if self.cardholder is None or self.cardholder.pile_type != Pile.ACTIVE:
             return False
+        if self.player.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] != 0:
+            return False
         if len(self.player.energy) <= 0:
             return False
-        if len(self.player.cardholders[Pile.BENCH]) == 0:
+
+        first_attached = self._first_attached_character_this_turn()
+        if not isinstance(first_attached, AVGECharacterCard):
             return False
+
+        candidates = [
+            c for c in self.player.get_cards_in_play()
+            if isinstance(c, AVGECharacterCard) and c != first_attached
+        ]
+        if len(candidates) == 0:
+            return False
+
         _, already_used_idx = self.env.check_history(
             self.env.round_id,
             PlayCharacterCard,
@@ -35,7 +71,17 @@ class EugeniaAmpofo(AVGECharacterCard):
         return already_used_idx == -1
 
     def active(self) -> Response:
-        bench_chars = self.player.cardholders[Pile.BENCH]
+        first_attached = self._first_attached_character_this_turn()
+        if not isinstance(first_attached, AVGECharacterCard):
+            return Response(ResponseType.CORE, Data())
+
+        candidates = [
+            c for c in self.player.get_cards_in_play()
+            if isinstance(c, AVGECharacterCard) and c != first_attached
+        ]
+        if len(candidates) == 0:
+            return Response(ResponseType.CORE, Data())
+
         missing = object()
         choice = self.env.cache.get(self, EugeniaAmpofo._ATTACH_CHOICE_KEY, missing, True)
         if choice is missing:
@@ -49,17 +95,17 @@ class EugeniaAmpofo(AVGECharacterCard):
                             ActionTypes.ACTIVATE_ABILITY,
                             self,
                             CardSelectionQuery(
-                                'Fermentation: Attach an extra (X) to one benched character',
-                                list(bench_chars),
-                                list(bench_chars),
+                                'Fermentation: Choose another in-play character to attach an extra (X)',
+                                candidates,
+                                candidates,
                                 False,
                                 False,
                             )
                         )
                     ]),
             )
-        if not isinstance(choice, AVGECharacterCard):
-            return Response(ResponseType.ACCEPT, Data())
+        if not isinstance(choice, AVGECharacterCard) or choice not in candidates:
+            return Response(ResponseType.CORE, Data())
 
         def generate_packet() -> PacketType:
             packet: PacketType = []

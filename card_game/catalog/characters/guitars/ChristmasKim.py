@@ -8,7 +8,7 @@ class ChristmasKim(AVGECharacterCard):
     _ORDER_KEY = "christmaskim_order"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.GUITAR, 2, 1, 2)
+        super().__init__(unique_id, 100, CardType.GUITAR, 1, 1, 2)
         self.atk_1_name = 'Strum'
         self.atk_2_name = 'Surprise Delivery'
 
@@ -39,24 +39,27 @@ class ChristmasKim(AVGECharacterCard):
         deck = player.cardholders[Pile.DECK]
         hand = player.cardholders[Pile.HAND]
 
-        n = min(3, len(deck))
+        n = min(5, len(deck))
         if n == 0:
             return Response(ResponseType.CORE, Notify(f"{str(card)} used Surprise Delivery, but there were no cards in deck.", all_players, default_timeout))
         top_cards = deck.peek_n(n)
 
-        char_cards = [c for c in top_cards if isinstance(c, AVGECharacterCard)]
-        nonchars = [c for c in top_cards if not isinstance(c, AVGECharacterCard)]
+        guitar_chars = [
+            c for c in top_cards
+            if isinstance(c, AVGECharacterCard) and c.card_type == CardType.GUITAR
+        ]
+        remaining_cards = [c for c in top_cards if c not in guitar_chars]
 
         packet: PacketType = []
 
-        for c in char_cards:
+        for c in guitar_chars:
             packet.append(
                 TransferCard(c, deck, hand, ActionTypes.ATK_2, card, None)
             )
             packet.append(
                 AVGECardHPChange(
                     card.player.opponent.get_active_card(),
-                    10,
+                    20,
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.GUITAR,
                     ActionTypes.ATK_2,
@@ -65,8 +68,18 @@ class ChristmasKim(AVGECharacterCard):
                 )
             )
 
-        if len(nonchars) > 0:
-            keys = [ChristmasKim._ORDER_KEY + str(i) for i in range(len(nonchars))]
+        if len(guitar_chars) > 0:
+            packet.append(
+                EmptyEvent(
+                    ActionTypes.ATK_2,
+                    card,
+                    ResponseType.CORE,
+                    RevealCards("Surprise Delivery: Revealed guitar characters", all_players, default_timeout, list(guitar_chars)),
+                )
+            )
+
+        if len(remaining_cards) > 1:
+            keys = [ChristmasKim._ORDER_KEY + str(i) for i in range(len(remaining_cards))]
             order_choice = [card.env.cache.get(card, key, None, True) for key in keys]
             if order_choice[0] is None:
                 return Response(
@@ -78,7 +91,13 @@ class ChristmasKim(AVGECharacterCard):
                                 lambda r: True,
                                 ActionTypes.ATK_2,
                                 card,
-                                CardSelectionQuery("Surprise Delivery: Reorder remaining cards", nonchars, char_cards + nonchars, False, False)
+                                CardSelectionQuery(
+                                    "Surprise Delivery: Reorder remaining cards",
+                                    remaining_cards,
+                                    remaining_cards,
+                                    False,
+                                    False,
+                                )
                             )
                         ]),
                 )
@@ -88,18 +107,10 @@ class ChristmasKim(AVGECharacterCard):
                 cid = c.unique_id
                 if cid in new_order:
                     new_order.remove(cid)
-            chosen_order = [choice for choice in order_choice if choice is not None]
-            new_order = [choice.unique_id for choice in chosen_order] + new_order
-            if len(char_cards) > 0:
-                revealed_cards: list[AVGECard] = [c for c in char_cards]
-                packet.append(
-                    EmptyEvent(
-                        ActionTypes.ATK_2,
-                        card,
-                        ResponseType.CORE,
-                        RevealCards("Surprise Delivery: Revealed characters", all_players, default_timeout, revealed_cards),
-                    )
-                )
+            chosen_order = [choice for choice in order_choice if isinstance(choice, AVGECard) and choice in remaining_cards]
+            chosen_ids = [choice.unique_id for choice in chosen_order]
+            remaining_ids = [c.unique_id for c in remaining_cards if c.unique_id not in chosen_ids]
+            new_order = chosen_ids + remaining_ids + new_order
             packet.append(ReorderCardholder(deck, new_order, ActionTypes.ATK_2, card, None))
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, ChristmasKim)))

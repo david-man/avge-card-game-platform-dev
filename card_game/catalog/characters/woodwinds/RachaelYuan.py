@@ -4,13 +4,13 @@ import random
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import AVGECardHPChange, InputEvent, PlayCharacterCard, TransferCard
+from card_game.internal_events import AVGECardHPChange, InputEvent, PlayCharacterCard, TransferCard, EmptyEvent
 
 class RachaelYuan(AVGECharacterCard):
     _BENCH_SHUFFLE_KEY = 'rachaelyuan_bench_shuffle'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3, 2)
+        super().__init__(unique_id, 100, CardType.WOODWIND, 2, 1, 3)
         self.atk_1_name = 'Circular Breathing'
         self.atk_2_name = 'E2 Reaction'
 
@@ -59,7 +59,13 @@ class RachaelYuan(AVGECharacterCard):
         opponent_bench = opponent.cardholders[Pile.BENCH]
         opponent_deck = opponent.cardholders[Pile.DECK]
         if(len(opponent_bench) < 2):
-            return Response(ResponseType.CORE, Notify(f"{str(card)} used E2 Reaction, but it didn't do anything...", all_players, default_timeout))
+            card.propose(AVGEPacket([EmptyEvent(
+                ActionTypes.ATK_2,
+                card,
+                ResponseType.CORE,
+                Notify(f"{str(card)} used E2 Reaction, but it didn't do anything...", all_players, default_timeout)
+            )], AVGEEngineID(card, ActionTypes.ATK_2, RachaelYuan)))
+            return Response(ResponseType.CORE, Data())
         missing = object()
         chosen_card = card.env.cache.get(card, RachaelYuan._BENCH_SHUFFLE_KEY, missing, True)
         if len(opponent_bench) >= 2 and chosen_card is missing:

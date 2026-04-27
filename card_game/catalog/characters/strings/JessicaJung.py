@@ -51,10 +51,10 @@ class JessicaJung(AVGECharacterCard):
             )
 
         if int(flip) != 1:
-            return Response(ResponseType.CORE, Notify("Jessica Jung used Cleric Spell, but she didn't roll a heads...", all_players, default_timeout))
+            return Response(ResponseType.CORE, Notify("Jessica Jung used Cleric Spell, but she didn't roll a heads...", [self.player.unique_id], default_timeout))
 
         if len(supporter_cards) == 0:
-            return Response(ResponseType.CORE, Notify("Jessica Jung used Cleric Spell, but there are no supporter cards in the discard pile...", all_players, default_timeout))
+            return Response(ResponseType.CORE, Notify("Jessica Jung used Cleric Spell, but there are no supporter cards in the discard pile...", [self.player.unique_id], default_timeout))
 
         missing = object()
         chosen = self.env.cache.get(self, JessicaJung._SUPPORTER_SELECTION_KEY, missing, True)
@@ -81,14 +81,7 @@ class JessicaJung(AVGECharacterCard):
 
         deck = self.player.cardholders[Pile.DECK]
         if not isinstance(chosen, AVGESupporterCard):
-            return Response(
-                ResponseType.CORE,
-                Notify(
-                    'Jessica Jung used Cleric Spell, but the selected card was not a supporter.',
-                    all_players,
-                    default_timeout,
-                ),
-            )
+            raise Exception("Choice invalid - Jessica Jung")
 
         def generate_packet() -> PacketType:
             packet: PacketType = []

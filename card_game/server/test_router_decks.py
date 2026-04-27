@@ -54,7 +54,7 @@ def _valid_deck_cards_beta() -> list[str]:
         'HenryWang',
         'KatieXiang',
         'GabrielChen',
-        'JuliaCiacerelli',
+        'JuliaCeccarelli',
         'BettySolomon',
         'LucaChen',
         'Richard',

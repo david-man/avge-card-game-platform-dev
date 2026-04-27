@@ -21,10 +21,23 @@ class JaydenBrownFourLeafCloverReactor(AVGEReactor):
             return False
         if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.ACTIVE:
             return False
-        last_round_used = self.owner_card.env.cache.get(self.owner_card, JaydenBrown._LAST_ROUND_PASSIVE, None)
-        if isinstance(last_round_used, int) and last_round_used == self.owner_card.env.round_id:
+        if(event.player_for != self.owner_card.player):
+            return False
+        if self._has_prior_coinflip_this_turn(event.player_for):
             return False
         return True
+
+    def _has_prior_coinflip_this_turn(self, player_for: AVGEPlayer) -> bool:
+        env = self.owner_card.env
+        idx = 0
+        kwargs = {'player_for': player_for}
+        while True:
+            prior_event, idx = env.check_history(env.round_id, InputEvent, kwargs, idx)
+            if prior_event is None:
+                return False
+            if isinstance(prior_event, InputEvent) and isinstance(prior_event.query_data, CoinflipData):
+                return True
+            idx += 1
 
     def event_effect(self) -> bool:
         return True
@@ -45,7 +58,6 @@ class JaydenBrownFourLeafCloverReactor(AVGEReactor):
         assert isinstance(event, InputEvent)
 
         env = self.owner_card.env
-        env.cache.set(self.owner_card, JaydenBrown._LAST_ROUND_PASSIVE, env.round_id)
         choice = env.cache.get(self.owner_card, JaydenBrown._CHOICE, None, True)
         if choice is None:
             return Response(
@@ -76,7 +88,6 @@ class JaydenBrownFourLeafCloverReactor(AVGEReactor):
 class JaydenBrown(AVGECharacterCard):
     _D6_ROLL_KEY = 'jayden_d6_roll'
     _CHOICE = 'jayden_coin_choice'
-    _LAST_ROUND_PASSIVE = 'jayden_last_passive'
 
     def __init__(self, unique_id):
         super().__init__(unique_id, 90, CardType.WOODWIND, 1, 3)

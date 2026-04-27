@@ -19,7 +19,7 @@ class _JuanBenchAttackBoost(AVGEModifier):
             return False
         if not isinstance(event.caller, AVGECharacterCard):
             return False
-        if event.caller != self.owner_card.player.get_active_card():
+        if event.caller.player != self.owner_card.player:
             return False
         if self.owner_card.cardholder.pile_type != Pile.BENCH:
             return False
@@ -36,20 +36,20 @@ class _JuanBenchAttackBoost(AVGEModifier):
     def modify(self, args=None):
         assert isinstance(self.attached_event, AVGECardHPChange)
         event : AVGECardHPChange = self.attached_event
-        # add +20 damage to the attack
-        event.modify_magnitude(20)
-        return Response(ResponseType.ACCEPT, Notify("Baking Buff! +20 damage", all_players, default_timeout))
+        # add +10 damage to brass attacks while Juan is benched
+        event.modify_magnitude(10)
+        return Response(ResponseType.ACCEPT, Notify("Baking Buff! +10 damage", all_players, default_timeout))
 
 
 class JuanBurgos(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.BRASS, 1, 3)
+        super().__init__(unique_id, 90, CardType.BRASS, 2, 3)
         self.atk_1_name = 'Concert Pitch'
         self.has_passive = True
     def passive(self) -> Response:
         # attach bench boost modifier globally while in play
         self.add_listener(_JuanBenchAttackBoost(self))
-        return Response(ResponseType.ACCEPT, Data())
+        return Response(ResponseType.CORE, Data())
 
     def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
@@ -64,7 +64,7 @@ class JuanBurgos(AVGECharacterCard):
                     brass_count += 1
 
             extra = 20 * brass_count
-            damage = 40 + extra
+            damage = 30 + extra
 
             return [AVGECardHPChange(
                     opponent.get_active_card(),

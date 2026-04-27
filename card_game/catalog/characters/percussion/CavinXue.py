@@ -25,7 +25,7 @@ class CavinMaidBoostModifier(AVGEModifier):
         maid_count = 0
         for player in env.players.values():
             for c in player.get_cards_in_play():
-                if len(c.statuses_attached[StatusEffect.MAID]) > 0:
+                if len(c.statuses_attached[StatusEffect.MAID]) > 0 and c!= self.owner_card:
                     maid_count += 1
 
         return maid_count > 0
@@ -50,7 +50,7 @@ class CavinMaidBoostModifier(AVGEModifier):
         maid_count = 0
         for player in env.players.values():
             for c in player.get_cards_in_play():
-                if len(c.statuses_attached[StatusEffect.MAID]) > 0:
+                if len(c.statuses_attached[StatusEffect.MAID]) > 0 and c!=self.owner_card:
                     maid_count += 1
 
         event.modify_magnitude(20 * maid_count)
@@ -66,7 +66,7 @@ class CavinMaidBoostModifier(AVGEModifier):
 
 class CavinXue(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.PERCUSSION, 1, 1)
+        super().__init__(unique_id, 100, CardType.PERCUSSION, 2, 1)
         self.atk_1_name = 'Cymbal Crash'
         self.has_passive = True
 

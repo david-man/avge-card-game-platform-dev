@@ -24,19 +24,36 @@ class _BarronEnergyCapPostcheck(AVGEAssessor):
 
     def assess(self, args=None) -> Response:
         from card_game.internal_events import AVGEEnergyTransfer
-        # if target target energy attached > 3
         assert(isinstance(self.attached_event, AVGEEnergyTransfer))
         target = self.attached_event.target
-        new_amt = len(target.energy)
-
-        if new_amt > 3:
-            return Response(ResponseType.FAST_FORWARD, Notify("Barron Lee's ability prevents opposing characters from receiving 3 energy!", [PlayerID.P1, PlayerID.P2], default_timeout))
+        projected_amt = len(target.energy)
+        if self.attached_event.source != target:
+            projected_amt += 1
+        
+        if projected_amt > 3:
+            if(self.attached_event.catalyst_action == ActionTypes.PLAYER_CHOICE):
+                return Response(
+                    ResponseType.SKIP,
+                    Notify(
+                        "Barron Lee's ability prevents opposing characters from receiving more than 3 energy!",
+                        [PlayerID.P1, PlayerID.P2],
+                        default_timeout,
+                    ),
+                )
+            return Response(
+                ResponseType.FAST_FORWARD,
+                Notify(
+                    "Barron Lee's ability prevents opposing characters from receiving more than 3 energy!",
+                    [PlayerID.P1, PlayerID.P2],
+                    default_timeout,
+                ),
+            )
         return Response(ResponseType.ACCEPT, Data())
 
 class BarronLee(AVGECharacterCard):
     _EMBOUCHURE_KEY = 'barron-lee-embouchure'
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.BRASS, 1, 1)
+        super().__init__(unique_id, 100, CardType.BRASS, 2, 1)
         self.atk_1_name = 'Embouchure'
         self.has_passive = True
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.catalog.tools import AVGEShowcaseSticker, AVGETShirt
+from card_game.catalog.tools import AVGEShowcaseSticker, AVGETShirt, MaidOutfit
 
 
 class _GraceTurnEndReactor(AVGEReactor):
@@ -26,7 +26,7 @@ class _GraceTurnEndReactor(AVGEReactor):
         opponent = self.owner_card.player.opponent
         for c in opponent.get_cards_in_play():
             for t in c.tools_attached:
-                if isinstance(t, (AVGEShowcaseSticker, AVGETShirt)):
+                if isinstance(t, (AVGEShowcaseSticker, AVGETShirt, MaidOutfit)):
                     return True
         return False
 
@@ -43,7 +43,7 @@ class _GraceTurnEndReactor(AVGEReactor):
         candidates = []
         for c in opponent.get_cards_in_play():
             for t in c.tools_attached:
-                if isinstance(t, (AVGEShowcaseSticker, AVGETShirt)):
+                if isinstance(t, (AVGEShowcaseSticker, AVGETShirt,MaidOutfit)):
                     candidates.append(c)
                     break
         missing = object()
@@ -58,7 +58,7 @@ class _GraceTurnEndReactor(AVGEReactor):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             self.owner_card,
-                            CardSelectionQuery("Royalties: Deal 10 damage to an opposing card", candidates, opponent.get_cards_in_play(), False, False)
+                            CardSelectionQuery("Royalties: Deal 10 damage to an opposing card", candidates, opponent.get_cards_in_play(), True, False)
                         )
                     ]),
             )
@@ -88,7 +88,7 @@ class GraceZhao(AVGECharacterCard):
     _TARGET_KEY = "grace-target-key-atk1"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.GUITAR, 2, 2)
+        super().__init__(unique_id, 100, CardType.GUITAR, 2, 2)
         self.atk_1_name = 'Feedback Loop'
         self.has_passive = True
 

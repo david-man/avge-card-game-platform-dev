@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from random import randint, sample
 from threading import RLock
-from typing import Any
+from typing import Any, NoReturn
 import json
 import os
 
@@ -100,7 +100,7 @@ _DEFAULT_P2_SELECTED_CARDS: list[type[AVGECard]] = [
     ConcertTicket,
     FoldingStand,
     VideoCamera,
-    JuliaCiacerelli,
+    JuliaCeccarelli,
     MaggieLi,
 ]
 
@@ -198,6 +198,8 @@ def build_environment_from_default_setups(
         deepcopy(p1_setup),
         deepcopy(p2_setup),
         start_turn,
+        p1_username=p1_username,
+        p2_username=p2_username,
         starting_stadium=starting_stadium,
         starting_stadium_player=starting_stadium_player,
         start_round=round_number,
@@ -238,6 +240,10 @@ def environment_to_setup_json(env: AVGEEnvironment, indent: int = 2) -> str:
     return format_environment_to_setup_json(env, indent=indent)
 
 
+class BridgeEngineRuntimeError(RuntimeError):
+    """Raised when bridge-driven engine execution fails."""
+
+
 class FrontendGameBridge:
     """Translate frontend events to engine actions and engine responses back to frontend commands."""
 
@@ -252,7 +258,8 @@ class FrontendGameBridge:
         self._last_emitted_phase_token: str | None = None
         self._pending_engine_input_args: dict[str, Any] | None = None
         self._pending_frontend_events: list[tuple[str, dict[str, Any]]] = []
-        self._last_emitted_input_query_signature: tuple[str, str, str, str] | None = None
+        self._pending_input_query_event: InputEvent | None = None
+        self._pending_input_query_command: str | None = None
         self._pending_ordering_listener_by_token: dict[str, Any] | None = None
         self._last_emitted_ordering_query_signature: tuple[str, ...] | None = None
         self._force_environment_sync_pending = False
@@ -268,6 +275,8 @@ class FrontendGameBridge:
                 deepcopy(p1_setup),
                 deepcopy(p2_setup),
                 self.env.player_turn.unique_id,
+                p1_username=self.env.players['p1'].username,
+                p2_username=self.env.players['p2'].username,
                 start_round=self.env.round_id,
             )
 
@@ -432,6 +441,24 @@ class FrontendGameBridge:
                 return []
         return []
 
+    def _should_emit_core_commands_before_reactors(self, response: Response, commands: list[str]) -> bool:
+        if response.response_type != ResponseType.CORE:
+            return False
+        if len(commands) == 0:
+            return False
+
+        source = self._current_response_source(response)
+        return isinstance(source, (
+            AVGECardHPChange,
+            AVGECardMaxHPChange,
+            AVGECardTypeChange,
+            AVGECardStatusChange,
+            AVGEEnergyTransfer,
+            AVGEPlayerAttributeChange,
+            TransferCard,
+            ReorderCardholder,
+        ))
+
     def _is_plain_data_payload(self, payload: Any) -> bool:
         return isinstance(payload, Data) and type(payload) is Data
 
@@ -484,6 +511,17 @@ class FrontendGameBridge:
         if isinstance(message_token, str):
             return [f'reveal {target_token} [{cards_csv}] {message_token} {timeout_token}']
         return [f'reveal {target_token} [{cards_csv}] {timeout_token}']
+
+    def _notification_commands_from_payload(self, payload: Any) -> list[str]:
+        if isinstance(payload, RevealCards):
+            card_ids = [getattr(card, 'unique_id', str(card)) for card in payload.cards]
+            return self._reveal_commands_for_players(payload.players, card_ids, payload.message, payload.timeout)
+        if isinstance(payload, RevealStr):
+            msg = f"{payload.message}: {', '.join(payload.items)}" if len(payload.items) > 0 else payload.message
+            return self._notify_from_notify(Notify(msg, payload.players, payload.timeout))
+        if isinstance(payload, Notify):
+            return self._notify_from_notify(payload)
+        return []
 
     def _fallback_payload_command(self, response: Response, payload: Any) -> list[str]:
         if response.response_type in {ResponseType.GAME_END, ResponseType.INTERRUPT}:
@@ -538,6 +576,57 @@ class FrontendGameBridge:
             self._pending_engine_input_args = None
             self._outbound_command_queue.extend(self._drain_engine(input_args=drain_input, stop_after_command_batch=True))
 
+    def _clear_pending_input_query_state(self) -> None:
+        self._pending_input_query_event = None
+        self._pending_input_query_command = None
+
+    def _is_waiting_for_pending_input_query(self) -> bool:
+        pending_event = self._pending_input_query_event
+        if not isinstance(pending_event, InputEvent):
+            return False
+
+        running_event = getattr(self.env._engine, 'event_running', None)
+        if running_event is pending_event:
+            return True
+
+        self._clear_pending_input_query_state()
+        return False
+
+    def _queue_pending_input_query_resend(self) -> bool:
+        if not self._is_waiting_for_pending_input_query():
+            return False
+
+        pending_command = self._pending_input_query_command
+        if not isinstance(pending_command, str) or not pending_command.strip():
+            self._clear_pending_input_query_state()
+            return False
+
+        normalized_pending_command = pending_command.strip()
+        if (
+            self._awaiting_frontend_ack
+            and isinstance(self._awaiting_frontend_ack_command, str)
+            and self._awaiting_frontend_ack_command.strip() == normalized_pending_command
+        ):
+            log_ack_trace_bridge(
+                'pending_input_query_resend_skipped_in_flight',
+                command=normalized_pending_command,
+            )
+            return False
+
+        if any(
+            isinstance(command, str) and command.strip() == normalized_pending_command
+            for command in self._outbound_command_queue
+        ):
+            return False
+
+        # Intentional resend path for reconnect/resync flows.
+        self._outbound_command_queue.insert(0, normalized_pending_command)
+        log_ack_trace_bridge(
+            'pending_input_query_resent',
+            command=normalized_pending_command,
+        )
+        return True
+
     def _pump_outbound_until_next_command(self) -> None:
         if self._outbound_command_queue:
             return
@@ -556,10 +645,8 @@ class FrontendGameBridge:
             )
             return
 
-        running_event = self.env._engine.event_running
-        if isinstance(running_event, InputEvent) and self._pending_engine_input_args is None:
-            # InputEvent is waiting for user/admin input, so draining now would
-            # only re-observe the same unresolved query boundary.
+        if self._pending_engine_input_args is None and self._is_waiting_for_pending_input_query():
+            running_event = self._pending_input_query_event
             log_ack_trace_bridge(
                 'waiting_for_input_result',
                 input_keys=getattr(running_event, 'input_keys', None),
@@ -612,7 +699,16 @@ class FrontendGameBridge:
                     'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
-            if event_name in {'setup_loaded', 'surrender_timeout'}:
+            if event_name in {'setup_loaded', 'resync_requested'}:
+                self._queue_pending_input_query_resend()
+
+                return {
+                    'commands': self._emit_next_command_if_ready(),
+                    'setup_payload': environment_to_setup_payload(self.env),
+                    'force_environment_sync': self._consume_force_environment_sync_flag(),
+                }
+
+            if event_name == 'surrender_timeout':
                 return {
                     'commands': [],
                     'setup_payload': environment_to_setup_payload(self.env),
@@ -645,22 +741,34 @@ class FrontendGameBridge:
             }
 
     def _bootstrap_phase_cycle(self) -> None:
-        self.env.propose(
-            AVGEPacket([
-                Phase2(self.env, ActionTypes.ENV, self.env)
-            ], AVGEEngineID(self.env, ActionTypes.ENV, None))
-        )
-        self.env.force_flush()
+        try:
+            self.env.propose(
+                AVGEPacket([
+                    Phase2(self.env, ActionTypes.ENV, self.env)
+                ], AVGEEngineID(self.env, ActionTypes.ENV, None))
+            )
+            self.env.force_flush()
+        except Exception as exc:
+            self._raise_engine_runtime_error('bootstrap', exc)
 
     def _prime_engine_for_frontend_inputs(self) -> None:
         """Advance startup packets so the bridge can accept immediate frontend phase actions."""
         for step in range(1, 129):
-            response = self.env.forward()
+            try:
+                response = self.env.forward()
+            except Exception as exc:
+                self._raise_engine_runtime_error('prime', exc)
+
             self._log_engine_response(response, step=step, stage='prime', input_args=None)
             if response.response_type in {ResponseType.REQUIRES_QUERY, ResponseType.GAME_END}:
                 return
             if response.response_type == ResponseType.NO_MORE_EVENTS:
-                if not self._auto_advance_when_idle():
+                try:
+                    should_continue = self._auto_advance_when_idle()
+                except Exception as exc:
+                    self._raise_engine_runtime_error('prime', exc)
+
+                if not should_continue:
                     return
 
     def _apply_frontend_event(
@@ -689,18 +797,12 @@ class FrontendGameBridge:
         # Backend state is authoritative for phase navigation.
         if event_name in {'phase2_attack_button_clicked', 'phase_2_attack_button_clicked'}:
             if self.env.game_phase == GamePhase.PHASE_2:
-                commands.extend(self._notify_both('Phase2 attack request received.'))
                 return commands, {'next': 'atk'}
-            commands.extend(self._notify_both(f'Ignored phase2 attack request: backend phase is {self._frontend_phase_token(self.env.game_phase)}'))
             return commands, None
 
         if event_name in {'atk_skip_button_clicked', 'atk_phase_skip_button_clicked'}:
             if self.env.game_phase == GamePhase.ATK_PHASE:
-                if(self.env.round_id == 0):
-                    commands.extend(self._notify_both('Player 1 turn end request received.'))
-                commands.extend(self._notify_both('Attack phase skip request received.'))
                 return commands, {'type': ActionTypes.SKIP}
-            commands.extend(self._notify_both(f'Ignored attack skip request: backend phase is {self._frontend_phase_token(self.env.game_phase)}'))
             return commands, None
 
         if event_name == 'surrender_result':
@@ -712,6 +814,7 @@ class FrontendGameBridge:
         if isinstance(running, InputEvent) and event_name == 'input_result':
             input_args = self._parse_frontend_input_result(running, data)
             if input_args is not None:
+                self._clear_pending_input_query_state()
                 log_input_trace(
                     'bridge_apply_input_result_accepted',
                     input_keys=sorted(input_args.keys()),
@@ -774,7 +877,7 @@ class FrontendGameBridge:
             card = self._get_character_card(card_id)
             if action in {'activate-ability', 'activate_ability', 'active'}:
                 if card is not None:
-                    self._queue_active_ability_interrupt(card, running)
+                    commands.extend(self._queue_active_ability_interrupt(card, running))
                 return commands, None
 
             if isinstance(running, AtkPhase) or (running is None and self.env.game_phase == GamePhase.ATK_PHASE):
@@ -799,7 +902,11 @@ class FrontendGameBridge:
 
         while steps < self._max_forward_steps:
             steps += 1
-            response = self.env.forward(next_args)
+            try:
+                response = self.env.forward(next_args)
+            except Exception as exc:
+                self._raise_engine_runtime_error('drain', exc)
+
             self._log_engine_response(response, step=steps, stage='drain', input_args=next_args)
 
             # Keep pending args through transition responses (NEXT_PACKET/NEXT_EVENT/NO_MORE_EVENTS)
@@ -812,6 +919,19 @@ class FrontendGameBridge:
                 next_args = None
 
             response_commands = self._commands_from_response(response)
+
+            # In incremental ACK-gated mode, emit core state-mutation commands
+            # immediately so frontend can apply the visual change before any
+            # follow-up reactors/listeners are processed.
+            if (
+                stop_after_command_batch
+                and self._should_emit_core_commands_before_reactors(response, response_commands)
+            ):
+                if self._pending_packet_commands:
+                    commands_to_emit.extend(self._pending_packet_commands)
+                    self._pending_packet_commands = []
+                commands_to_emit.extend(response_commands)
+                break
 
             # Keep command updates packet-scoped until packet completion/interruption.
             if response.response_type == ResponseType.NEXT_PACKET:
@@ -855,6 +975,10 @@ class FrontendGameBridge:
                     commands_to_emit.extend(self._pending_packet_commands)
                     self._pending_packet_commands = []
                     if stop_after_command_batch:
+                        # Do not drop the query command when an input boundary
+                        # follows a packet command in the same drain pass.
+                        if response_commands:
+                            commands_to_emit.extend(response_commands)
                         break
 
                 # Query prompts should be sent immediately, but packet state should remain buffered.
@@ -867,13 +991,24 @@ class FrontendGameBridge:
                 break
 
             if response.response_type == ResponseType.GAME_END:
+                # Preserve already-buffered packet updates (for example a lethal
+                # HP change) so frontend can animate them before winner overlay.
+                if self._pending_packet_commands:
+                    commands_to_emit.extend(self._pending_packet_commands)
+                    self._pending_packet_commands = []
+
                 winner_command = self._winner_command_from_environment()
                 if winner_command is not None:
                     commands_to_emit.append(winner_command)
                 break
 
             if response.response_type == ResponseType.NO_MORE_EVENTS:
-                if not self._auto_advance_when_idle():
+                try:
+                    should_continue = self._auto_advance_when_idle()
+                except Exception as exc:
+                    self._raise_engine_runtime_error('drain', exc)
+
+                if not should_continue:
                     break
 
         # Safety fallback: if we hit step cap mid-packet, treat it as interruption
@@ -931,6 +1066,16 @@ class FrontendGameBridge:
         self._force_environment_sync_pending = False
         return should_sync
 
+    def _raise_engine_runtime_error(self, stage: str, exc: Exception) -> NoReturn:
+        message = f'engine runtime error during {stage}: {exc}'
+        print(f'[GAME_RUNNER_ERROR] {message}')
+        log_ack_trace_bridge(
+            'engine_runtime_error',
+            stage=stage,
+            error=str(exc),
+        )
+        raise BridgeEngineRuntimeError(message) from exc
+
     def _commands_from_response(self, response: Response) -> list[str]:
         commands: list[str] = []
         response_data = response.data
@@ -940,45 +1085,17 @@ class FrontendGameBridge:
             self._clear_pending_ordering_query_state()
 
         if response.response_type == ResponseType.ACCEPT:
-            if isinstance(response_data, RevealCards):
-                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
-                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
-            elif isinstance(response_data, RevealStr):
-                msg = f"{response_data.message}: {', '.join(response_data.items)}" if len(response_data.items) > 0 else response_data.message
-                commands.extend(self._notify_from_notify(Notify(msg, response_data.players, response_data.timeout)))
-            elif isinstance(response_data, Notify):
-                commands.extend(self._notify_from_notify(response_data))
-            if len(commands) == 0:
-                commands.extend(self._fallback_payload_command(response, response_data))
+            commands.extend(self._notification_commands_from_payload(response_data))
             return commands
 
         if response.response_type == ResponseType.SKIP:
-            if isinstance(response_data, RevealCards):
-                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
-                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
-            elif isinstance(response_data, Notify):
-                commands.extend(self._notify_from_notify(response_data))
-            else:
-                skip_message = 'EVENT SKIPPED'
-                if bool(getattr(source, 'internal', False)):
-                    commands.extend(self._notify_current_turn_player(skip_message))
-                else:
-                    commands.extend(self._notify_both(skip_message))
+            commands.extend(self._notification_commands_from_payload(response_data))
+            commands.append('resync')
             self._force_environment_sync_pending = True
-            if len(commands) == 0:
-                commands.extend(self._fallback_payload_command(response, response_data))
             return commands
 
         if response.response_type == ResponseType.FAST_FORWARD:
-            if isinstance(response_data, RevealCards):
-                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
-                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
-            elif isinstance(response_data, Notify):
-                commands.extend(self._notify_from_notify(response_data))
-            else:
-                commands.extend(self._notify_both('EVENT FAST FORWARDED'))
-            if len(commands) == 0:
-                commands.extend(self._fallback_payload_command(response, response_data))
+            commands.extend(self._notification_commands_from_payload(response_data))
             return commands
 
         if response.response_type == ResponseType.GAME_END:
@@ -1018,29 +1135,27 @@ class FrontendGameBridge:
                     commands.extend(self._notify_both('UNHANDLED_QUERY_DATA'))
                     return commands
 
-                query_header = str(getattr(query_data, 'header_msg', ''))
-                input_keys = ','.join(str(key) for key in getattr(source, 'input_keys', []))
-                player_id = str(getattr(getattr(source, 'player_for', None), 'unique_id', ''))
-                query_signature = (player_id, type(query_data).__name__, query_header, input_keys)
-
-                if self._last_emitted_input_query_signature == query_signature:
-                    log_ack_trace_bridge(
-                        'duplicate_input_query_suppressed',
-                        signature=query_signature,
-                    )
-                    return commands
+                if self._pending_input_query_event is source:
+                    pending_command = self._pending_input_query_command
+                    if isinstance(pending_command, str) and pending_command.strip():
+                        log_ack_trace_bridge('duplicate_input_query_blocked_by_latch')
+                        return commands
+                    self._clear_pending_input_query_state()
 
                 input_command = self._build_input_command(source, query_data)
                 if input_command:
-                    commands.append(input_command)
-                    self._last_emitted_input_query_signature = query_signature
+                    normalized_input_command = input_command.strip()
+                    commands.append(normalized_input_command)
+                    self._pending_input_query_event = source
+                    self._pending_input_query_command = normalized_input_command
                 else:
                     payload_name = type(query_data).__name__
                     log_ack_trace_bridge(
                         'uncovered_input_query_data',
                         payload_type=payload_name,
                     )
-                    commands.extend(self._notify_both(f'UNHANDLED_{payload_name}'))
+                    if not self._is_plain_data_payload(query_data):
+                        commands.extend(self._notify_both(f'UNHANDLED_{payload_name}'))
                 return commands
 
             if isinstance(response_data, Notify):
@@ -1054,18 +1169,24 @@ class FrontendGameBridge:
                 commands.extend(self._fallback_payload_command(response, response_data))
             return commands
 
+        payload_notification_commands = self._notification_commands_from_payload(response_data)
+
+        def _return_core_commands() -> list[str]:
+            commands.extend(payload_notification_commands)
+            return commands
+
         if isinstance(source, AVGECardHPChange):
             commands.append(f'hp {source.target_card.unique_id} {int(source.target_card.hp)} {int(source.target_card.max_hp)}')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, AVGECardMaxHPChange):
             commands.append(f'maxhp {source.target_card.unique_id} {int(source.target_card.max_hp)}')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, AVGECardTypeChange):
             card_type = self._card_type_command_token(source.target_card.card_type)
             commands.append(f'changetype {source.target_card.unique_id} {card_type}')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, AVGECardStatusChange):
             status_key = str(source.status_effect).split('.')[-1]
@@ -1076,24 +1197,29 @@ class FrontendGameBridge:
             }.get(status_key, status_key.title())
             count = len(source.target.statuses_attached[source.status_effect])
             commands.append(f'set_status {source.target.unique_id} {status_name} {count}')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, AVGEEnergyTransfer):
             energy_target = self._energy_target_command_arg(source.target)
             if energy_target:
                 commands.append(f'mv-energy {source.token.unique_id} {energy_target}')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, AVGEPlayerAttributeChange):
             player_token = self._player_id_to_frontend(source.target_player.unique_id)
             commands.append(f'stat {player_token} {source.attribute} {int(source.target_player.attributes[source.attribute])}')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, TransferCard):
             move_target = self._transfer_target_command_arg(source)
             if move_target:
-                commands.append(f'mv {source.card.unique_id} {move_target}')
-            return commands
+                same_holder_transfer = source.pile_from == source.pile_to
+                pile_to_type = getattr(source.pile_to, 'pile_type', None)
+                if same_holder_transfer and pile_to_type == Pile.DECK:
+                    commands.append(f'shuffle-animation {self._normalize_zone_id(move_target)}')
+                else:
+                    commands.append(f'mv {source.card.unique_id} {move_target}')
+            return _return_core_commands()
 
         if isinstance(source, ReorderCardholder):
             target_holder_id = self._reorder_target_command_arg(source)
@@ -1101,64 +1227,41 @@ class FrontendGameBridge:
                 commands.append(f'shuffle-animation {target_holder_id}')
             else:
                 commands.append('shuffle-animation')
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, PlayCharacterCard):
-            if isinstance(response_data, RevealCards):
-                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
-                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
-            elif isinstance(response_data, RevealStr):
-                msg = f"{response_data.message}: {', '.join(response_data.items)}" if len(response_data.items) > 0 else response_data.message
-                commands.extend(self._notify_from_notify(Notify(msg, response_data.players, response_data.timeout)))
-            elif isinstance(response_data, Notify):
-                commands.extend(self._notify_from_notify(response_data))
-
-            if len(commands) == 0:
+            if len(commands) == 0 and len(payload_notification_commands) == 0:
                 commands.extend(self._fallback_payload_command(response, response_data))
 
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, PhasePickCard):
             self._append_phase_command_if_changed(commands, self.env.game_phase)
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, Phase2):
             self._append_phase_command_if_changed(commands, self.env.game_phase)
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, AtkPhase):
             self._append_phase_command_if_changed(commands, self.env.game_phase)
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, InputEvent):
             # Successful input application has no direct frontend mutation command.
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, TurnEnd):
-            next_turn = self._player_id_to_frontend(self.env.player_turn.unique_id)
-            commands.extend(self._notify_both(f'TURN SWITCHED: {next_turn.upper()}'))
             self._force_environment_sync_pending = True
-            return commands
+            return _return_core_commands()
 
         if isinstance(source, EmptyEvent):
-            if isinstance(response_data, RevealCards):
-                card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
-                commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
-            return commands
+            return _return_core_commands()
 
-        if isinstance(response_data, RevealCards):
-            card_ids = [getattr(card, 'unique_id', str(card)) for card in response_data.cards]
-            commands.extend(self._reveal_commands_for_players(response_data.players, card_ids, response_data.message, response_data.timeout))
-        elif isinstance(response_data, RevealStr):
-            msg = f"{response_data.message}: {', '.join(response_data.items)}" if len(response_data.items) > 0 else response_data.message
-            commands.extend(self._notify_from_notify(Notify(msg, response_data.players, response_data.timeout)))
-        elif isinstance(response_data, Notify):
-            commands.extend(self._notify_from_notify(response_data))
-
-        if len(commands) == 0:
+        if len(commands) == 0 and len(payload_notification_commands) == 0:
             commands.extend(self._fallback_payload_command(response, response_data))
 
-        return commands
+        return _return_core_commands()
 
     def _phase2_args_from_frontend_event(self, event_name: str, data: dict[str, Any]) -> dict[str, Any] | None:
         if event_name in {'phase2_attack_button_clicked', 'phase_2_attack_button_clicked'}:
@@ -1258,13 +1361,17 @@ class FrontendGameBridge:
 
         if isinstance(query_data, CoinflipData):
             message_source = query_data.header_msg
-            value = randint(0, 1)
-            return f'input coin {player_token} {self._command_token(message_source)} {value}'
+            roll_count = max(1, len(event.input_keys))
+            values = [randint(0, 1) for _ in range(roll_count)]
+            value_token = str(values[0]) if roll_count == 1 else f'[{",".join(str(value) for value in values)}]'
+            return f'input coin {player_token} {self._command_token(message_source)} {value_token}'
 
         if isinstance(query_data, D6Data):
             message_source = query_data.header_msg
-            value = randint(1, 6)
-            return f'input d6 {player_token} {self._command_token(message_source)} {value}'
+            roll_count = max(1, len(event.input_keys))
+            values = [randint(1, 6) for _ in range(roll_count)]
+            value_token = str(values[0]) if roll_count == 1 else f'[{",".join(str(value) for value in values)}]'
+            return f'input d6 {player_token} {self._command_token(message_source)} {value_token}'
 
         if isinstance(query_data, OrderingQuery):
             return f'input numerical-entry {player_token} order_listeners'
@@ -1272,9 +1379,6 @@ class FrontendGameBridge:
         return None
 
     def _parse_frontend_input_result(self, event: InputEvent, data: dict[str, Any]) -> dict[str, Any] | None:
-        # Frontend supplied an input answer, so allow the next query cycle to emit.
-        self._last_emitted_input_query_signature = None
-
         query_data = getattr(event, 'query_data', Data())
         query_type = type(query_data).__name__
         payload_keys = sorted(data.keys())
@@ -1328,6 +1432,22 @@ class FrontendGameBridge:
                     return cleaned if cleaned else [text]
             return None
 
+        def _int_from_any(raw_value: Any, *, coin_mode: bool) -> int | None:
+            if isinstance(raw_value, bool):
+                return int(raw_value)
+            if isinstance(raw_value, (int, float)):
+                return int(raw_value)
+            if isinstance(raw_value, str):
+                normalized = raw_value.strip().lower()
+                if coin_mode:
+                    if normalized in {'heads', 'head', 'h', 'true', 'yes', '1'}:
+                        return 1
+                    if normalized in {'tails', 'tail', 't', 'false', 'no', '0'}:
+                        return 0
+                if normalized.lstrip('-').isdigit():
+                    return int(normalized)
+            return None
+
         if isinstance(query_data, CardSelectionQuery):
             ordered = _ordered_entries('ordered_selections', 'orderedSelections')
             if ordered is None:
@@ -1376,18 +1496,66 @@ class FrontendGameBridge:
             return _accept([int(value)])
 
         if isinstance(query_data, CoinflipData):
-            value = data.get('result_value', data.get('result'))
-            if not isinstance(value, (int, float)):
-                _reject('invalid_coinflip_value', received_type=type(value).__name__ if value is not None else 'None')
+            entries = _ordered_entries('result_values', 'resultValues', 'ordered_results', 'orderedResults')
+            parsed_values: list[int] = []
+            if isinstance(entries, list):
+                for raw_value in entries:
+                    parsed_value = _int_from_any(raw_value, coin_mode=True)
+                    if parsed_value is None:
+                        _reject('invalid_coinflip_entry', entry_type=type(raw_value).__name__)
+                        return None
+                    parsed_values.append(parsed_value)
+            else:
+                single_value = data.get('result_value', data.get('resultValue', data.get('result')))
+                parsed_value = _int_from_any(single_value, coin_mode=True)
+                if parsed_value is None:
+                    _reject('invalid_coinflip_value', received_type=type(single_value).__name__ if single_value is not None else 'None')
+                    return None
+                parsed_values = [parsed_value]
+
+            if len(parsed_values) == 1 and expected_input_count > 1:
+                parsed_values.extend(randint(0, 1) for _ in range(expected_input_count - 1))
+
+            if len(parsed_values) != expected_input_count:
+                _reject('coinflip_length_mismatch', parsed_count=len(parsed_values))
                 return None
-            return _accept([int(value)])
+
+            if any(value not in {0, 1} for value in parsed_values):
+                _reject('invalid_coinflip_range', parsed_preview=parsed_values)
+                return None
+
+            return _accept(parsed_values)
 
         if isinstance(query_data, D6Data):
-            value = data.get('result')
-            if not isinstance(value, (int, float)):
-                _reject('invalid_d6_value', received_type=type(value).__name__ if value is not None else 'None')
+            entries = _ordered_entries('result_values', 'resultValues', 'ordered_results', 'orderedResults')
+            parsed_values: list[int] = []
+            if isinstance(entries, list):
+                for raw_value in entries:
+                    parsed_value = _int_from_any(raw_value, coin_mode=False)
+                    if parsed_value is None:
+                        _reject('invalid_d6_entry', entry_type=type(raw_value).__name__)
+                        return None
+                    parsed_values.append(parsed_value)
+            else:
+                single_value = data.get('result_value', data.get('resultValue', data.get('result')))
+                parsed_value = _int_from_any(single_value, coin_mode=False)
+                if parsed_value is None:
+                    _reject('invalid_d6_value', received_type=type(single_value).__name__ if single_value is not None else 'None')
+                    return None
+                parsed_values = [parsed_value]
+
+            if len(parsed_values) == 1 and expected_input_count > 1:
+                parsed_values.extend(randint(1, 6) for _ in range(expected_input_count - 1))
+
+            if len(parsed_values) != expected_input_count:
+                _reject('d6_length_mismatch', parsed_count=len(parsed_values))
                 return None
-            return _accept([int(value)])
+
+            if any(value < 1 or value > 6 for value in parsed_values):
+                _reject('invalid_d6_range', parsed_preview=parsed_values)
+                return None
+
+            return _accept(parsed_values)
 
         _reject('unsupported_query_type')
         return None
@@ -1547,19 +1715,22 @@ class FrontendGameBridge:
         self._append_phase_command_if_changed(commands, self.env.game_phase)
         return commands
 
-    def _queue_active_ability_interrupt(self, card: AVGECharacterCard, running_event: Any) -> None:
+    def _queue_active_ability_interrupt(self, card: AVGECharacterCard, running_event: Any) -> list[str]:
         if not isinstance(running_event, (Phase2, AtkPhase)):
-            return
+            return []
+
         try:
             if not bool(card.can_play_active()):
-                return
+                return self._notify_for_source_player(card, "Can't play this ability right now!", timeout=default_timeout)
         except Exception:
-            return
+            return self._notify_for_source_player(card, "Can't play this ability right now!", timeout=default_timeout)
+
         p : PacketType = [
             PlayCharacterCard(card, ActionTypes.ACTIVATE_ABILITY, ActionTypes.PLAYER_CHOICE, card)
         ]
         packet = AVGEPacket(p, AVGEEngineID(card, ActionTypes.PLAYER_CHOICE, type(card)))
         self.env._engine.external_interrupt(packet)
+        return []
 
     def _notify_for_source_player(self, source: Any, message: str, timeout: int | None = -1) -> list[str]:
         player = getattr(source, 'player', None)
@@ -1825,6 +1996,8 @@ class FrontendGameBridge:
             'input_result': 'input_result',
             'terminal_log': 'terminal_log',
             'setup_loaded': 'setup_loaded',
+            'resync_requested': 'resync_requested',
+            'resync_request': 'resync_requested',
             'surrender_result': 'surrender_result',
             'surrender_timeout': 'surrender_timeout',
         }

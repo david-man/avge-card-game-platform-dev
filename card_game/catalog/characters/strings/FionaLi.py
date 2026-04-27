@@ -132,7 +132,7 @@ class _BenchMaidReactor(AVGEReactor):
 
 class FionaLi(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.STRING, 1, 1)
+        super().__init__(unique_id, 90, CardType.STRING, 1, 2)
         self.atk_1_name = 'Vibrato'
         self.has_passive = True
 

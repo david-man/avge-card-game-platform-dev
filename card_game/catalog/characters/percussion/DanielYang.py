@@ -8,7 +8,7 @@ from typing import cast
 
 class DanielYang(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PERCUSSION, 2, 3)
+        super().__init__(unique_id, 100, CardType.PIANO, 2, 3)
         self.atk_1_name = 'Eight Hands Piano'
         self.has_passive = True
 
@@ -35,7 +35,6 @@ class DanielYang(AVGECharacterCard):
                     return False
                 if event.caller != owner_card:
                     return False
-
                 env = owner_card.env
                 for p in env.players.values():
                     for c in p.get_cards_in_play():
@@ -55,8 +54,8 @@ class DanielYang(AVGECharacterCard):
 
                 event = self.attached_event
                 assert isinstance(event, AVGECardHPChange)
-                event.modify_magnitude(20)
-                return Response(ResponseType.ACCEPT, Notify('Delicate Ears: +20 damage', all_players, default_timeout))
+                event.modify_magnitude(10)
+                return Response(ResponseType.ACCEPT, Notify('Delicate Ears: +10 damage', all_players, default_timeout))
 
         self.add_listener(_NoBrassBoostModifier())
         return Response(ResponseType.CORE, Data())
@@ -74,7 +73,7 @@ class DanielYang(AVGECharacterCard):
                     card.player.opponent.get_active_card(),
                     50,
                     AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.PERCUSSION,
+                    CardType.PIANO,
                     ActionTypes.ATK_1,
                     None,
                     card,
@@ -87,7 +86,7 @@ class DanielYang(AVGECharacterCard):
                             cast(AVGECharacterCard, b),
                             30,
                             AVGEAttributeModifier.SUBSTRACTIVE,
-                            CardType.PERCUSSION,
+                            CardType.PIANO,
                             ActionTypes.ATK_1,
                             None,
                             card,

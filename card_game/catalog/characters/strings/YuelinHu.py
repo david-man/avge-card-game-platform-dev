@@ -17,6 +17,8 @@ class _YuelinBirbDrawReactor(AVGEReactor):
             return False
         if not isinstance(event.card, AVGEBirb):
             return False
+        if(event.card.env.game_phase == GamePhase.INIT):
+            return False
         if event.pile_from.pile_type != Pile.DECK:
             return False
         if event.pile_to.pile_type != Pile.HAND:
@@ -54,7 +56,7 @@ class _YuelinBirbDrawReactor(AVGEReactor):
                             ActionTypes.PASSIVE,
                             owner,
                             StrSelectionQuery(
-                                'Musical Cat Summoned!: Discard the drawn AVGE Birb to deal 40 damage?',
+                                'Musical Cat Summoned!: Discard the drawn AVGE Birb to deal 20 damage?',
                                 ['Yes', 'No'],
                                 ['Yes', 'No'],
                                 False,
@@ -86,7 +88,7 @@ class _YuelinBirbDrawReactor(AVGEReactor):
                 packet.append(
                     AVGECardHPChange(
                         active,
-                        40,
+                        20,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.STRING,
                         ActionTypes.PASSIVE,
@@ -97,7 +99,7 @@ class _YuelinBirbDrawReactor(AVGEReactor):
             return packet
 
         owner.propose(AVGEPacket([discard_and_damage], AVGEEngineID(owner, ActionTypes.PASSIVE, YuelinHu)))
-        return Response(ResponseType.ACCEPT, Notify('Musical Cat Summoned!: Discarded AVGE Birb to deal 40 damage.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Notify('Musical Cat Summoned!: Discarded AVGE Birb to deal 20 damage.', all_players, default_timeout))
 
 
 class YuelinHu(AVGECharacterCard):

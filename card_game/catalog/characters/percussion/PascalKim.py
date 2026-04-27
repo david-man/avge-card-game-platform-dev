@@ -64,7 +64,7 @@ class PascalKim(AVGECharacterCard):
 
         hp = card.hp
         if hp <= 20:
-            dmg = 100
+            dmg = 90
         elif hp <= 50:
             dmg = 50
         else:
@@ -96,6 +96,9 @@ class PascalKim(AVGECharacterCard):
 
         deck = card.player.cardholders[Pile.DECK]
         packet : PacketType = []
+
+        for tool in list(card.tools_attached):
+            packet.append(TransferCard(tool, card.tools_attached, deck, ActionTypes.ATK_2, card, None))
 
         src = card.cardholder
         assert src is not None

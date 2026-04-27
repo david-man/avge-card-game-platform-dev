@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard
+from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard, AVGEEnergyTransfer
 
 
 class LoangChiang(AVGECharacterCard):
     _BENCH_SWAP_KEY = "loang-bench-swap"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PERCUSSION, 2, 2, 3)
+        super().__init__(unique_id, 110, CardType.PERCUSSION, 1, 2, 3)
         self.atk_1_name = 'Stick Trick'
         self.atk_2_name = 'Excused Absence'
 
@@ -86,9 +86,23 @@ class LoangChiang(AVGECharacterCard):
                     )
                 )
             return packet
+        def remove_energy() -> PacketType:
+            packet : PacketType = []
+            if len(card.energy) == 0:
+                return []
+            else:
+                packet.append(AVGEEnergyTransfer(
+                    card.energy[0],
+                    card,
+                    card.player,
+                    ActionTypes.ATK_2,
+                    card,
+                    None
+                ))
+                return packet
         card.propose(
             AVGEPacket(
-                [gen],
+                [gen, remove_energy],
                 AVGEEngineID(card, ActionTypes.ATK_2, LoangChiang),
             )
         )

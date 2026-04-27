@@ -69,7 +69,7 @@ class _CarolynAttackModifier(AVGEModifier):
 
 class CarolynZheng(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 90, CardType.BRASS, 1, 0)
+        super().__init__(unique_id, 90, CardType.BRASS, 2, 3)
         self.atk_1_name = 'Blast'
         self.has_passive = True
 

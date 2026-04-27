@@ -75,7 +75,7 @@ class _VincentHealReactor(AVGEReactor):
 class VincentChen(AVGECharacterCard):
     _HEAL_PICK_KEY = "vincent_chen_heal_pick"
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.BRASS, 1, 1, 3)
+        super().__init__(unique_id, 120, CardType.BRASS, 2, 1, 3)
         self.atk_1_name = 'Fanfare'
         self.atk_2_name = 'Cherry Flavored Valve Oil'
 
@@ -85,7 +85,7 @@ class VincentChen(AVGECharacterCard):
                 card.player.opponent.get_active_card(),
                 20,
                 AVGEAttributeModifier.SUBSTRACTIVE,
-                CardType.ALL,
+                CardType.BRASS,
                 ActionTypes.ATK_1,
                 None,
                 card,

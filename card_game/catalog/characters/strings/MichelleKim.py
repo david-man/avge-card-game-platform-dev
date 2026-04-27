@@ -52,18 +52,24 @@ class MichelleKim(AVGECharacterCard):
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, MichelleKim)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def _miku_used_this_turn(self, card: AVGECharacterCard) -> bool:
         from card_game.catalog.items.MikuOtamatone import MikuOtamatone
 
-        miku_used_this_turn = False
-        chapter = card.env.round_id
-        history_entries = card.env._engine.event_history.history.get(chapter, [])
-        for event, _ in history_entries:
-            if not isinstance(event, PlayNonCharacterCard):
-                continue
-            if isinstance(event.card, MikuOtamatone) and event.card.player == card.player:
-                miku_used_this_turn = True
-                break
+        idx = 0
+        while True:
+            event, found_idx = card.env.check_history(card.env.round_id, PlayNonCharacterCard, {}, idx)
+            if found_idx == -1 or event is None:
+                return False
+            if (
+                isinstance(event, PlayNonCharacterCard)
+                and isinstance(event.card, MikuOtamatone)
+                and event.card.player == card.player
+            ):
+                return True
+            idx = found_idx + 1
+
+    def atk_2(self, card: AVGECharacterCard) -> Response:
+        miku_used_this_turn = self._miku_used_this_turn(card)
 
         dmg = 80 if miku_used_this_turn else 30
 

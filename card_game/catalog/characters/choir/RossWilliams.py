@@ -12,10 +12,14 @@ class _RossPassiveAssessor(AVGEAssessor):
         self.owner_card = owner_card
 
     def event_match(self, event):
-        return isinstance(event, AtkPhase) and \
-            event.env.player_turn == self.owner_card.player and \
-            self.owner_card.cardholder.pile_type == Pile.BENCH and \
-            len(self.owner_card.player.get_active_card().energy) >= 2
+        if not isinstance(event, AtkPhase):
+            return False
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.BENCH:
+            return False
+        active = event.env.player_turn.get_active_card()
+        if not isinstance(active, AVGECharacterCard):
+            return False
+        return len(active.energy) >= 2
 
     def event_effect(self) -> bool:
         return True
@@ -27,16 +31,20 @@ class _RossPassiveAssessor(AVGEAssessor):
     def assess(self, args=None):
         if args is None:
             args = {}
-        from card_game.internal_events import PlayCharacterCard, TurnEnd
+        from card_game.internal_events import PlayCharacterCard
 
-        active: AVGECharacterCard = self.owner_card.player.get_active_card()
+        current_player = self.owner_card.env.player_turn
+        active = current_player.get_active_card()
+        if not isinstance(active, AVGECharacterCard):
+            return Response(ResponseType.ACCEPT, Data())
+
         chosen = self.owner_card.env.cache.get(self.owner_card, RossWilliams._PASSIVE_KEY, None, True)
         if chosen is None:
             return Response(
                 ResponseType.INTERRUPT,
                 Interrupt[InputEvent]([
                         InputEvent(
-                            self.owner_card.player,
+                            current_player,
                             [RossWilliams._PASSIVE_KEY],
                             lambda r: True,
                             ActionTypes.PASSIVE,
@@ -57,26 +65,27 @@ class _RossPassiveAssessor(AVGEAssessor):
 
         packet = [
             PlayCharacterCard(self.owner_card, ActionTypes.ATK_1, ActionTypes.PASSIVE, active),
-            AVGEPlayerAttributeChange(self.owner_card.player, AVGEPlayerAttribute.ATTACKS_LEFT, 1, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, self.owner_card.env, None),
+            AVGEPlayerAttributeChange(current_player, AVGEPlayerAttribute.ATTACKS_LEFT, 1, AVGEAttributeModifier.SUBSTRACTIVE, ActionTypes.ENV, self.owner_card.env, None),
         ]
         self.owner_card.propose(
             AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RossWilliams))
         )
-        return Response(ResponseType.FAST_FORWARD, Notify(str(self.owner_card.player.get_active_card()) + " used Ross's attack!", all_players, default_timeout))
+        return Response(ResponseType.FAST_FORWARD, Notify(str(active) + " used Ross's attack!", all_players, default_timeout))
 
 
 class RossWilliams(AVGECharacterCard):
     _PASSIVE_KEY = "ross_ross_passive_key"
     _ATTACK_KEY = "ross_attk_key"
+    _ATTACK_HAND_KEY = "ross_attk_hand_key"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.CHOIR, 1, 2)
+        super().__init__(unique_id, 110, CardType.CHOIR, 2, 2)
         self.atk_1_name = 'Ross Attack!'
         self.has_passive = True
 
     def passive(self: AVGECharacterCard) -> Response:
         self.add_listener(_RossPassiveAssessor(self))
-        return Response(ResponseType.ACCEPT, Data())
+        return Response(ResponseType.CORE, Data())
 
     def atk_1(self, card: AVGECharacterCard) -> Response:
         from card_game.internal_events import AVGECardHPChange
@@ -90,23 +99,47 @@ class RossWilliams(AVGECharacterCard):
         if player_has and opp_has:
             return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack, but it did nothing...", all_players, default_timeout))
 
-        if player_has and not opp_has:
-            deck = player.cardholders[Pile.DECK]
+        if player_has:
+            discard = player.cardholders[Pile.DISCARD]
             hand = player.cardholders[Pile.HAND]
-            def generate_packet() -> PacketType:
-                if(len(deck) == 0):
-                    return []
-                return [TransferCard(deck.peek(), deck, hand, ActionTypes.ATK_1, card, None)]
+
+            if len(discard) == 0:
+                return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack, but there were no cards in discard.", all_players, default_timeout))
+
+            choice = player.env.cache.get(card, RossWilliams._ATTACK_HAND_KEY, None, True)
+            if choice is None:
+                discard_cards = list(discard)
+                return Response(
+                    ResponseType.INTERRUPT,
+                    Interrupt[InputEvent]([
+                            InputEvent(
+                                player,
+                                [RossWilliams._ATTACK_HAND_KEY],
+                                lambda r: True,
+                                ActionTypes.ATK_1,
+                                card,
+                                CardSelectionQuery(
+                                    "Ross Attack!: Choose a card from discard to put in your hand",
+                                    discard_cards,
+                                    discard_cards,
+                                    False,
+                                    False,
+                                )
+                            )
+                        ]),
+                )
 
             card.propose(
                 AVGEPacket(
-                    [generate_packet] * 2,
+                    [
+                        TransferCard(choice, discard, hand, ActionTypes.ATK_1, card, None)
+                    ],
                     AVGEEngineID(card, ActionTypes.ATK_1, RossWilliams),
                 )
             )
             return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack!", all_players, default_timeout))
 
-        if opp_has and not player_has:
+        if opp_has:
             targets = opponent.get_cards_in_play()
             target = player.env.cache.get(card, RossWilliams._ATTACK_KEY, None, True)
             if target is None:
@@ -128,7 +161,7 @@ class RossWilliams(AVGECharacterCard):
                     [
                         AVGECardHPChange(
                             target,
-                            50,
+                            20,
                             AVGEAttributeModifier.SUBSTRACTIVE,
                             CardType.CHOIR,
                             ActionTypes.ATK_1,
@@ -139,5 +172,6 @@ class RossWilliams(AVGECharacterCard):
                     AVGEEngineID(card, ActionTypes.ATK_1, RossWilliams),
                 )
             )
+            return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack!", all_players, default_timeout))
 
-        return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack!", all_players, default_timeout))
+        return Response(ResponseType.CORE, Notify(f"{str(card)} used Ross Attack, but it did nothing...", all_players, default_timeout))

@@ -64,7 +64,7 @@ class _SophiaAtk2KnockoutReactor(AVGEReactor):
                 packet: PacketType = []
                 targets = [
                     target
-                    for target in owner.player.opponent.get_cards_in_play()
+                    for target in owner.player.opponent.cardholders[Pile.BENCH]
                     if isinstance(target, AVGECharacterCard) and target.hp > 0 and target != knocked_out
                 ]
                 for target in targets:
@@ -93,12 +93,33 @@ class SophiaYWang(AVGECharacterCard):
     _GACHA_DRAWN_CARDS_KEY = 'sophiaywang_gacha_cards_drawn'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
+        super().__init__(unique_id, 1100, CardType.STRING, 2, 1, 3)
         self.atk_1_name = 'Gacha Gaming'
         self.atk_2_name = 'Ricochet'
 
     def _cleanup_gacha_cache(self, card: AVGECharacterCard):
         card.env.cache.delete(card, SophiaYWang._GACHA_DRAWN_CARDS_KEY)
+
+    def _draw_choice_interrupt(self, card: AVGECharacterCard) -> Response:
+        return Response(
+            ResponseType.INTERRUPT,
+            Interrupt[AVGEEvent]([
+                    InputEvent(
+                        card.player,
+                        [SophiaYWang._GACHA_DRAW_CHOICE_KEY],
+                        lambda r: True,
+                        ActionTypes.ATK_1,
+                        card,
+                        StrSelectionQuery(
+                            'Gacha Gaming: Draw a card and take 20 fixed damage? (You cannot self-KO.)',
+                            ['Yes', 'No'],
+                            ['Yes', 'No'],
+                            False,
+                            False,
+                        )
+                    )
+                ]),
+        )
 
     def _shuffle_drawn_cards_back(self, card: AVGECharacterCard, drawn_cards: list[AVGECard]):
         deck = card.player.cardholders[Pile.DECK]
@@ -145,25 +166,7 @@ class SophiaYWang(AVGECharacterCard):
 
         choice = card.env.cache.get(card, SophiaYWang._GACHA_DRAW_CHOICE_KEY, None, True)
         if choice is None:
-            return Response(
-                ResponseType.INTERRUPT,
-                Interrupt[AVGEEvent]([
-                        InputEvent(
-                            card.player,
-                            [SophiaYWang._GACHA_DRAW_CHOICE_KEY],
-                            lambda r: True,
-                            ActionTypes.ATK_1,
-                            card,
-                            StrSelectionQuery(
-                                'Gacha Gaming: Draw a card and take 20 fixed damage? (You cannot self-KO.)',
-                                ['Yes', 'No'],
-                                ['Yes', 'No'],
-                                False,
-                                False,
-                            )
-                        )
-                    ]),
-            )
+            return self._draw_choice_interrupt(card)
 
         if not choice == 'Yes':
             self._shuffle_drawn_cards_back(card, drawn_cards)
@@ -191,20 +194,24 @@ class SophiaYWang(AVGECharacterCard):
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang)))
             return self.generic_response(card, ActionTypes.ATK_1)
 
-        card.env.cache.set(card, SophiaYWang._GACHA_DRAWN_CARDS_KEY, drawn_cards + [next_card])
-        packet.append(
+        new_drawn_cards = drawn_cards + [next_card]
+        card.env.cache.set(card, SophiaYWang._GACHA_DRAWN_CARDS_KEY, new_drawn_cards)
+
+        new_hp = max(1, card.hp - 20)
+        follow_up: list[AVGEEvent] = [
+            TransferCard(next_card, deck, hand, ActionTypes.ATK_1, card, None),
             AVGECardHPChange(
                 card,
-                max(1, card.hp - 20),
+                new_hp,
                 AVGEAttributeModifier.SET_STATE,
                 CardType.STRING,
                 ActionTypes.ATK_1,
                 None,
                 card,
-            )
-        )
-        card.env.extend_event(packet)
-        return self.generic_response(card, ActionTypes.ATK_1)
+            ),
+        ]
+
+        return Response(ResponseType.INTERRUPT, Interrupt[AVGEEvent](follow_up))
 
     def atk_2(self, card: AVGECharacterCard) -> Response:
         card.add_listener(_SophiaAtk2KnockoutReactor(card))

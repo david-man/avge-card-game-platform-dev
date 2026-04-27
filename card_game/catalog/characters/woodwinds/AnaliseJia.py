@@ -9,7 +9,7 @@ class AnaliseJia(AVGECharacterCard):
     _ATK1_ITEM_KEY = 'analisejia_atk1_item_choice'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 2, 3)
+        super().__init__(unique_id, 110, CardType.WOODWIND, 1, 2, 3)
         self.atk_1_name = 'Reed Replenishment'
         self.atk_2_name = 'Banana Bread for Everyone!'
 

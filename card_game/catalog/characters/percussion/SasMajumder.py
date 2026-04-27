@@ -26,22 +26,17 @@ class _SasDiscardReactor(AVGEReactor):
             return False
         if event.card.player != self.owner_card.player:
             return False
-        if event.card == self.owner_card:
-            return False
 
         env = self.owner_card.env
         if env.player_turn != self.owner_card.player.opponent:
             return False
 
-        _, already_prompted_idx = env.check_history(
+        _, prior_discard_idx = env.check_history(
             env.round_id,
-            InputEvent,
-            {
-                'caller': self.owner_card,
-                'catalyst_action': ActionTypes.PASSIVE,
-            },
+            TransferCard,
+            {'pile_to': self.owner_card.player.cardholders[Pile.DISCARD]},
         )
-        if already_prompted_idx != -1:
+        if prior_discard_idx != -1:
             return False
         return True
 
@@ -119,9 +114,9 @@ class SasMajumder(AVGECharacterCard):
         return Response(ResponseType.CORE, Data())
 
     def atk_1(self, card: AVGECharacterCard) -> Response:
-        packet: PacketType = []
+        packet = []
 
-        def make_hit():
+        def make_hit(draw_card: bool = False):
             def hit() -> PacketType:
                 p: PacketType = []
                 p.append(
@@ -135,27 +130,21 @@ class SasMajumder(AVGECharacterCard):
                         card,
                     )
                 )
+                if draw_card and len(card.player.cardholders[Pile.DECK]) > 0:
+                    p.append(
+                        TransferCard(
+                            card.player.cardholders[Pile.DECK].peek(),
+                            card.player.cardholders[Pile.DECK],
+                            card.player.cardholders[Pile.HAND],
+                            ActionTypes.ATK_1,
+                            card,
+                            None,
+                        )
+                    )
                 return p
             return hit
 
-        packet.extend([make_hit(), make_hit(), make_hit(), make_hit()])
-
-        if len(card.player.cardholders[Pile.DECK]) > 0:
-            def gen_draw() -> PacketType:
-                p: PacketType = []
-                p.append(
-                    TransferCard(
-                        card.player.cardholders[Pile.DECK].peek(),
-                        card.player.cardholders[Pile.DECK],
-                        card.player.cardholders[Pile.HAND],
-                        ActionTypes.ATK_1,
-                        card,
-                        None,
-                    )
-                )
-                return p
-
-            packet.append(gen_draw)
+        packet.extend([make_hit(), make_hit(), make_hit(), make_hit(draw_card=True)])
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SasMajumder)))
         return self.generic_response(card, ActionTypes.ATK_1)

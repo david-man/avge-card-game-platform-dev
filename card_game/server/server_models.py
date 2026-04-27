@@ -62,20 +62,25 @@ class MultiplayerTransportState:
         if existing_session is not None:
             return existing_session
 
-        reconnect_slot = self.reconnect_token_to_slot.get(reconnect_token or '')
+        reconnect_token_value = reconnect_token or ''
+        reconnect_slot = self.reconnect_token_to_slot.get(reconnect_token_value)
         if reconnect_slot is not None:
             current_sid_for_slot = self.sid_by_slot[reconnect_slot]
             if current_sid_for_slot == sid:
                 return self.session_by_sid.get(sid)
-            if self.sid_by_slot[reconnect_slot] is None:
-                reusable = self.reserved_session_by_slot[reconnect_slot]
-                return self._bind_sid_to_slot(
-                    sid,
-                    reconnect_slot,
-                    reconnect_token or '',
-                    reusable_session=reusable,
-                )
-            return None
+
+            # Allow token-authorized takeovers when a browser refresh reconnects
+            # before the prior polling sid is observed as disconnected.
+            if current_sid_for_slot is not None:
+                self.release_sid(current_sid_for_slot)
+
+            reusable = self.reserved_session_by_slot[reconnect_slot]
+            return self._bind_sid_to_slot(
+                sid,
+                reconnect_slot,
+                reconnect_token_value,
+                reusable_session=reusable,
+            )
 
         normalized_requested: PlayerSlot | None = None
         if requested_slot in {'p1', 'p2'}:

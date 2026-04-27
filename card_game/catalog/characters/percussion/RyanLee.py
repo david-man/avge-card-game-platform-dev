@@ -77,9 +77,9 @@ class RyanLee(AVGECharacterCard):
         return self.generic_response(card, ActionTypes.ATK_1)
 
     def atk_2(self, card: AVGECharacterCard) -> Response:
-        packet: PacketType = []
+        packet = []
 
-        def make_hit():
+        def make_hit(draw_card: bool = False):
             def hit() -> PacketType:
                 p: PacketType = []
                 p.append(AVGECardHPChange(
@@ -91,26 +91,21 @@ class RyanLee(AVGECharacterCard):
                     None,
                     card,
                 ))
+                if draw_card and len(card.player.cardholders[Pile.DECK]) > 0:
+                    p.append(
+                        TransferCard(
+                            card.player.cardholders[Pile.DECK].peek(),
+                            card.player.cardholders[Pile.DECK],
+                            card.player.cardholders[Pile.HAND],
+                            ActionTypes.ATK_2,
+                            card,
+                            None,
+                        )
+                    )
                 return p
             return hit
 
-        packet.extend([make_hit(), make_hit(), make_hit(), make_hit()])
-
-        if len(card.player.cardholders[Pile.DECK]) > 0:
-            def gen_draw() -> PacketType:
-                p: PacketType = []
-                p.append(
-                    TransferCard(
-                        card.player.cardholders[Pile.DECK].peek(),
-                        card.player.cardholders[Pile.DECK],
-                        card.player.cardholders[Pile.HAND],
-                        ActionTypes.ATK_2,
-                        card,
-                        None,
-                    )
-                )
-                return p
-            packet.append(gen_draw)
+        packet.extend([make_hit(), make_hit(), make_hit(), make_hit(draw_card=True)])
 
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, RyanLee)))
 

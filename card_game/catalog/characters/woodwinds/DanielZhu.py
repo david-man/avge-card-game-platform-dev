@@ -56,7 +56,7 @@ class DanielZhuSharePainModifier(AVGEModifier):
                             lambda r: True,
                             ActionTypes.PASSIVE,
                             self.owner_card,
-                            IntegerInputData("Share the Pain: Redirect Damage Quantity", 0, max_redirect)
+                            IntegerInputData(f"Share the Pain: Redirect 0-{max_redirect} damage to Daniel", 0, max_redirect)
                         )
                     ]),
             )
@@ -95,7 +95,7 @@ class DanielZhu(AVGECharacterCard):
     _REDIRECT_KEY = 'danielzhu_damage_redirect'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 120, CardType.WOODWIND, 2, 0, 3)
+        super().__init__(unique_id, 120, CardType.WOODWIND, 2, 3)
         self.has_passive = True
         self.atk_1_name = 'Hyper-Ventilation!'
 

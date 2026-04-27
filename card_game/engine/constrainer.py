@@ -29,7 +29,7 @@ class Constraint(Generic[EV]):
         self._invalidated = True
     def _should_attach(self, obj : AbstractEventListener[EV] | Constraint[EV]):
         return (not self._invalidated) and (self.match(obj))
-    def response_data_on_attach(self, attached_to : AbstractEventListener[EV]) -> Data:
+    def response_data_on_attach(self, attached_to : AbstractEventListener[EV] | Constraint[EV]) -> Data:
         raise NotImplementedError()
     def package(self):
         raise NotImplementedError()

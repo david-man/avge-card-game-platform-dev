@@ -70,6 +70,7 @@ class HanleiGao(AVGECharacterCard):
     def atk_2(self, card: AVGECharacterCard) -> Response:
         def generate_dmg() -> PacketType:
             packet: PacketType = []
+            opponent_hand = card.player.opponent.cardholders[Pile.HAND]
             for c in card.player.opponent.get_cards_in_play():
                 if isinstance(c, AVGECharacterCard) and len(c.tools_attached) > 0:
                     packet.append(
@@ -83,6 +84,18 @@ class HanleiGao(AVGECharacterCard):
                             card,
                         )
                     )
+                if isinstance(c, AVGECharacterCard):
+                    for tool in list(c.tools_attached):
+                        packet.append(
+                            TransferCard(
+                                tool,
+                                c.tools_attached,
+                                opponent_hand,
+                                ActionTypes.ATK_2,
+                                card,
+                                None,
+                            )
+                        )
             return packet
 
         card.propose(AVGEPacket([generate_dmg], AVGEEngineID(card, ActionTypes.ATK_2, HanleiGao)))

@@ -8,7 +8,7 @@ class BenCherekIII(AVGECharacterCard):
     _YES_NO_KEY = "bencherek_yn_key"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.GUITAR, 2, 2)
+        super().__init__(unique_id, 100, CardType.GUITAR, 1, 2)
         self.atk_1_name = 'Feedback Loop'
         self.has_passive = True
 
@@ -16,6 +16,17 @@ class BenCherekIII(AVGECharacterCard):
         if self.cardholder is None or self.cardholder.pile_type != Pile.BENCH:
             return Response(ResponseType.CORE, Data())
         if len(self.player.cardholders[Pile.ACTIVE]) == 0:
+            return Response(ResponseType.CORE, Data())
+        _, played_from_hand_to_bench_idx = self.env.check_history(
+            self.env.round_id,
+            TransferCard,
+            {
+                'card': self,
+                'pile_from': self.player.cardholders[Pile.HAND],
+                'pile_to': self.player.cardholders[Pile.BENCH],
+            },
+        )
+        if played_from_hand_to_bench_idx != -1:
             return Response(ResponseType.CORE, Data())
 
         yn = self.env.cache.get(self, BenCherekIII._YES_NO_KEY, None, True)
@@ -37,7 +48,7 @@ class BenCherekIII(AVGECharacterCard):
                         )
                     ]),
             )
-        if yn:
+        if yn in [True, "Yes"]:
             def gen() -> PacketType:
                 return [TransferCard(
                     self,

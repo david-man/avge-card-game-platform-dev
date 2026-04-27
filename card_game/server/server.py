@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from threading import Condition
 from threading import RLock
+from threading import Thread
 from threading import Timer
 from time import monotonic
 from typing import Any
@@ -22,7 +23,7 @@ except ImportError:  # pragma: no cover - optional runtime dependency
     disconnect = None  # type: ignore[assignment]
     emit = None  # type: ignore[assignment]
 
-from .game_runner import FrontendGameBridge
+from .game_runner import BridgeEngineRuntimeError, FrontendGameBridge
 from .game_runner import p1_username, p2_username
 from ..constants import max_bench_size
 from .logging import (
@@ -63,6 +64,19 @@ frontend_game_bridge = FrontendGameBridge()
 entity_setup_payload: dict[str, Any] = frontend_game_bridge.get_setup_payload()
 protocol_seq = 0
 DISCONNECT_GRACE_SECONDS = 5
+
+
+def _resolve_init_finalize_timeout_seconds() -> float:
+    raw = os.getenv('INIT_FINALIZE_TIMEOUT_SECONDS', '8').strip()
+    try:
+        parsed = float(raw)
+    except Exception:
+        return 8.0
+    return max(1.0, min(parsed, 60.0))
+
+
+INIT_FINALIZE_TIMEOUT_SECONDS = _resolve_init_finalize_timeout_seconds()
+
 room_stage: str = 'init'
 init_setup_submission_by_slot: dict[PlayerSlot, dict[str, Any] | None] = {
     'p1': None,
@@ -112,10 +126,25 @@ def _recover_reconnect_token_for_expected_slot(
     if expected_slot not in {'p1', 'p2'}:
         return None
 
+    normalized_slot = cast(PlayerSlot, expected_slot)
+
+    # Polling refreshes can reconnect before the prior sid is released.
+    # If we can prove the slot via router session mapping, recover the active
+    # slot token so assign_slot can perform an authenticated takeover.
+    active_sid = transport_state.sid_by_slot.get(normalized_slot)
+    if isinstance(active_sid, str) and active_sid:
+        active_session = transport_state.session_by_sid.get(active_sid)
+        if (
+            active_session is not None
+            and isinstance(active_session.reconnect_token, str)
+            and active_session.reconnect_token.strip()
+        ):
+            return active_session.reconnect_token.strip()
+
     # If the client can prove slot identity via router session mapping,
     # recover the reserved reconnect token so grace-window reconnect succeeds
     # even when browser session storage lost the token.
-    reserved = transport_state.reserved_session_by_slot.get(cast(PlayerSlot, expected_slot))
+    reserved = transport_state.reserved_session_by_slot.get(normalized_slot)
     if reserved is None:
         return None
     if not isinstance(reserved.reconnect_token, str) or not reserved.reconnect_token.strip():
@@ -400,7 +429,7 @@ def _validate_init_setup_submission(
         bench_card_ids.append(raw.strip())
 
     if len(bench_card_ids) > max_bench_size:
-        return False, f'bench_card_ids cannot exceed {max_bench_size} cards', None
+        raise ValueError(f'bench_card_ids cannot exceed {max_bench_size} cards')
 
     selected_ids = [active_card_id, *bench_card_ids]
     if len(set(selected_ids)) != len(selected_ids):
@@ -451,15 +480,41 @@ def _finalize_init_stage_locked() -> tuple[bool, str | None]:
     if not isinstance(p1_submission, dict) or not isinstance(p2_submission, dict):
         return False, 'both init submissions are required before finalizing'
 
-    try:
-        frontend_game_bridge = frontend_game_bridge.clone_with_init_setup({
-            'p1': p1_submission,
-            'p2': p2_submission,
-        })
-    except Exception as exc:
-        return False, f'failed to finalize init setup: {exc}'
+    finalize_target = {
+        'p1': deepcopy(p1_submission),
+        'p2': deepcopy(p2_submission),
+    }
+    source_bridge = frontend_game_bridge
+    worker_result: dict[str, Any] = {}
 
-    entity_setup_payload = frontend_game_bridge.get_setup_payload()
+    def _build_finalized_bridge() -> None:
+        try:
+            candidate_bridge = source_bridge.clone_with_init_setup(finalize_target)
+            worker_result['bridge'] = candidate_bridge
+            worker_result['setup_payload'] = candidate_bridge.get_setup_payload()
+        except Exception as exc:
+            worker_result['error'] = exc
+
+    started_at = monotonic()
+    finalize_worker = Thread(target=_build_finalized_bridge, name='init-finalize-worker', daemon=True)
+    finalize_worker.start()
+    finalize_worker.join(INIT_FINALIZE_TIMEOUT_SECONDS)
+    elapsed_ms = int((monotonic() - started_at) * 1000)
+
+    if finalize_worker.is_alive():
+        return False, f'init finalize timed out after {INIT_FINALIZE_TIMEOUT_SECONDS:.1f}s'
+
+    finalize_error = worker_result.get('error')
+    if isinstance(finalize_error, Exception):
+        return False, f'failed to finalize init setup: {finalize_error}'
+
+    candidate_bridge = worker_result.get('bridge')
+    candidate_setup_payload = worker_result.get('setup_payload')
+    if not isinstance(candidate_bridge, FrontendGameBridge) or not isinstance(candidate_setup_payload, dict):
+        return False, 'failed to finalize init setup: incomplete finalized state'
+
+    frontend_game_bridge = candidate_bridge
+    entity_setup_payload = candidate_setup_payload
     pending_command_acks.clear()
     next_command_id = 1
     room_stage = 'live'
@@ -469,6 +524,12 @@ def _finalize_init_stage_locked() -> tuple[bool, str | None]:
     _enqueue_environment_for_connected_clients(force=True)
     _enqueue_init_state_for_connected_clients(force=True)
     registration_condition.notify_all()
+    print(
+        '[INIT_SETUP][FINALIZE_OK] '
+        f'elapsed_ms={elapsed_ms} '
+        f"p1_active={finalize_target['p1'].get('active_card_id')!r} "
+        f"p2_active={finalize_target['p2'].get('active_card_id')!r}"
+    )
     return True, None
 
 
@@ -511,14 +572,17 @@ def _enqueue_environment_for_connected_clients(force: bool = False) -> None:
         )
 
 
-def _emit_pending_packets_to_connected_clients() -> None:
+def _emit_pending_packets_to_connected_clients(exclude_slots: set[PlayerSlot] | None = None) -> None:
     if socketio is None:
         return
 
+    excluded = exclude_slots if isinstance(exclude_slots, set) else set()
     deliveries: list[tuple[PlayerSlot, str, list[dict[str, Any]]]] = []
     with transport_lock:
         for slot_name in ('p1', 'p2'):
             slot = cast(PlayerSlot, slot_name)
+            if slot in excluded:
+                continue
             sid_for_slot = transport_state.sid_by_slot[slot]
             if sid_for_slot is None:
                 continue
@@ -531,7 +595,7 @@ def _emit_pending_packets_to_connected_clients() -> None:
             deliveries.append((slot, sid_for_slot, packets))
 
     for slot, sid_for_slot, packets in deliveries:
-        socketio.emit('protocol_packets', {'packets': packets}, to=sid_for_slot)
+        socketio.emit('protocol_packets', _protocol_packets_emit_payload_for_slot(slot, packets), to=sid_for_slot)
         log_protocol_send(packets, slot)
 
 
@@ -549,6 +613,33 @@ def _extract_bridge_commands(bridge_result: dict[str, Any]) -> list[str]:
 
 def _bridge_requests_force_environment_sync(bridge_result: dict[str, Any]) -> bool:
     return bool(bridge_result.get('force_environment_sync'))
+
+
+def _handle_bridge_runtime_error(
+    exc: Exception,
+    source_slot: str | None,
+    session_for_client: ClientSession | None,
+) -> tuple[dict[str, Any], int]:
+    print(f'[GAME_RUNNER_ERROR] {exc}')
+    log_protocol_event(
+        'game_runner_error',
+        ['error_message'],
+        [],
+        source_slot,
+    )
+
+    _enqueue_bridge_commands(['notify both Game_error -1'], source_slot)
+    packets = _commands_ready_for_slot(source_slot, is_response=True, session=session_for_client)
+
+    _mark_room_finished_once('game_runner_error')
+    _schedule_process_termination('game runner error')
+
+    log_protocol_send(packets, source_slot)
+    return {
+        'ok': True,
+        'packets': packets,
+        'fatal_error': True,
+    }, 200
 
 
 def _force_environment_sync_for_connected_clients() -> None:
@@ -577,7 +668,7 @@ def _force_environment_sync_for_connected_clients() -> None:
             deliveries.append((slot, sid_for_slot, env_packet))
 
     for slot, sid_for_slot, env_packet in deliveries:
-        socketio.emit('protocol_packets', {'packets': [env_packet]}, to=sid_for_slot)
+        socketio.emit('protocol_packets', _protocol_packets_emit_payload_for_slot(slot, [env_packet]), to=sid_for_slot)
         log_protocol_send([env_packet], slot)
 
 def _classify_required_ack_slots(command: str, source_slot: str | None) -> set[PlayerSlot]:
@@ -607,6 +698,49 @@ def _blocked_pending_command_for_slot(source_slot: str | None) -> PendingCommand
         return None
 
     return head
+
+
+def _effective_protocol_slot(source_slot: str | None, response: dict[str, Any] | None = None) -> PlayerSlot | None:
+    response_slot = None
+    if isinstance(response, dict):
+        response_slot = _normalize_client_slot(response.get('client_slot'))
+
+    if response_slot in {'p1', 'p2'}:
+        return cast(PlayerSlot, response_slot)
+
+    normalized_source = _normalize_client_slot(source_slot)
+    if normalized_source in {'p1', 'p2'}:
+        return cast(PlayerSlot, normalized_source)
+
+    return None
+
+
+def _augment_protocol_response_with_pending_peer_ack(
+    response: dict[str, Any],
+    source_slot: str | None,
+) -> dict[str, Any]:
+    enriched = dict(response)
+    slot = _effective_protocol_slot(source_slot, response)
+    blocked_pending_command = _blocked_pending_command_for_slot(slot)
+
+    enriched['blocked_pending_peer_ack'] = blocked_pending_command is not None
+    if blocked_pending_command is not None and not isinstance(enriched.get('blocked_command'), str):
+        enriched['blocked_command'] = blocked_pending_command.command
+
+    return enriched
+
+
+def _protocol_packets_emit_payload_for_slot(slot: str | None, packets: list[dict[str, Any]]) -> dict[str, Any]:
+    blocked_pending_command = _blocked_pending_command_for_slot(slot)
+    payload: dict[str, Any] = {
+        'packets': packets,
+        'blocked_pending_peer_ack': blocked_pending_command is not None,
+    }
+
+    if blocked_pending_command is not None:
+        payload['blocked_command'] = blocked_pending_command.command
+
+    return payload
 
 
 def _issue_environment_resync_packet_for_source(
@@ -653,6 +787,7 @@ def _enqueue_bridge_commands(commands: list[str], source_slot: str | None) -> No
         with transport_lock:
             registration_condition.notify_all()
         _emit_ready_commands_to_connected_clients()
+        _emit_pending_peer_ack_status_to_connected_clients()
 
 
 def _emit_ready_commands_to_connected_clients() -> None:
@@ -675,8 +810,31 @@ def _emit_ready_commands_to_connected_clients() -> None:
             deliveries.append((slot, sid_for_slot, packets))
 
     for slot, sid_for_slot, packets in deliveries:
-        socketio.emit('protocol_packets', {'packets': packets}, to=sid_for_slot)
+        socketio.emit('protocol_packets', _protocol_packets_emit_payload_for_slot(slot, packets), to=sid_for_slot)
         log_protocol_send(packets, slot)
+
+
+def _emit_pending_peer_ack_status_to_connected_clients() -> None:
+    if socketio is None:
+        return
+
+    deliveries: list[tuple[PlayerSlot, str, dict[str, Any]]] = []
+    with transport_lock:
+        for slot_name in ('p1', 'p2'):
+            slot = cast(PlayerSlot, slot_name)
+            sid_for_slot = transport_state.sid_by_slot[slot]
+            if sid_for_slot is None:
+                continue
+
+            deliveries.append((
+                slot,
+                sid_for_slot,
+                _protocol_packets_emit_payload_for_slot(slot, []),
+            ))
+
+    for slot, sid_for_slot, payload in deliveries:
+        socketio.emit('protocol_packets', payload, to=sid_for_slot)
+        log_protocol_send([], slot)
 
 
 def _build_command_packet(
@@ -858,19 +1016,51 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
 
     if packet_type_raw == 'init_setup_done':
         if session_for_client is None or source_slot not in {'p1', 'p2'}:
+            print(
+                '[INIT_SETUP][REJECT] '
+                "reason='missing_session_or_slot' "
+                f'source_slot={source_slot!r}'
+            )
             return {'ok': False, 'error': 'init_setup_done requires an assigned player slot.'}, 400
 
         slot = cast(PlayerSlot, source_slot)
         finalized_now = False
+        finalize_failed = False
+        finalize_error_message: str | None = None
         with transport_lock:
             if room_stage != 'init':
+                print(
+                    '[INIT_SETUP][REJECT] '
+                    "reason='already_finalized' "
+                    f'slot={slot!r} stage={room_stage!r}'
+                )
                 return {'ok': False, 'error': 'Init setup is already finalized.'}, 409
 
-            ok, error_message, normalized_submission = _validate_init_setup_submission(slot, body)
+            try:
+                ok, error_message, normalized_submission = _validate_init_setup_submission(slot, body)
+            except ValueError as exc:
+                print(
+                    '[INIT_SETUP][REJECT] '
+                    "reason='invalid_payload' "
+                    f'slot={slot!r} error={str(exc)!r}'
+                )
+                return {'ok': False, 'error': str(exc)}, 400
+
             if not ok or normalized_submission is None:
+                print(
+                    '[INIT_SETUP][REJECT] '
+                    "reason='validation_failed' "
+                    f'slot={slot!r} error={error_message!r}'
+                )
                 return {'ok': False, 'error': error_message or 'invalid init setup payload'}, 400
 
             init_setup_submission_by_slot[slot] = normalized_submission
+            print(
+                '[INIT_SETUP][ACCEPT] '
+                f'slot={slot!r} '
+                f"active={normalized_submission.get('active_card_id')!r} "
+                f"bench_count={len(normalized_submission.get('bench_card_ids', []))}"
+            )
             _enqueue_init_state_for_connected_clients(force=True)
 
             should_finalize = (
@@ -879,16 +1069,42 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
             )
             finalize_error: str | None = None
             if should_finalize:
+                print(
+                    '[INIT_SETUP][FINALIZE_START] '
+                    f'trigger_slot={slot!r} '
+                    f"p1_active={init_setup_submission_by_slot['p1'].get('active_card_id') if isinstance(init_setup_submission_by_slot['p1'], dict) else None!r} "
+                    f"p2_active={init_setup_submission_by_slot['p2'].get('active_card_id') if isinstance(init_setup_submission_by_slot['p2'], dict) else None!r}"
+                )
                 finalized_ok, finalize_error = _finalize_init_stage_locked()
                 if not finalized_ok:
-                    return {'ok': False, 'error': finalize_error or 'failed to finalize init setup'}, 500
-                finalized_now = True
+                    finalize_failed = True
+                    finalize_error_message = finalize_error or 'failed to finalize init setup'
+                    print(
+                        '[INIT_SETUP][FINALIZE_FAILED] '
+                        f'slot={slot!r} error={finalize_error_message!r} '
+                        f"p1_submission={init_setup_submission_by_slot['p1']!r} "
+                        f"p2_submission={init_setup_submission_by_slot['p2']!r}"
+                    )
+                    # Allow both clients to adjust setup and resubmit.
+                    init_setup_submission_by_slot['p1'] = None
+                    init_setup_submission_by_slot['p2'] = None
+                    _enqueue_init_state_for_connected_clients(force=True)
+                else:
+                    finalized_now = True
 
-            if session_for_client.pending_packets:
+            if not finalize_failed and session_for_client.pending_packets:
                 packets.extend(_drain_pending_packets_for_session(session_for_client))
 
-        if finalized_now:
+        if finalize_failed:
             _emit_pending_packets_to_connected_clients()
+            return {
+                'ok': False,
+                'error': finalize_error_message or 'failed to finalize init setup',
+            }, 500
+
+        # Keep non-submitting peers synchronized with latest init_state/finalization
+        # while preserving in-order direct delivery for the submitting slot.
+        _emit_pending_packets_to_connected_clients(exclude_slots={slot})
 
         log_protocol_send(packets, source_slot)
         return {
@@ -991,11 +1207,17 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
                 payload_keys=sorted(input_response.keys()),
                 payload=input_response,
             )
-            bridge_result = frontend_game_bridge.handle_frontend_event(
-                'input_result',
-                input_response,
-                {},
-            )
+            try:
+                bridge_result = frontend_game_bridge.handle_frontend_event(
+                    'input_result',
+                    input_response,
+                    {},
+                )
+            except BridgeEngineRuntimeError as exc:
+                return _handle_bridge_runtime_error(exc, source_slot, session_for_client)
+            except Exception as exc:
+                return _handle_bridge_runtime_error(exc, source_slot, session_for_client)
+
             bridge_commands = _extract_bridge_commands(bridge_result)
             force_sync = _bridge_requests_force_environment_sync(bridge_result)
             log_input_trace(
@@ -1008,23 +1230,32 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
             if force_sync:
                 _force_environment_sync_for_connected_clients()
 
+        ack_completed = False
         if isinstance(command, str) and command.strip():
             ack_completed, acked_command = _acknowledge_head_command(command, source_slot)
             if ack_completed and isinstance(acked_command, str) and acked_command.strip():
-                bridge_result = frontend_game_bridge.handle_frontend_event(
-                    'terminal_log',
-                    {
-                        'line': 'ACK backend_update_processed',
-                        'command': acked_command,
-                    },
-                    {},
-                )
+                try:
+                    bridge_result = frontend_game_bridge.handle_frontend_event(
+                        'terminal_log',
+                        {
+                            'line': 'ACK backend_update_processed',
+                            'command': acked_command,
+                        },
+                        {},
+                    )
+                except BridgeEngineRuntimeError as exc:
+                    return _handle_bridge_runtime_error(exc, source_slot, session_for_client)
+                except Exception as exc:
+                    return _handle_bridge_runtime_error(exc, source_slot, session_for_client)
+
                 _enqueue_bridge_commands(_extract_bridge_commands(bridge_result), source_slot)
                 if _bridge_requests_force_environment_sync(bridge_result):
                     _force_environment_sync_for_connected_clients()
 
         packets.extend(_commands_ready_for_slot(source_slot, is_response=True, session=session_for_client))
         _emit_ready_commands_to_connected_clients()
+        if ack_completed:
+            _emit_pending_peer_ack_status_to_connected_clients()
 
         log_protocol_send(packets, source_slot)
 
@@ -1065,11 +1296,17 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
             winner_main_menu_ack_slots.add(cast(PlayerSlot, normalized_source_slot))
             should_terminate_for_winner_menu = winner_main_menu_ack_slots.issuperset({'p1', 'p2'})
 
-    bridge_result = frontend_game_bridge.handle_frontend_event(
-        event_name,
-        response_data if isinstance(response_data, dict) else {},
-        context if isinstance(context, dict) else {},
-    )
+    try:
+        bridge_result = frontend_game_bridge.handle_frontend_event(
+            event_name,
+            response_data if isinstance(response_data, dict) else {},
+            context if isinstance(context, dict) else {},
+        )
+    except BridgeEngineRuntimeError as exc:
+        return _handle_bridge_runtime_error(exc, source_slot, session_for_client)
+    except Exception as exc:
+        return _handle_bridge_runtime_error(exc, source_slot, session_for_client)
+
     _enqueue_bridge_commands(_extract_bridge_commands(bridge_result), source_slot)
     if _bridge_requests_force_environment_sync(bridge_result):
         _force_environment_sync_for_connected_clients()
@@ -1113,7 +1350,8 @@ def protocol() -> tuple[dict[str, Any], int]:
         return {'ok': False, 'error': 'Body must be a JSON object.'}, 400
 
     client_slot = _normalize_client_slot(payload.get('client_slot'))
-    return _process_protocol_packet(payload, client_slot)
+    response, status = _process_protocol_packet(payload, client_slot)
+    return _augment_protocol_response_with_pending_peer_ack(response, client_slot), status
 
 
 @app.route('/scanner/input', methods=['POST', 'OPTIONS'])
@@ -1228,6 +1466,68 @@ def room_replace_session() -> tuple[dict[str, Any], int]:
     }, 200
 
 
+def _handle_transport_sid_disconnect(
+    sid: str,
+    *,
+    event_name: str,
+) -> None:
+    if not isinstance(sid, str) or not sid:
+        return
+
+    peer_deliveries: list[tuple[PlayerSlot, str]] = []
+    should_terminate_for_winner_menu = False
+    released_slot: PlayerSlot | None = None
+
+    with transport_lock:
+        released_slot = transport_state.release_sid(sid)
+        if released_slot is not None:
+            slot = cast(PlayerSlot, released_slot)
+            _reset_delivery_state_for_slot(slot)
+            replay_commands = _pending_commands_for_slot(slot)
+            transport_state.set_reserved_pending_commands(slot, replay_commands)
+            transport_state.grace_remaining_seconds(slot)
+            _schedule_disconnect_forfeit_timer_locked(slot)
+
+            if winner_announced:
+                winner_main_menu_ack_slots.add(slot)
+                should_terminate_for_winner_menu = winner_main_menu_ack_slots.issuperset({'p1', 'p2'})
+
+            for slot_name in ('p1', 'p2'):
+                peer_slot = cast(PlayerSlot, slot_name)
+                if peer_slot == slot:
+                    continue
+                peer_sid = transport_state.sid_by_slot[peer_slot]
+                if peer_sid is not None:
+                    peer_deliveries.append((peer_slot, peer_sid))
+
+        _schedule_both_disconnected_termination_timer_locked()
+
+    if released_slot is not None:
+        log_protocol_event(
+            event_name,
+            [],
+            ['sid_released', 'grace_window_s', 'pending_replay_count'],
+            released_slot,
+        )
+
+        if socketio is not None:
+            for peer_slot, peer_sid in peer_deliveries:
+                socketio.emit('opponent_disconnected', {
+                    'slot': released_slot,
+                    'grace_seconds': DISCONNECT_GRACE_SECONDS,
+                }, to=peer_sid)
+                log_protocol_event(
+                    'opponent_disconnected',
+                    ['slot', 'grace_seconds'],
+                    ['peer_sid'],
+                    peer_slot,
+                )
+
+    if should_terminate_for_winner_menu:
+        _mark_room_finished_once('winner_main_menu_ack_disconnect')
+        _schedule_process_termination('both players exited after winner (disconnect path)')
+
+
 if socketio is not None:
     @socketio.on('connect')
     def socket_connect() -> None:
@@ -1307,7 +1607,11 @@ if socketio is not None:
         if socketio is not None:
             session_packets = _drain_pending_packets_for_session(session)
             if session_packets:
-                socketio.emit('protocol_packets', {'packets': session_packets}, to=sid)
+                socketio.emit(
+                    'protocol_packets',
+                    _protocol_packets_emit_payload_for_slot(session.slot, session_packets),
+                    to=sid,
+                )
                 log_protocol_send(session_packets, session.slot)
 
         if both_connected:
@@ -1326,7 +1630,11 @@ if socketio is not None:
                 peer_packets = _drain_pending_packets_for_session(session_for_slot)
                 if not peer_packets:
                     continue
-                socketio.emit('protocol_packets', {'packets': peer_packets}, to=peer_sid)
+                socketio.emit(
+                    'protocol_packets',
+                    _protocol_packets_emit_payload_for_slot(slot_name, peer_packets),
+                    to=peer_sid,
+                )
                 log_protocol_send(peer_packets, slot_name)
 
             for peer_sid in connected_sids:
@@ -1354,9 +1662,17 @@ if socketio is not None:
         }
         response, status = _process_protocol_packet(packet, client_slot)
         if status != 200:
-            emit('protocol_error', response)
+            emit('protocol_error', {
+                **response,
+                'packet_type': 'ready',
+                'status': status,
+            })
             return
-        emit('protocol_packets', {'packets': response.get('packets', [])})
+        packets = response.get('packets', [])
+        emit(
+            'protocol_packets',
+            _protocol_packets_emit_payload_for_slot(client_slot, packets if isinstance(packets, list) else []),
+        )
 
 
     @socketio.on('request_environment')
@@ -1377,9 +1693,17 @@ if socketio is not None:
         }
         response, status = _process_protocol_packet(packet, client_slot)
         if status != 200:
-            emit('protocol_error', response)
+            emit('protocol_error', {
+                **response,
+                'packet_type': 'request_environment',
+                'status': status,
+            })
             return
-        emit('protocol_packets', {'packets': response.get('packets', [])})
+        packets = response.get('packets', [])
+        emit(
+            'protocol_packets',
+            _protocol_packets_emit_payload_for_slot(client_slot, packets if isinstance(packets, list) else []),
+        )
 
 
     @socketio.on('update_frontend')
@@ -1400,9 +1724,17 @@ if socketio is not None:
         }
         response, status = _process_protocol_packet(packet, client_slot)
         if status != 200:
-            emit('protocol_error', response)
+            emit('protocol_error', {
+                **response,
+                'packet_type': 'update_frontend',
+                'status': status,
+            })
             return
-        emit('protocol_packets', {'packets': response.get('packets', [])})
+        packets = response.get('packets', [])
+        emit(
+            'protocol_packets',
+            _protocol_packets_emit_payload_for_slot(client_slot, packets if isinstance(packets, list) else []),
+        )
 
 
     @socketio.on('init_setup_done')
@@ -1423,9 +1755,17 @@ if socketio is not None:
         }
         response, status = _process_protocol_packet(packet, client_slot)
         if status != 200:
-            emit('protocol_error', response)
+            emit('protocol_error', {
+                **response,
+                'packet_type': 'init_setup_done',
+                'status': status,
+            })
             return
-        emit('protocol_packets', {'packets': response.get('packets', [])})
+        packets = response.get('packets', [])
+        emit(
+            'protocol_packets',
+            _protocol_packets_emit_payload_for_slot(client_slot, packets if isinstance(packets, list) else []),
+        )
 
 
     @socketio.on('frontend_event')
@@ -1446,63 +1786,34 @@ if socketio is not None:
         }
         response, status = _process_protocol_packet(packet, client_slot)
         if status != 200:
-            emit('protocol_error', response)
+            emit('protocol_error', {
+                **response,
+                'packet_type': 'frontend_event',
+                'status': status,
+            })
             return
-        emit('protocol_packets', {'packets': response.get('packets', [])})
+        packets = response.get('packets', [])
+        emit(
+            'protocol_packets',
+            _protocol_packets_emit_payload_for_slot(client_slot, packets if isinstance(packets, list) else []),
+        )
+
+
+    @socketio.on('client_unloading')
+    def socket_client_unloading(_payload: Any) -> None:
+        sid = _socket_sid()
+        _handle_transport_sid_disconnect(sid, event_name='client_unloading')
+        if disconnect is not None:
+            try:
+                disconnect(sid=sid)
+            except Exception:
+                pass
 
 
     @socketio.on('disconnect')
     def socket_disconnect() -> None:
         sid = _socket_sid()
-        peer_deliveries: list[tuple[PlayerSlot, str]] = []
-        should_terminate_for_winner_menu = False
-        with transport_lock:
-            released_slot = transport_state.release_sid(sid)
-            if released_slot is not None:
-                slot = cast(PlayerSlot, released_slot)
-                _reset_delivery_state_for_slot(slot)
-                replay_commands = _pending_commands_for_slot(slot)
-                transport_state.set_reserved_pending_commands(slot, replay_commands)
-                transport_state.grace_remaining_seconds(slot)
-                _schedule_disconnect_forfeit_timer_locked(slot)
-
-                if winner_announced:
-                    winner_main_menu_ack_slots.add(slot)
-                    should_terminate_for_winner_menu = winner_main_menu_ack_slots.issuperset({'p1', 'p2'})
-
-                for slot_name in ('p1', 'p2'):
-                    peer_slot = cast(PlayerSlot, slot_name)
-                    if peer_slot == slot:
-                        continue
-                    peer_sid = transport_state.sid_by_slot[peer_slot]
-                    if peer_sid is not None:
-                        peer_deliveries.append((peer_slot, peer_sid))
-
-            _schedule_both_disconnected_termination_timer_locked()
-        if released_slot is not None:
-            log_protocol_event(
-                'disconnect',
-                [],
-                ['sid_released', 'grace_window_s', 'pending_replay_count'],
-                released_slot,
-            )
-
-            assert socketio is not None
-            for peer_slot, peer_sid in peer_deliveries:
-                socketio.emit('opponent_disconnected', {
-                    'slot': released_slot,
-                    'grace_seconds': DISCONNECT_GRACE_SECONDS,
-                }, to=peer_sid)
-                log_protocol_event(
-                    'opponent_disconnected',
-                    ['slot', 'grace_seconds'],
-                    ['peer_sid'],
-                    peer_slot,
-                )
-
-        if should_terminate_for_winner_menu:
-            _mark_room_finished_once('winner_main_menu_ack_disconnect')
-            _schedule_process_termination('both players exited after winner (disconnect path)')
+        _handle_transport_sid_disconnect(sid, event_name='disconnect')
 
 
 if __name__ == '__main__':

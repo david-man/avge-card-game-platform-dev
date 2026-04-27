@@ -64,6 +64,28 @@ def _holder_id_for_card(env: AVGEEnvironment, card: AVGECard) -> str:
     if card.cardholder == env.stadium_cardholder:
         return "stadium"
 
+    if isinstance(card, AVGEToolCard) and card.card_attached is not None:
+        # Attached tools live in TOOL pile internally, but frontend expects
+        # board holder ids (active/bench/hand/discard/deck/stadium) for reloads.
+        attached_card: AVGECard = card.card_attached
+        seen_ids: set[str] = set()
+        while isinstance(attached_card, AVGEToolCard) and attached_card.card_attached is not None:
+            attached_id = getattr(attached_card, 'unique_id', None)
+            if isinstance(attached_id, str) and attached_id in seen_ids:
+                break
+            if isinstance(attached_id, str):
+                seen_ids.add(attached_id)
+            attached_card = attached_card.card_attached
+
+        if attached_card.cardholder == env.stadium_cardholder:
+            return "stadium"
+
+        if attached_card.player is not None and attached_card.cardholder is not None:
+            owner_id = _to_strenum_value(attached_card.player.unique_id)
+            pile_type = _to_strenum_value(attached_card.cardholder.pile_type)
+            if pile_type != 'tool':
+                return f"{owner_id}-{pile_type}"
+
     if card.player is None or card.cardholder is None:
         raise ValueError(f"Card has incomplete ownership/cardholder state: {card.unique_id}")
 

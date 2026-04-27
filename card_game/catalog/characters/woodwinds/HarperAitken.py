@@ -67,7 +67,7 @@ class HarperAitken(AVGECharacterCard):
                                 chars_in_play,
                                 chars_in_play,
                                 True,
-                                True,
+                                False,
                             )
                         )
                     ]),

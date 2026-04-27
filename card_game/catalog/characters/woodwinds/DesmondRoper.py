@@ -7,7 +7,7 @@ from card_game.internal_events import AVGECardHPChange, PlayCharacterCard, Trans
 
 class DesmondRoper(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.WOODWIND, 1, 1, 3)
+        super().__init__(unique_id, 100, CardType.WOODWIND, 2, 1, 3)
         self.atk_1_name = 'Circular Breathing'
         self.atk_2_name = 'Speedrun Central'
 

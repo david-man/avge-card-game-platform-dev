@@ -10,12 +10,12 @@ if TYPE_CHECKING:
     from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
 
 cards_per_deck = 30
-initial_hand_size = 5
+initial_hand_size = 15
 max_bench_size = 3
 initial_tokens = 100
 kos_to_win = 3
 
-per_turn_token_add = 1
+per_turn_token_add = 100
 per_turn_supporter = 1
 per_turn_swaps = 1
 per_turn_atks = 1
@@ -32,6 +32,9 @@ class Notify(Data):
     message : str
     players : list[PlayerID]
     timeout : int | None #None if message should not automatically be accepted after some num of seconds.
+@dataclass
+class EndOfTurn(Notify):
+    pass
 @dataclass
 class RevealCards(Notify):
     cards : list[AVGECard]

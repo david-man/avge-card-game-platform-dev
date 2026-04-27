@@ -7,7 +7,7 @@ from .GabrielChen import *
 from .InaMa import *
 from .IrisYang import *
 from .JessicaJung import *
-from .JuliaCiacerelli import *
+from .JuliaCeccarelli import *
 from .MaggieLi import *
 from .MasonYu import *
 from .MichaelTu import *

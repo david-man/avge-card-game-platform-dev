@@ -3,7 +3,7 @@ from __future__ import annotations
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
-from card_game.internal_events import AVGECardHPChange, PlayCharacterCard
+from card_game.internal_events import AVGECardHPChange
 
 
 class RyanLiMaidDamageModifier(AVGEModifier):
@@ -43,8 +43,8 @@ class RyanLiMaidDamageModifier(AVGEModifier):
 
 class RyanLi(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.PIANO, 1, 1, 2)
-        self.atk_1_name = 'Separate Hands'
+        super().__init__(unique_id, 90, CardType.PIANO, 2, 3)
+        self.atk_1_name = 'Four Hands'
         self.has_passive = True
 
     def passive(self) -> Response:
@@ -52,37 +52,36 @@ class RyanLi(AVGECharacterCard):
         return Response(ResponseType.CORE, Data())
 
     def atk_1(self, card: AVGECharacterCard) -> Response:
-        _, used_last_turn_idx = card.env.check_history(
-            card.player.get_last_turn(),
-            PlayCharacterCard,
-            {
-                'card': card,
-                'card_action': ActionTypes.ATK_1,
-                'caller': card,
-            },
-        )
-        if used_last_turn_idx != -1:
-            def generate_packet() -> PacketType:
-                active = card.player.opponent.get_active_card()
-                packet: PacketType = []
-                if isinstance(active, AVGECharacterCard):
-                    packet.append(
-                        AVGECardHPChange(
-                            active,
-                            40,
-                            AVGEAttributeModifier.SUBSTRACTIVE,
-                            CardType.PIANO,
-                            ActionTypes.ATK_1,
-                            None,
-                            card,
-                        )
-                    )
-                return packet
+        def generate_packet() -> PacketType:
+            dmg = 50
+            bench = [
+                c
+                for c in card.player.cardholders[Pile.BENCH]
+                if isinstance(c, AVGECharacterCard) and c != card and c.card_type == CardType.PIANO
+            ]
+            if len(bench) > 0:
+                dmg = 80
 
-            card.propose(
-                AVGEPacket([
-                    generate_packet
-                ], AVGEEngineID(card, ActionTypes.ATK_1, RyanLi))
-            )
+            active = card.player.opponent.get_active_card()
+            packet: PacketType = []
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        dmg,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.PIANO,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
+                )
+            return packet
+
+        card.propose(
+            AVGEPacket([
+                generate_packet
+            ], AVGEEngineID(card, ActionTypes.ATK_1, RyanLi))
+        )
 
         return self.generic_response(card, ActionTypes.ATK_1)

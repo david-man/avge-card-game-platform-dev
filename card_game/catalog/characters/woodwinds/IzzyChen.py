@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from random import randint
+
 from card_game.avge_abstracts import *
 from card_game.constants import *
 from card_game.internal_events import AVGECardHPChange, InputEvent, PlayCharacterCard, TransferCard
 
 
 class IzzyChen(AVGECharacterCard):
+    _COIN_KEY = 'izzy_coin'
     _ACTIVE_STADIUM_CHOICE = 'izzy_stadium_choice'
 
     def __init__(self, unique_id):
@@ -17,10 +20,6 @@ class IzzyChen(AVGECharacterCard):
         if self.env is None or self.player is None:
             return False
         if self.env.player_turn != self.player:
-            return False
-
-        discard = self.player.cardholders[Pile.DISCARD]
-        if len([c for c in discard if isinstance(c, AVGEStadiumCard)]) == 0:
             return False
 
         _, used_idx = self.env.check_history(
@@ -40,11 +39,32 @@ class IzzyChen(AVGECharacterCard):
         deck = player.cardholders[Pile.DECK]
         stadiums = [c for c in discard if isinstance(c, AVGEStadiumCard)]
 
+        # Keep the flip result available through the follow-up stadium query.
+        # If consumed here, a heads path re-enters active() and asks for coin again.
+        flip = self.env.cache.get(self, IzzyChen._COIN_KEY, None)
+        if flip is None:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        player,
+                        [IzzyChen._COIN_KEY],
+                        lambda r: True,
+                        ActionTypes.ACTIVATE_ABILITY,
+                        self,
+                        CoinflipData('BAI Wrangler: Flip a coin.'),
+                    )
+                ]),
+            )
+
+        if int(flip) != 1:
+            self.env.cache.delete(self, IzzyChen._COIN_KEY)
+            self.env.cache.delete(self, IzzyChen._ACTIVE_STADIUM_CHOICE)
+            return Response(ResponseType.CORE, Notify('Izzy Chen used BAI Wrangler, but she did not roll heads...', all_players, default_timeout))
+
         missing = object()
         chosen_stadium = self.env.cache.get(self, IzzyChen._ACTIVE_STADIUM_CHOICE, missing, True)
         if chosen_stadium is missing:
-            display_cards = list(discard)
-            valid_targets = list(stadiums)
             return Response(
                 ResponseType.INTERRUPT,
                 Interrupt[AVGEEvent]([
@@ -55,9 +75,9 @@ class IzzyChen(AVGECharacterCard):
                         ActionTypes.ACTIVATE_ABILITY,
                         self,
                         CardSelectionQuery(
-                            'BAI Wrangler: You may put a Stadium card from your discard pile on top of your deck.',
-                            valid_targets,
-                            display_cards,
+                            'BAI Wrangler: Choose a stadium in your discard to shuffle into your deck.',
+                            stadiums,
+                            stadiums,
                             True,
                             False,
                         ),
@@ -65,11 +85,13 @@ class IzzyChen(AVGECharacterCard):
                 ]),
             )
 
-        if chosen_stadium is None:
+        if not isinstance(chosen_stadium, AVGEStadiumCard):
+            self.env.cache.delete(self, IzzyChen._COIN_KEY)
             return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-        if not isinstance(chosen_stadium, AVGEStadiumCard) or chosen_stadium not in discard:
-            return Response(ResponseType.CORE, Data())
+        if chosen_stadium not in discard:
+            self.env.cache.delete(self, IzzyChen._COIN_KEY)
+            return Response(ResponseType.CORE, Notify('Izzy Chen used BAI Wrangler, but the selected stadium was not in discard.', all_players, default_timeout))
 
         def generate_packet() -> PacketType:
             return [
@@ -80,11 +102,13 @@ class IzzyChen(AVGECharacterCard):
                     ActionTypes.ACTIVATE_ABILITY,
                     self,
                     None,
-                    0,
+                    randint(0, len(deck)),
                 )
             ]
 
         self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, IzzyChen)))
+        self.env.cache.delete(self, IzzyChen._COIN_KEY)
+        self.env.cache.delete(self, IzzyChen._ACTIVE_STADIUM_CHOICE)
         return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
     def atk_1(self, card: AVGECharacterCard) -> Response:

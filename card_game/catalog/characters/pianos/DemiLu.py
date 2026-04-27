@@ -81,7 +81,7 @@ class DemiLuConstraint(AVGEConstraint):
 
 class DemiLu(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PIANO, 1, 3)
+        super().__init__(unique_id, 90, CardType.PIANO, 2, 3)
         self.atk_1_name = 'Four Hands'
         self.has_passive = True
 

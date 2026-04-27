@@ -44,7 +44,7 @@ p2_setup_default: dict[Pile, list[type[AVGECard]]] = {
     Pile.ACTIVE: [MeyaGao],
     Pile.BENCH: [DavidMan],
     Pile.HAND: [AVGEBirb, SteinertPracticeRoom,  JennieWang, ConcertTicket, FoldingStand],
-    Pile.DISCARD: [VideoCamera, JuliaCiacerelli, MaggieLi],
+    Pile.DISCARD: [VideoCamera, JuliaCeccarelli, MaggieLi],
     Pile.DECK: [],
 }
 

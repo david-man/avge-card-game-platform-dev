@@ -2,83 +2,72 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from typing import cast
-
+from card_game.constants import ActionTypes
 
 class RyanDu(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.CHOIR, 1, 2, 3)
-        self.atk_1_name = 'Chorus'
-        self.atk_2_name = 'Tabemono King'
+        super().__init__(unique_id, 100, CardType.CHOIR, 2, 1, 2)
+        self.atk_1_name = 'Tabemono King'
+        self.atk_2_name = 'Chorus'
 
     def atk_1(self, card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange
-        from card_game.constants import ActionTypes
+        from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer
 
         def generate_packet() -> PacketType:
-            opponent = card.player.opponent
-            bench_count = len(card.player.cardholders[Pile.BENCH])
-            damage = 30 + 10 * bench_count
-            return [
-                AVGECardHPChange(
-                    opponent.get_active_card(),
-                    damage,
-                    AVGEAttributeModifier.SUBSTRACTIVE,
-                    CardType.CHOIR,
-                    ActionTypes.ATK_1,
-                    None,
-                    card,
+            packet: PacketType = []
+            current_energy = len(card.energy)
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        30 * current_energy,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.CHOIR,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
+                    )
                 )
-            ]
 
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, RyanDu)))
-        return Response(ResponseType.CORE, Notify(f"{str(card)} used Chorus!", all_players, default_timeout))
-
-    def atk_2(self, card: AVGECharacterCard) -> Response:
-        from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
-
-        player = card.player
-        opponent = player.opponent
-
-        def generate_packet():
-            packet = []
-            packet += [
-                AVGECardHPChange(
-                    c,
-                    40,
-                    AVGEAttributeModifier.ADDITIVE,
-                    CardType.ALL,
-                    ActionTypes.ATK_2,
-                    None,
-                    card,
-                ) for c in (player.cardholders[Pile.ACTIVE] + player.cardholders[Pile.BENCH])
-            ]
-            packet += [
-                AVGECardHPChange(
-                    c,
-                    10,
-                    AVGEAttributeModifier.ADDITIVE,
-                    CardType.ALL,
-                    ActionTypes.ATK_2,
-                    None,
-                    card,
-                ) for c in (opponent.cardholders[Pile.BENCH] + opponent.cardholders[Pile.ACTIVE])
-            ]
-            if(len(card.energy) > 0):
-                
+            for token in list(card.energy):
                 packet.append(
                     AVGEEnergyTransfer(
-                        card.energy[0],
+                        token,
                         card,
                         card.env,
-                        ActionTypes.ATK_2,
+                        ActionTypes.ATK_1,
                         card,
                         None,
                     )
                 )
-            else:
-                packet.append(EmptyEvent(ActionTypes.ATK_2, card, ResponseType.CORE, Data()))
+
+            return packet
+
+        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, RyanDu)))
+        return self.generic_response(card, ActionTypes.ATK_1)
+
+    def atk_2(self, card: AVGECharacterCard) -> Response:
+        from card_game.internal_events import AVGECardHPChange
+
+        def generate_packet():
+            packet: PacketType = []
+            bench_count = len(card.player.cardholders[Pile.BENCH])
+            damage = 20 + 10 * bench_count
+            active = card.player.opponent.get_active_card()
+            if isinstance(active, AVGECharacterCard):
+                packet.append(
+                    AVGECardHPChange(
+                        active,
+                        damage,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.CHOIR,
+                        ActionTypes.ATK_2,
+                        None,
+                        card,
+                    )
+                )
             return packet
 
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, RyanDu)))
-        return Response(ResponseType.CORE, Notify(f"{str(card)} used Tabemono King!", all_players, default_timeout))
+        return self.generic_response(card, ActionTypes.ATK_2)

@@ -70,7 +70,8 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
             self.invalidate()
 
     def assess(self) -> Response:
-        return Response(ResponseType.SKIP, Notify("Cannot attack this round due to Meya Gao's I See Your Soul!", all_players, default_timeout))
+        assert isinstance(self.attached_event, PlayCharacterCard) and isinstance(self.attached_event.card, AVGECharacterCard)
+        return Response(ResponseType.SKIP, Notify("Cannot attack this round due to Meya Gao's I See Your Soul!", [self.attached_event.card.player.unique_id], default_timeout))
 
 
 class _MeyaDamageReactor(AVGEReactor):
@@ -81,6 +82,8 @@ class _MeyaDamageReactor(AVGEReactor):
     def event_match(self, event):
         from card_game.internal_events import AVGECardHPChange
 
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type != Pile.ACTIVE:
+            return False
         if not isinstance(event, AVGECardHPChange):
             return False
         if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
@@ -109,7 +112,7 @@ class _MeyaDamageReactor(AVGEReactor):
 
 class MeyaGao(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 120, CardType.GUITAR, 2, 2, 0)
+        super().__init__(unique_id, 120, CardType.GUITAR, 2, 3, 0)
         self.atk_1_name = 'Distortion'
         self.has_passive = True
 

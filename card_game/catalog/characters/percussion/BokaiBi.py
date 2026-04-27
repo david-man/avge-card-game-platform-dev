@@ -23,26 +23,47 @@ class BokaiBi(AVGECharacterCard):
                     group=EngineGroup.EXTERNAL_REACTORS,
                 )
                 self.owner_card = owner_card
+                self._matched_hand_card: AVGECard | None = None
+
+            def _find_matching_hand_card(self, target_card: AVGECard) -> AVGECard | None:
+                for hand_card in self.owner_card.player.cardholders[Pile.HAND]:
+                    if type(hand_card) == type(target_card):
+                        return hand_card
+                return None
+
+            def _is_play_like_hand_transfer(self, event: AVGEEvent) -> bool:
+                from card_game.internal_events import TransferCard
+
+                if not isinstance(event, TransferCard):
+                    return False
+                if event.pile_from.pile_type != Pile.HAND:
+                    return False
+                return event.pile_to.pile_type in (Pile.BENCH, Pile.ACTIVE, Pile.TOOL, Pile.STADIUM)
 
             def event_match(self, event):
                 from card_game.internal_events import TransferCard, PlayNonCharacterCard
 
+                self._matched_hand_card = None
                 if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type not in [Pile.ACTIVE, Pile.BENCH]:
                     return False
                 if isinstance(event, TransferCard):
-                    if event.pile_from.pile_type != Pile.HAND or event.pile_to.pile_type != Pile.BENCH:
+                    if not self._is_play_like_hand_transfer(event):
                         return False
                     if event.card.player != self.owner_card.player.opponent:
                         return False
-                    for c in self.owner_card.player.cardholders[Pile.HAND]:
-                        if type(c) == type(event.card):
-                            return True
+                    overlap = self._find_matching_hand_card(event.card)
+                    if overlap is None:
+                        return False
+                    self._matched_hand_card = overlap
+                    return True
                 elif isinstance(event, PlayNonCharacterCard):
                     if event.card.player != self.owner_card.player.opponent:
                         return False
-                    for c in self.owner_card.player.cardholders[Pile.HAND]:
-                        if type(c) == type(event.card):
-                            return True
+                    overlap = self._find_matching_hand_card(event.card)
+                    if overlap is None:
+                        return False
+                    self._matched_hand_card = overlap
+                    return True
                 return False
 
             def event_effect(self) -> bool:
@@ -52,16 +73,13 @@ class BokaiBi(AVGECharacterCard):
                 return
 
             def react(self) -> Response:
-                from card_game.internal_events import AVGECardHPChange, InputEvent, EmptyEvent, PlayNonCharacterCard, TransferCard
+                from card_game.internal_events import AVGECardHPChange, InputEvent, PlayNonCharacterCard, TransferCard
 
-                overlap = None
                 assert isinstance(self.attached_event, (TransferCard, PlayNonCharacterCard))
-                for c in self.owner_card.player.cardholders[Pile.HAND]:
-                    if type(c) == type(self.attached_event.card):
-                        overlap = c
-                        break
+                overlap = self._matched_hand_card if self._matched_hand_card is not None else self._find_matching_hand_card(self.attached_event.card)
                 if overlap is None:
-                    return Response(ResponseType.ACCEPT, Data())
+                    self._matched_hand_card = None
+                    return Response(ResponseType.CORE, Data())
 
                 choice = self.owner_card.env.cache.get(self.owner_card, BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY, None, True)
                 if choice is None:
@@ -90,21 +108,13 @@ class BokaiBi(AVGECharacterCard):
                         packet: PacketType = []
                         revealed_cards: list[AVGECard] = [overlap]
                         packet.append(
-                            EmptyEvent(
-                                ActionTypes.PASSIVE,
-                                self.owner_card,
-                                ResponseType.CORE,
-                                RevealCards("Algorithm: revealed matching hand card", all_players, default_timeout, revealed_cards),
-                            )
-                        )
-                        packet.append(
                             AVGECardHPChange(
                                 self.owner_card.player.opponent.get_active_card(),
                                 20,
                                 AVGEAttributeModifier.SUBSTRACTIVE,
                                 CardType.PERCUSSION,
                                 ActionTypes.PASSIVE,
-                                None,
+                                RevealCards("Algorithm: revealed matching hand card", all_players, default_timeout, revealed_cards),
                                 self.owner_card,
                             )
                         )
@@ -113,7 +123,8 @@ class BokaiBi(AVGECharacterCard):
                         AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, BokaiBi))
                     )
 
-                return Response(ResponseType.ACCEPT, Data())
+                self._matched_hand_card = None
+                return Response(ResponseType.CORE, Data())
 
         reactor = _BokaiTransferReactor(self)
         self.add_listener(reactor)

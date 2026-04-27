@@ -16,7 +16,7 @@ class MasonYu(AVGECharacterCard):
     _ATK2_ATTACK_CHOICE = 'mason_atk2_attack_choice'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 1, 3, 3)
+        super().__init__(unique_id, 100, CardType.STRING, 2, 1, 3)
         self.atk_1_name = 'Arrangement'
         self.atk_2_name = 'We Play God'
 
@@ -73,8 +73,8 @@ class MasonYu(AVGECharacterCard):
 
         chars_in_play = [c for p in [card.player, card.player.opponent] for c in p.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
 
-        chosen_1 = card.env.cache.get(card, MasonYu._ATK2_TARGET_1, None, True)
-        chosen_2 = card.env.cache.get(card, MasonYu._ATK2_TARGET_2, None, True)
+        chosen_1 = card.env.cache.get(card, MasonYu._ATK2_TARGET_1, None)
+        chosen_2 = card.env.cache.get(card, MasonYu._ATK2_TARGET_2, None)
         if chosen_1 is None or chosen_2 is None:
             return Response(
                 ResponseType.INTERRUPT,
@@ -108,10 +108,10 @@ class MasonYu(AVGECharacterCard):
         available_attacks: list[str] = []
         attack_labels: list[str] = []
         if other.atk_1_name is not None:
-            available_attacks.append('atk_1')
+            available_attacks.append(other.atk_1_name)
             attack_labels.append(other.atk_1_name)
         if other.atk_2_name is not None:
-            available_attacks.append('atk_2')
+            available_attacks.append(other.atk_2_name)
             attack_labels.append(other.atk_2_name)
 
 
@@ -193,6 +193,8 @@ class MasonYu(AVGECharacterCard):
             return packet
 
         card.propose(AVGEPacket([play_god_packet], AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
+        card.env.cache.delete(card, MasonYu._ATK2_TARGET_1)
+        card.env.cache.delete(card, MasonYu._ATK2_TARGET_2)
         card.env.cache.delete(card, MasonYu._ATK2_RANDOM_SELECTED)
         card.env.cache.delete(card, MasonYu._ATK2_OTHER)
         return self.generic_response(card, ActionTypes.ATK_2)

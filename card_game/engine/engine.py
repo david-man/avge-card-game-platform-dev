@@ -210,6 +210,11 @@ class Engine(Generic[EV]):
             elif(response.response_type == ResponseType.FINISHED or response.response_type == ResponseType.FAST_FORWARD):
                 #if an event finished properly
                 #note: this does NOT necessarily mean the packet is complete. only on packet completion are changes truly committed
+
+                # Record this event as part of packet history before packet-level
+                # formalization, including the single-event packet case.
+                self.event_history.propose_event(self.event_running)
+
                 if(len(self.packet_running) == 0):
                     #if the entire packet is done and all packet listeners are checked
                     #actualize ALL proposed events that happened during the packet
@@ -242,9 +247,6 @@ class Engine(Generic[EV]):
                     self._queue.flush_buffer()
                 else:
                     #if just one event in many are done/ff'd
-
-                    #tells the engine that this event in the packet has run properly
-                    self.event_history.propose_event(self.event_running)
                     #probe constraints
                     self._probe_constraints()
                     #probe listeners

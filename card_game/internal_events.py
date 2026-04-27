@@ -1082,7 +1082,7 @@ class TurnEnd(AVGEEvent):
         self.propose(AVGEPacket([PhasePickCard(self.env,
                                    ActionTypes.ENV,
                                    self.env)],AVGEEngineID(self.env, ActionTypes.ENV, None)))
-        return Response(ResponseType.CORE, Notify(f"{self.env.player_turn.opponent}'s turn has ended!", [PlayerID.P1, PlayerID.P2], default_timeout))
+        return Response(ResponseType.CORE, EndOfTurn(f"{self.env.player_turn.opponent.username}'s turn has ended!", [PlayerID.P1, PlayerID.P2], default_timeout))
     def invert_core(self, args : dict | None = None):
         raise Exception("A phase should never be canceled")
     def generate_internal_listeners(self):

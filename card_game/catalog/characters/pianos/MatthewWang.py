@@ -110,7 +110,7 @@ class MatthewWang(AVGECharacterCard):
     _DRAW_CHOICE_KEY = "matthew_draw_choice"
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.PIANO, 2, 2)
+        super().__init__(unique_id, 110, CardType.PIANO, 2, 2)
         self.atk_1_name = 'Arpeggios'
         self.has_passive = True
 

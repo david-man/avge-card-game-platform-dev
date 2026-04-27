@@ -130,6 +130,6 @@ class KathySun(AVGECharacterCard):
                 )
             return packet
 
-        packet: PacketType = [one_hit for _ in range(roll_count)]
-        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, KathySun)))
+        for _ in range(roll_count):
+            card.propose(AVGEPacket([one_hit], AVGEEngineID(card, ActionTypes.ATK_2, KathySun)))
         return self.generic_response(card, ActionTypes.ATK_2)

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import TransferCard, PlayNonCharacterCard, AVGECardHPChange, AVGEEnergyTransfer
+from card_game.internal_events import TransferCard, PlayNonCharacterCard, AVGECardHPChange, InputEvent
 
 
 class IrisYang(AVGECharacterCard):
+    _SPIKE_SWITCH_KEY = 'irisyang_spike_switch_target'
+
     def __init__(self, unique_id):
-        super().__init__(unique_id, 100, CardType.STRING, 1, 3, 3)
+        super().__init__(unique_id, 100, CardType.STRING, 1, 1, 3)
         self.atk_1_name = 'Open Strings'
         self.atk_2_name = 'Spike'
 
@@ -54,14 +56,40 @@ class IrisYang(AVGECharacterCard):
         return self.generic_response(card, ActionTypes.ATK_1)
 
     def atk_2(self, card: AVGECharacterCard) -> Response:
-        def generate_packet() -> PacketType:
+        opponent = card.player.opponent
+        opponent_bench = opponent.cardholders[Pile.BENCH]
+
+        missing = object()
+        selected_bench = card.env.cache.get(card, IrisYang._SPIKE_SWITCH_KEY, missing, True)
+        if len(opponent_bench) > 0 and selected_bench is missing:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                    InputEvent(
+                        card.player,
+                        [IrisYang._SPIKE_SWITCH_KEY],
+                        lambda r: True,
+                        ActionTypes.ATK_2,
+                        card,
+                        CardSelectionQuery(
+                            'Spike: You may switch your opponent\'s Active character with one of their Benched characters.',
+                            list(opponent_bench),
+                            list(opponent_bench),
+                            True,
+                            False,
+                        )
+                    )
+                ]),
+            )
+
+        def generate_damage() -> PacketType:
             packet: PacketType = []
-            active = card.player.opponent.get_active_card()
+            active = opponent.get_active_card()
             if isinstance(active, AVGECharacterCard):
                 packet.append(
                     AVGECardHPChange(
                         active,
-                        10,
+                        30,
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.STRING,
                         ActionTypes.ATK_2,
@@ -69,20 +97,43 @@ class IrisYang(AVGECharacterCard):
                         card,
                     )
                 )
-
-            for c in card.player.opponent.cardholders[Pile.BENCH]:
-                if isinstance(c, AVGECharacterCard) and len(c.energy) >= 1:
-                    packet.append(
-                        AVGEEnergyTransfer(
-                            c.energy[0],
-                            c,
-                            c.env,
-                            ActionTypes.ATK_2,
-                            card,
-                            None,
-                        )
-                    )
             return packet
 
-        card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_2, IrisYang)))
+        packet: PacketType = [generate_damage]
+
+        if isinstance(selected_bench, AVGECharacterCard) and selected_bench in opponent_bench:
+            def generate_switch() -> PacketType:
+                p: PacketType = []
+                active_holder = opponent.cardholders[Pile.ACTIVE]
+                active = opponent.get_active_card()
+                if not isinstance(active, AVGECharacterCard):
+                    return p
+                if selected_bench not in opponent_bench:
+                    return p
+
+                p.append(
+                    TransferCard(
+                        active,
+                        active_holder,
+                        opponent_bench,
+                        ActionTypes.ATK_2,
+                        card,
+                        None,
+                    )
+                )
+                p.append(
+                    TransferCard(
+                        selected_bench,
+                        opponent_bench,
+                        active_holder,
+                        ActionTypes.ATK_2,
+                        card,
+                        None,
+                    )
+                )
+                return p
+
+            packet.append(generate_switch)
+
+        card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_2, IrisYang)))
         return self.generic_response(card, ActionTypes.ATK_2)

@@ -159,7 +159,7 @@ class AVGETransferValidityCheck(AVGEAssessor):
            event.pile_from.pile_type == Pile.BENCH and 
            event.pile_to.pile_type == Pile.ACTIVE and
            event.card.player.attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
-           return Response(ResponseType.SKIP, Notify("Can't add this card to the bench b/c the bench is full!", [event.card.player.unique_id], default_timeout))
+           return Response(ResponseType.SKIP, Notify("Can't switch these cards, since you have no more swaps left this turn!", [event.card.player.unique_id], default_timeout))
         if(isinstance(event.card, AVGECharacterCard) and event.energy_requirement > len(event.card.energy)):
             return Response(ResponseType.SKIP, Notify("Not enough energy to perform this transfer!", [event.card.player.unique_id], default_timeout))
         return Response(ResponseType.ACCEPT, Data())

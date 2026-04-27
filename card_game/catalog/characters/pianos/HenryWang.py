@@ -6,7 +6,7 @@ from card_game.internal_events import AVGECardHPChange, TransferCard, PlayCharac
 
 class HenryWang(AVGECharacterCard):
     def __init__(self, unique_id):
-        super().__init__(unique_id, 110, CardType.PIANO, 1, 2, 3)
+        super().__init__(unique_id, 100, CardType.PIANO, 2, 2, 3)
         self.atk_1_name = 'Glissando'
         self.atk_2_name = 'Improv'
 
@@ -54,7 +54,7 @@ class HenryWang(AVGECharacterCard):
             deck = opponent.cardholders[Pile.DECK]
             discard = opponent.cardholders[Pile.DISCARD]
 
-            damage = 20
+            damage = 10
             packet : PacketType = []
             if len(deck) > 0:
                 top = deck.peek()

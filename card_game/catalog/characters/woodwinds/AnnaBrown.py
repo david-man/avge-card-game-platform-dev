@@ -6,7 +6,7 @@ from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import AVGECardHPChange, InputEvent
 
 
-class AnnaBrownBenchDamageShield(AVGEModifier):
+class AnnaBrownBenchDamageShield(AVGEAssessor):
     def __init__(self, owner_card: AVGECharacterCard):
         super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, AnnaBrown), group=EngineGroup.EXTERNAL_MODIFIERS_2)
         self.owner_card = owner_card
@@ -34,13 +34,12 @@ class AnnaBrownBenchDamageShield(AVGEModifier):
     def update_status(self):
         return
 
-    def modify(self, args=None):
+    def assess(self, args=None):
         if args is None:
             args = {}
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
-        event.modify_magnitude(-event.magnitude)
-        return Response(ResponseType.ACCEPT, Notify('Do Not Disturb: Benched Anna Brown ignores damage from opponent attacks.', all_players, default_timeout))
+        return Response(ResponseType.FAST_FORWARD, Notify('Do Not Disturb: Benched Anna Brown ignores damage from opponent attacks.', all_players, default_timeout))
 
 
 class AnnaBrown(AVGECharacterCard):

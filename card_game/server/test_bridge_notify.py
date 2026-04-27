@@ -18,7 +18,8 @@ def _make_bridge() -> FrontendGameBridge:
         game_phase=None,
     )
     bridge._force_environment_sync_pending = False
-    bridge._last_emitted_input_query_signature = None
+    bridge._pending_input_query_event = None
+    bridge._pending_input_query_command = None
     bridge._last_emitted_phase_token = None
     return bridge
 
