@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ class RoomWorker:
         self._monitor_thread = Thread(target=self._run, name=f"room-worker-{room_id}", daemon=True)
         self._started_at = monotonic()
         self._process: subprocess.Popen[str] | None = None
-        self._log_path = str(Path('/tmp') / f"avge-room-{room_id}.log")
+        self._log_path = str(Path(tempfile.gettempdir()) / f"avge-room-{room_id}.log")
         self._log_file: TextIO | None = None
         self._finished = False
         self._finish_reason: str | None = None

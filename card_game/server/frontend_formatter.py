@@ -135,16 +135,8 @@ def _format_card_class_name(card: AVGECard) -> str:
 
 
 def _character_has_active(card: AVGECharacterCard) -> bool:
-    """Safely evaluate whether a character currently has an active ability available."""
-    if getattr(card, 'active_name', None) is None:
-        return False
-    can_play_active = getattr(card, 'can_play_active', None)
-    if not callable(can_play_active):
-        return False
-    try:
-        return bool(can_play_active())
-    except Exception:
-        return False
+    """Return whether a character defines an active ability for UI rendering."""
+    return getattr(card, 'active_name', None) is not None
 
 
 def _sorted_cards(env: AVGEEnvironment) -> list[AVGECard]:

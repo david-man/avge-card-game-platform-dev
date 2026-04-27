@@ -126,10 +126,10 @@ All game events inherit from `AVGEEvent`, which adds context:
 
 ```python
 class AVGEEvent(Event):
-    def __init__(self, catalyst_action: ActionTypes, caller_card: Card, **kwargs):
-        super().__init__(catalyst_action=catalyst_action, caller_card=caller_card, **kwargs)
+    def __init__(self, catalyst_action: ActionTypes, caller: Card, **kwargs):
+        super().__init__(catalyst_action=catalyst_action, caller=caller, **kwargs)
         self.catalyst_action = catalyst_action  # What action caused this (ATK_1, PASSIVE, etc)
-        self.caller_card = caller_card          # Who initiated this
+        self.caller = caller          # Who initiated this
         self.temp_cache = {}                    # Event-scoped cache
 ```
 
@@ -261,7 +261,7 @@ class WestonPoe(AVGECharacterCard):
                 # Only from opponent's attacks
                 if event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]:
                     return False
-                if event.caller_card.player != owner_card.player.opponent:
+                if event.caller.player != owner_card.player.opponent:
                     return False
                 # Only reflect big damage
                 return abs(int(event.change_amount)) >= 60
@@ -279,7 +279,7 @@ class WestonPoe(AVGECharacterCard):
                 # Propose damage back to attacker
                 self.propose(
                     AVGECardAttributeChange(
-                        event.caller_card,
+                        event.caller,
                         AVGECardAttribute.HP,
                         -reflected_damage,
                         AVGEAttributeModifier.ADDITIVE,
@@ -643,7 +643,7 @@ class _DamageReflector(AVGEReactor):
         # Propose counter-damage (this gets queued normally)
         self.propose(
             AVGECardAttributeChange(
-                event.caller_card,           # Damage goes to attacker
+                event.caller,           # Damage goes to attacker
                 AVGECardAttribute.HP,
                 -reflected_damage,
                 AVGEAttributeModifier.ADDITIVE,
@@ -829,7 +829,7 @@ PlayCharacterCard(
     card=CustomCharacter,
     card_action=ActionTypes.ACTIVATE_ABILITY,
     catalyst_action=ActionTypes.PLAYER_CHOICE,
-    caller_card=CustomCharacter
+    caller=CustomCharacter
 )
 ```
 
@@ -983,9 +983,9 @@ This is the most common event - handles all card stat changes:
 ```python
 class AVGECardAttributeChange(AVGEEvent):
     def __init__(self, target_card, attribute, change_amount, 
-                 attribute_modifier_type, catalyst_action, caller_card, 
+                 attribute_modifier_type, catalyst_action, caller, 
                  change_type):
-        super().__init__(catalyst_action=catalyst_action, caller_card=caller_card, ...)
+        super().__init__(catalyst_action=catalyst_action, caller=caller, ...)
         self.target_card = target_card
         self.attribute = attribute
         self.change_amount = change_amount
@@ -1019,7 +1019,7 @@ Moves cards between piles (deck, hand, active, bench, discard):
 
 ```python
 class TransferCard(AVGEEvent):
-    def __init__(self, card, pile_from, pile_to, catalyst_action, caller_card, new_idx):
+    def __init__(self, card, pile_from, pile_to, catalyst_action, caller, new_idx):
         super().__init__(card=card, pile_from=pile_from, pile_to=pile_to, ...)
         self.card = card
         self.pile_to = pile_to
@@ -1058,7 +1058,7 @@ PlayCharacterCard(
     card=WestonPoe,
     card_action=ActionTypes.ATK_1,
     catalyst_action=ActionTypes.PLAYER_CHOICE,
-    caller_card=WestonPoe
+    caller=WestonPoe
 )
     ↓ (through pipeline groups)
     ↓
