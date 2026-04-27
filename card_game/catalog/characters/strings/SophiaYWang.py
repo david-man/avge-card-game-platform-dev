@@ -93,7 +93,7 @@ class SophiaYWang(AVGECharacterCard):
     _GACHA_DRAWN_CARDS_KEY = 'sophiaywang_gacha_cards_drawn'
 
     def __init__(self, unique_id):
-        super().__init__(unique_id, 1100, CardType.STRING, 2, 1, 3)
+        super().__init__(unique_id, 110, CardType.STRING, 2, 1, 3)
         self.atk_1_name = 'Gacha Gaming'
         self.atk_2_name = 'Ricochet'
 

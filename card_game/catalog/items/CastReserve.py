@@ -20,24 +20,6 @@ class CastReserve(AVGEItemCard):
 		hand = player.cardholders[Pile.HAND]
 
 		deck_items = [c for c in deck if isinstance(c, AVGEItemCard)]
-		unique_by_type: dict[type[AVGEItemCard], AVGEItemCard] = {}
-		for item in deck_items:
-			item_type = type(item)
-			if item_type not in unique_by_type:
-				unique_by_type[item_type] = item
-
-		if len(unique_by_type) < 3:
-			card.propose(
-				AVGEPacket([
-					EmptyEvent(
-						ActionTypes.NONCHAR,
-						card,
-						ResponseType.CORE,
-						RevealCards('CastReserve: Revealing deck', [card.player.unique_id], default_timeout, list(deck)),
-					)
-				], AVGEEngineID(card, ActionTypes.NONCHAR, CastReserve))
-			)
-			return self.generic_response(card)
 
 		player_keys = [CastReserve._PLAYER_ITEM_SELECTION_KEY + str(i) for i in range(3)]
 		opp_keys = [CastReserve._OPPONENT_SHUFFLE_SELECTION_KEY + str(i) for i in range(2)]
@@ -63,7 +45,7 @@ class CastReserve(AVGEItemCard):
 							_check_player_choice,
 							ActionTypes.NONCHAR,
 							card,
-							CardSelectionQuery('CastReserve: Choose 3 unique item cards from your deck.', deck_items, list(deck), False, False)
+							CardSelectionQuery('CastReserve: Choose 3 unique item cards from your deck.', deck_items, list(deck), True, False)
 						)
 					]),
 			)
