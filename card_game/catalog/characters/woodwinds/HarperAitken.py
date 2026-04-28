@@ -13,7 +13,7 @@ class HarperAitken(AVGECharacterCard):
         self.atk_1_name = 'Overblow'
         self.atk_2_name = 'Wipeout'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def gen() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()
@@ -45,7 +45,7 @@ class HarperAitken(AVGECharacterCard):
         card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, HarperAitken)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         chars_in_play = [c for c in opponent.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
 

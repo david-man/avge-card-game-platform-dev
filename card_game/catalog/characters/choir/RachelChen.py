@@ -68,7 +68,7 @@ class RachelChen(AVGECharacterCard):
             )
         return Response(ResponseType.CORE, Notify(f"{str(self)} used Program Production!", all_players, default_timeout))
 
-    def atk_1(self, card : AVGECharacterCard) -> Response:
+    def atk_1(self, card : AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         player = card.player

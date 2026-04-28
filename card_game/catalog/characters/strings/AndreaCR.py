@@ -13,7 +13,7 @@ class AndreaCR(AVGECharacterCard):
         self.atk_1_name = 'Foresight'
         self.atk_2_name = 'Snap Pizz'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent_deck = card.player.opponent.cardholders[Pile.DECK]
         consider_count = min(3, len(opponent_deck))
         if consider_count == 0:
@@ -67,7 +67,7 @@ class AndreaCR(AVGECharacterCard):
         )
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         chosen_target = card.env.cache.get(card, AndreaCR._ENERGY_REMOVAL_KEY, None, True)
         targets = [c for c in opponent.get_cards_in_play() if isinstance(c, AVGECharacterCard)]

@@ -25,19 +25,63 @@ from ..catalog import *
 
 try:
     from .room_worker import RoomWorker
+    from .room_worker import RoomWorkerSnapshot
 except ImportError:  # pragma: no cover - direct script execution fallback
     from room_worker import RoomWorker  # type: ignore
+    from room_worker import RoomWorkerSnapshot  # type: ignore
 
 try:
     from .router_storage import RouterStorage
 except ImportError:  # pragma: no cover - direct script execution fallback
     from router_storage import RouterStorage  # type: ignore
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    raw = os.getenv(name)
+    parsed = default
+    if raw is not None:
+        try:
+            parsed = int(raw.strip())
+        except Exception:
+            parsed = default
+
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def _env_csv(name: str) -> list[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
 SESSION_COOKIE_NAME = "avge_session"
 SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 ROOM_FINISH_GRACE_SECONDS = 5
+ROUTER_HOST = os.getenv("ROUTER_HOST", "0.0.0.0")
+ROUTER_PORT = _env_int("ROUTER_PORT", 5600, minimum=1, maximum=65535)
+ROUTER_DEBUG = _env_bool("ROUTER_DEBUG", False)
+ROUTER_USE_RELOADER = _env_bool("ROUTER_USE_RELOADER", False)
+ROUTER_ALLOWED_ORIGINS = _env_csv("ROUTER_ALLOWED_ORIGINS")
+ROUTER_COOKIE_SECURE = _env_bool("ROUTER_COOKIE_SECURE", False)
+ROUTER_COOKIE_SAMESITE = os.getenv("ROUTER_COOKIE_SAMESITE", "Lax").strip() or "Lax"
+
 ROOM_HOST = os.getenv("ROOM_HOST", "127.0.0.1")
-ROOM_BASE_PORT = int(os.getenv("ROOM_BASE_PORT", "5700"))
+ROOM_BIND_HOST = os.getenv("ROOM_BIND_HOST", ROOM_HOST)
+ROOM_ENDPOINT_SCHEME = os.getenv("ROOM_ENDPOINT_SCHEME", "http").strip() or "http"
+ROOM_BASE_PORT = _env_int("ROOM_BASE_PORT", 5700, minimum=1, maximum=65535)
+ROOM_PORT_RANGE_SIZE = _env_int("ROOM_PORT_RANGE_SIZE", 1024, minimum=1, maximum=65535)
+ROOM_MAX_PORT = min(65535, ROOM_BASE_PORT + ROOM_PORT_RANGE_SIZE - 1)
 ROUTER_DB_PATH = os.getenv(
     "ROUTER_DB_PATH",
     os.path.join(os.path.dirname(__file__), "router.sqlite3"),
@@ -122,6 +166,7 @@ class RoomRecord:
     player_session_ids: tuple[str, str]
     created_at: float
     host: str
+    bind_host: str
     port: int
     status: str = "running"
     finished_at: float | None = None
@@ -593,6 +638,7 @@ class MatchmakingRouter:
                 player_session_ids=(p1_entry.session_id, p2_entry.session_id),
                 created_at=now,
                 host=ROOM_HOST,
+                bind_host=ROOM_BIND_HOST,
                 port=room_port,
                 status="running",
             )
@@ -622,7 +668,7 @@ class MatchmakingRouter:
             worker = RoomWorker(
                 room_id=room_id,
                 player_session_ids=room.player_session_ids,
-                host=room.host,
+                host=room.bind_host,
                 port=room.port,
                 p1_username=session_a_name,
                 p2_username=session_b_name,
@@ -642,7 +688,7 @@ class MatchmakingRouter:
 
             worker.start()
             print(
-                f"[ROUTER] room_started room_id={room_id} endpoint=http://{room.host}:{room.port} "
+                f"[ROUTER] room_started room_id={room_id} endpoint={self._room_endpoint_url(room)} "
                 f"players=({p1_entry.session_id},{p2_entry.session_id})"
             )
             last_assigned_room = room_id
@@ -651,21 +697,29 @@ class MatchmakingRouter:
 
     def _reserve_next_room_port_locked(self) -> int:
         candidate = self._next_room_port
-        for _ in range(1024):
+        for _ in range(ROOM_PORT_RANGE_SIZE):
+            if candidate > ROOM_MAX_PORT:
+                candidate = ROOM_BASE_PORT
             if self._is_port_available(candidate):
-                self._next_room_port = candidate + 1
+                next_candidate = candidate + 1
+                self._next_room_port = ROOM_BASE_PORT if next_candidate > ROOM_MAX_PORT else next_candidate
                 return candidate
             candidate += 1
-        raise RuntimeError('Unable to allocate an available room port.')
+        raise RuntimeError(
+            f'Unable to allocate an available room port in range {ROOM_BASE_PORT}-{ROOM_MAX_PORT}.'
+        )
 
     def _is_port_available(self, port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                sock.bind((ROOM_HOST, port))
+                sock.bind((ROOM_BIND_HOST, port))
             except OSError:
                 return False
         return True
+
+    def _room_endpoint_url(self, room: RoomRecord) -> str:
+        return f"{ROOM_ENDPOINT_SCHEME}://{room.host}:{room.port}"
 
     def _on_room_worker_finished(self, room_id: str, reason: str) -> None:
         with self._lock:
@@ -835,7 +889,7 @@ class MatchmakingRouter:
             'new_session_id': new_session_id,
             'slot': slot,
         }
-        endpoint = f'http://{room.host}:{room.port}/room/replace-session'
+        endpoint = f'http://{room.bind_host}:{room.port}/room/replace-session'
         data = json.dumps(payload).encode('utf-8')
         request_obj = urllib.request.Request(
             endpoint,
@@ -902,17 +956,16 @@ class MatchmakingRouter:
                 self._superseded_notifier(session_id, sid_list)
 
     def _serialize_room_locked(self, room: RoomRecord) -> dict[str, Any]:
-        worker_snapshot = None
+        worker_snapshot: RoomWorkerSnapshot | None = None
         if room.worker is not None:
-            snapshot_fn = getattr(room.worker, 'snapshot', None)
-            if callable(snapshot_fn):
-                worker_snapshot = snapshot_fn()
+            worker_snapshot = room.worker.snapshot()
         return {
             "room_id": room.room_id,
             "status": room.status,
             "host": room.host,
+            "bind_host": room.bind_host,
             "port": room.port,
-            "endpoint_url": f"http://{room.host}:{room.port}",
+            "endpoint_url": self._room_endpoint_url(room),
             "player_session_ids": list(room.player_session_ids),
             "created_at": room.created_at,
             "finished_at": room.finished_at,
@@ -969,7 +1022,8 @@ app = Flask(__name__)
 router = MatchmakingRouter()
 socketio: Any = None
 if SocketIO is not None:
-    socketio = SocketIO(app, cors_allowed_origins='*')
+    socketio_origins: str | list[str] = '*' if not ROUTER_ALLOWED_ORIGINS else ROUTER_ALLOWED_ORIGINS
+    socketio = SocketIO(app, cors_allowed_origins=socketio_origins)
 
 
 def _notify_superseded_session(session_id: str, socket_sids: list[str]) -> None:
@@ -1046,11 +1100,17 @@ def _serialize_deck_response(deck_id: str, name: str, card_payload_json: str, up
 @app.after_request
 def add_cors_headers(response):
     request_origin = request.headers.get("Origin")
-    if isinstance(request_origin, str) and request_origin.strip():
-        response.headers["Access-Control-Allow-Origin"] = request_origin
+    allowed_origins = set(ROUTER_ALLOWED_ORIGINS)
+    if allowed_origins and "*" not in allowed_origins:
         response.headers["Vary"] = "Origin"
+        if isinstance(request_origin, str) and request_origin.strip() and request_origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = request_origin
     else:
-        response.headers["Access-Control-Allow-Origin"] = "*"
+        if isinstance(request_origin, str) and request_origin.strip():
+            response.headers["Access-Control-Allow-Origin"] = request_origin
+            response.headers["Vary"] = "Origin"
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
 
     requested_headers = request.headers.get("Access-Control-Request-Headers")
     if isinstance(requested_headers, str) and requested_headers.strip():
@@ -1064,7 +1124,9 @@ def add_cors_headers(response):
     else:
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS, GET, PUT, DELETE"
 
-    response.headers["Access-Control-Allow-Credentials"] = "true"
+    allow_origin = response.headers.get("Access-Control-Allow-Origin", "")
+    if allow_origin != "*":
+        response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 
@@ -1097,7 +1159,8 @@ def session_bootstrap() -> Any:
         session.session_id,
         max_age=SESSION_COOKIE_MAX_AGE_SECONDS,
         httponly=True,
-        samesite="Lax",
+        secure=ROUTER_COOKIE_SECURE,
+        samesite=ROUTER_COOKIE_SAMESITE,
     )
     return response
 
@@ -1126,7 +1189,8 @@ def auth_login() -> Any:
         session.session_id,
         max_age=SESSION_COOKIE_MAX_AGE_SECONDS,
         httponly=True,
-        samesite="Lax",
+        secure=ROUTER_COOKIE_SECURE,
+        samesite=ROUTER_COOKIE_SAMESITE,
     )
     return response
 
@@ -1419,22 +1483,18 @@ if socketio is not None:
 
 
 if __name__ == "__main__":
-    router_host = os.getenv("ROUTER_HOST", "0.0.0.0")
-    router_port = int(os.getenv("ROUTER_PORT", "5600"))
-    router_debug = os.getenv("ROUTER_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
-    router_use_reloader = os.getenv("ROUTER_USE_RELOADER", "false").strip().lower() in {"1", "true", "yes", "on"}
     if socketio is not None:
         socketio.run(
             app,
-            host=router_host,
-            port=router_port,
-            debug=router_debug,
-            use_reloader=router_use_reloader,
+            host=ROUTER_HOST,
+            port=ROUTER_PORT,
+            debug=ROUTER_DEBUG,
+            use_reloader=ROUTER_USE_RELOADER,
         )
     else:
         app.run(
-            host=router_host,
-            port=router_port,
-            debug=router_debug,
-            use_reloader=router_use_reloader,
+            host=ROUTER_HOST,
+            port=ROUTER_PORT,
+            debug=ROUTER_DEBUG,
+            use_reloader=ROUTER_USE_RELOADER,
         )

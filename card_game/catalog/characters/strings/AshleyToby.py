@@ -53,7 +53,7 @@ class AshleyToby(AVGECharacterCard):
         self.add_listener(_AshleyBothBenchesFullAttackModifier(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_packet() -> PacketType:
             active = card.player.opponent.get_active_card()
             packet: PacketType = []

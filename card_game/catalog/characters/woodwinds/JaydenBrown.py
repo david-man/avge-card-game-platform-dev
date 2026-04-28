@@ -98,7 +98,7 @@ class JaydenBrown(AVGECharacterCard):
         self.add_listener(JaydenBrownFourLeafCloverReactor(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         missing = object()
         roll = card.env.cache.get(card, JaydenBrown._D6_ROLL_KEY, missing, True)
         if roll is missing:

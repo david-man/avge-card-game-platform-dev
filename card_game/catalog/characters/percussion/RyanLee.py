@@ -13,7 +13,7 @@ class RyanLee(AVGECharacterCard):
         self.atk_1_name = 'Percussion Ensemble'
         self.atk_2_name = 'Four Mallets'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         bench = card.player.cardholders[Pile.BENCH]
         candidates = [c for c in bench if isinstance(c, AVGECharacterCard) and c.card_type == CardType.PERCUSSION]
         max_attach = min(2, len(card.player.energy))
@@ -76,7 +76,7 @@ class RyanLee(AVGECharacterCard):
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, RyanLee)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         packet = []
 
         def make_hit(draw_card: bool = False):

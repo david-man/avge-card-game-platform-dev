@@ -69,7 +69,7 @@ class KanaTakizawa(AVGECharacterCard):
             ]),
         )
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         missing = object()
         roll = card.env.cache.get(card, KanaTakizawa._D6_ROLL_KEY, missing, True)
         if roll is missing:

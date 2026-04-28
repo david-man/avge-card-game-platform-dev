@@ -12,7 +12,7 @@ class CathyRong(AVGECharacterCard):
         self.atk_1_name = 'Racket Smash'
         self.atk_2_name = 'Four Hands'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         bench_candidates = [c for c in opponent.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and len(c.energy) >= 1]
 
@@ -74,7 +74,7 @@ class CathyRong(AVGECharacterCard):
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, CathyRong)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def gen() -> PacketType:
             dmg = 50
             bench = [c for c in card.player.cardholders[Pile.BENCH] if isinstance(c, AVGECharacterCard) and c != card and c.card_type == CardType.PIANO]

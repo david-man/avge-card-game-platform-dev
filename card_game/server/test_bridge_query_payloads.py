@@ -14,6 +14,7 @@ from card_game.constants import (
     IntegerInputData,
     Notify,
     OrderingQuery,
+    StrSelectionQuery,
     Pile,
     Phase2Data,
     PlayerID,
@@ -46,6 +47,7 @@ def _make_bridge_with_cards(*cards: _FakeCard) -> FrontendGameBridge:
         _engine=SimpleNamespace(event_running=None),
         player_turn=SimpleNamespace(unique_id=PlayerID.P1),
         game_phase=None,
+        stadium_cardholder=object(),
     )
     bridge._force_environment_sync_pending = False
     bridge._pending_input_query_event = None
@@ -142,6 +144,36 @@ def test_parse_frontend_input_result_accepts_single_string_ordered_selections() 
 
     assert isinstance(parsed, dict)
     assert parsed.get('input_result') == [None]
+
+
+def test_parse_frontend_input_result_pads_missing_allows_none_card_selections() -> None:
+    card_a = _FakeCard('card-a')
+    card_b = _FakeCard('card-b')
+    bridge = _make_bridge_with_cards(card_a, card_b)
+
+    event = SimpleNamespace(
+        query_data=CardSelectionQuery('Pick cards now', [card_a, card_b], [card_a, card_b], True, False),
+        input_keys=['k1', 'k2'],
+    )
+
+    parsed = bridge._parse_frontend_input_result(event, {'orderedSelections': ['card-a']})
+
+    assert isinstance(parsed, dict)
+    assert parsed.get('input_result') == [card_a, None]
+
+
+def test_parse_frontend_input_result_pads_missing_allows_none_string_selections() -> None:
+    bridge = _make_bridge_with_cards()
+
+    event = SimpleNamespace(
+        query_data=StrSelectionQuery('Pick strings now', ['A', 'B'], ['A', 'B'], True, False),
+        input_keys=['k1', 'k2'],
+    )
+
+    parsed = bridge._parse_frontend_input_result(event, {'ordered_selections': ['A']})
+
+    assert isinstance(parsed, dict)
+    assert parsed.get('input_result') == ['A', None]
 
 
 def test_build_input_command_for_integer_query() -> None:

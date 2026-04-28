@@ -1464,6 +1464,8 @@ class FrontendGameBridge:
                 normalized_raw = self._sanitize_identifier_token(raw)
                 card = self._get_card(normalized_raw)
                 parsed.append(card if card is not None else normalized_raw)
+            if len(parsed) < len(event.input_keys) and query_data.allows_none:
+                parsed.extend([None] * (len(event.input_keys) - len(parsed)))
             if len(parsed) != len(event.input_keys):
                 _reject('card_selection_length_mismatch', parsed_count=len(parsed))
                 return None
@@ -1483,6 +1485,8 @@ class FrontendGameBridge:
                     _reject('invalid_str_selection_entry_type', entry_type=type(raw).__name__)
                     return None
                 parsed.append(raw)
+            if len(parsed) < len(event.input_keys) and query_data.allows_none:
+                parsed.extend([None] * (len(event.input_keys) - len(parsed)))
             if len(parsed) != len(event.input_keys):
                 _reject('str_selection_length_mismatch', parsed_count=len(parsed))
                 return None

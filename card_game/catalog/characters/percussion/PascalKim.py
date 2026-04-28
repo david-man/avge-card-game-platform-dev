@@ -59,7 +59,7 @@ class PascalKim(AVGECharacterCard):
         self.atk_1_name = 'Ragebaited'
         self.atk_2_name = 'Ominous Chimes'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         hp = card.hp
@@ -91,7 +91,7 @@ class PascalKim(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import TransferCard, ReorderCardholder
 
         deck = card.player.cardholders[Pile.DECK]

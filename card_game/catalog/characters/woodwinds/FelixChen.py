@@ -58,7 +58,7 @@ class FelixChen(AVGECharacterCard):
         self.add_listener(FelixSynesthesiaModifier(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         roll0 = card.env.cache.get(card, FelixChen._COIN_KEY_0, None, True)
         roll1 = card.env.cache.get(card, FelixChen._COIN_KEY_1, None, True)

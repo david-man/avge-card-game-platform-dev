@@ -71,7 +71,7 @@ class BenCherekIII(AVGECharacterCard):
             ], AVGEEngineID(self, ActionTypes.PASSIVE, BenCherekIII)))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         packet : PacketType= []

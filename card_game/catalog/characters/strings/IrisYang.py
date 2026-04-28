@@ -13,7 +13,7 @@ class IrisYang(AVGECharacterCard):
         self.atk_1_name = 'Open Strings'
         self.atk_2_name = 'Spike'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def atk_active() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()
@@ -55,7 +55,7 @@ class IrisYang(AVGECharacterCard):
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, IrisYang)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         opponent_bench = opponent.cardholders[Pile.BENCH]
 

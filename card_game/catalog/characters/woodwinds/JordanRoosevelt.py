@@ -80,7 +80,7 @@ class JordanRoosevelt(AVGECharacterCard):
         self.atk_1_name = 'Trickster'
         self.atk_2_name = 'Sparkling Run'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         next_opp_round = card.player.opponent.get_next_turn()
         next_player_round = card.player.get_next_turn()
         card.add_listener(JordanOpponentAttackBoost(card, next_opp_round))
@@ -95,7 +95,7 @@ class JordanRoosevelt(AVGECharacterCard):
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, JordanRoosevelt)))
         return Response(ResponseType.CORE, Data())
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_packet() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()

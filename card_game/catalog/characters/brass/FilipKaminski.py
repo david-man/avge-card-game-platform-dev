@@ -12,7 +12,7 @@ class FilipKaminski(AVGECharacterCard):
         self.atk_1_name = 'Heart of the Cards'
         self.atk_2_name = 'Intense Echo'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         deck = card.player.cardholders[Pile.DECK]
         hand = card.player.cardholders[Pile.HAND]
         if len(deck) == 0:
@@ -81,7 +81,7 @@ class FilipKaminski(AVGECharacterCard):
             return Response(ResponseType.CORE, Notify(f"{str(card)} used Heart of the Cards and it HIT!", all_players, default_timeout))
         return Response(ResponseType.CORE, Notify(f"{str(card)} used Heart of the Cards, but it didn't hit...", all_players, default_timeout))
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         opponent_bench : AVGECardholder = opponent.cardholders[Pile.BENCH]
         stadium_bonus = (

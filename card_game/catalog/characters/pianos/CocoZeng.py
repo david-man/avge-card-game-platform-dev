@@ -12,7 +12,7 @@ class CocoZeng(AVGECharacterCard):
         self.atk_1_name = 'Glissando'
         self.atk_2_name = 'Inventory Management'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         _, used_last_turn_idx = card.env.check_history(
             card.player.get_last_turn(),
             PlayCharacterCard,
@@ -49,7 +49,7 @@ class CocoZeng(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         n = len(card.player.cardholders[Pile.HAND])
         if n <= 0:
             return Response(ResponseType.CORE, Notify(f"{str(card)} used Inventory Management, but there was no inventory to manage...", all_players, default_timeout))

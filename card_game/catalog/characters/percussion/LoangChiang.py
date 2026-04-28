@@ -13,7 +13,7 @@ class LoangChiang(AVGECharacterCard):
         self.atk_1_name = 'Stick Trick'
         self.atk_2_name = 'Excused Absence'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         packet : PacketType = []
         def gen() -> PacketType:
             p: PacketType = []
@@ -68,7 +68,7 @@ class LoangChiang(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def gen() -> PacketType:
             packet: PacketType = []
             for c in card.player.get_cards_in_play():

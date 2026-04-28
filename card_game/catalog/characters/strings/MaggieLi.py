@@ -92,7 +92,7 @@ class MaggieLi(AVGECharacterCard):
         self.add_listener(_MaggieTurnBeginReactor(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         targets = [c for c in opponent.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
         if len(targets) == 0:

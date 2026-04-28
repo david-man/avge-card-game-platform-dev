@@ -90,7 +90,7 @@ class DemiLu(AVGECharacterCard):
         self.add_constrainer(DemiLuConstraint(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def gen() -> PacketType:
             bench_cards = [c for c in card.player.cardholders[Pile.BENCH] if c != card]
             found_piano = any(c.card_type == CardType.PIANO for c in bench_cards if isinstance(c, AVGECharacterCard))

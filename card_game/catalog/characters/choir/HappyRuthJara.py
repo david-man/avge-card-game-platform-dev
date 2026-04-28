@@ -49,7 +49,7 @@ class HappyRuthJara(AVGECharacterCard):
         )
         return Response(ResponseType.CORE, Notify(f"{str(self)} left rehearsal early...", all_players, default_timeout))
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         r0 = card.env.cache.get(card, HappyRuthJara._COIN_KEY_0, None, True)

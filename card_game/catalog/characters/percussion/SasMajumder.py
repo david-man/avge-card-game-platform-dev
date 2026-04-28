@@ -113,7 +113,7 @@ class SasMajumder(AVGECharacterCard):
         self.add_listener(_SasDiscardReactor(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         packet = []
 
         def make_hit(draw_card: bool = False):

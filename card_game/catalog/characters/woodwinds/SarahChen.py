@@ -17,7 +17,7 @@ class SarahChen(AVGECharacterCard):
         self.atk_1_name = 'Double Tongue'
         self.atk_2_name = 'Artist Alley'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def gen() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()
@@ -43,7 +43,7 @@ class SarahChen(AVGECharacterCard):
         )
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         player = card.player
         hand = player.cardholders[Pile.HAND]
         discard = player.cardholders[Pile.DISCARD]

@@ -84,6 +84,18 @@ init_setup_submission_by_slot: dict[PlayerSlot, dict[str, Any] | None] = {
 }
 
 
+def _env_csv(name: str) -> list[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return []
+    return [part.strip() for part in raw.split(',') if part.strip()]
+
+
+SERVER_ALLOWED_ORIGINS = _env_csv('SERVER_ALLOWED_ORIGINS')
+if not SERVER_ALLOWED_ORIGINS:
+    SERVER_ALLOWED_ORIGINS = _env_csv('ROUTER_ALLOWED_ORIGINS')
+
+
 pending_command_acks: list[PendingCommandAck] = []
 next_command_id = 1
 first_player_join_seen = False
@@ -277,7 +289,10 @@ def _schedule_disconnect_forfeit_timer_locked(disconnected_slot: PlayerSlot) -> 
 
 socketio: Any = None
 if SocketIO is not None:
-    socketio = SocketIO(app, cors_allowed_origins='*')
+    socketio_origins: str | list[str] = '*'
+    if SERVER_ALLOWED_ORIGINS and '*' not in SERVER_ALLOWED_ORIGINS:
+        socketio_origins = SERVER_ALLOWED_ORIGINS
+    socketio = SocketIO(app, cors_allowed_origins=socketio_origins)
 
 
 def _utc_now_iso() -> str:
@@ -1329,9 +1344,24 @@ def _process_protocol_packet(payload: dict[str, Any], client_slot: str | None) -
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    request_origin = request.headers.get('Origin')
+    allowed_origins = set(SERVER_ALLOWED_ORIGINS)
+    if allowed_origins and '*' not in allowed_origins:
+        response.headers['Vary'] = 'Origin'
+        if isinstance(request_origin, str) and request_origin.strip() and request_origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = request_origin
+    else:
+        if isinstance(request_origin, str) and request_origin.strip():
+            response.headers['Access-Control-Allow-Origin'] = request_origin
+            response.headers['Vary'] = 'Origin'
+        else:
+            response.headers['Access-Control-Allow-Origin'] = '*'
+
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS, GET'
+    allow_origin = response.headers.get('Access-Control-Allow-Origin', '')
+    if allow_origin != '*':
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
 

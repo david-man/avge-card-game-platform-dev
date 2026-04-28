@@ -18,7 +18,7 @@ class JennieWang(AVGECharacterCard):
         self.atk_1_name = 'Small Ensemble Committee'
         self.atk_2_name = 'Grand Piano'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         count = 0
         for c in card.player.get_cards_in_play():
             if isinstance(c, JennieWang.TARGET_CLASSES):
@@ -52,7 +52,7 @@ class JennieWang(AVGECharacterCard):
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, JennieWang)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
         from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
         from card_game.catalog.stadiums.RileyHall import RileyHall

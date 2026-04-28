@@ -15,7 +15,7 @@ class KeiWatanabe(AVGECharacterCard):
         self.atk_1_name = 'Rudiments'
         self.atk_2_name = 'Drum Kid Workshop'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         candidates = opponent.get_cards_in_play()
         missing = object()
@@ -61,7 +61,7 @@ class KeiWatanabe(AVGECharacterCard):
         card.propose(AVGEPacket([generate_damage], AVGEEngineID(card, ActionTypes.ATK_1, KeiWatanabe)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         candidates = [
             c
             for c in card.player.get_cards_in_play()
@@ -145,6 +145,6 @@ class KeiWatanabe(AVGECharacterCard):
                 packet.append(AVGEEnergyTransfer(token, card, chosen, ActionTypes.ATK_2, card, None))
             return packet
         card.env.cache.delete(card, KeiWatanabe._ATK2_COPY_KEY)
-        card.propose(AVGEPacket([PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card)], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)))
-        card.propose(AVGEPacket([generate_transfer_packet], AVGEEngineID(card, ActionTypes.ATK_2, KeiWatanabe)), -1)
+        p = [PlayCharacterCard(chosen, action_type, ActionTypes.ATK_2, card), generate_transfer_packet]
+        card.extend_event(p)
         return self.generic_response(card, ActionTypes.ATK_2)

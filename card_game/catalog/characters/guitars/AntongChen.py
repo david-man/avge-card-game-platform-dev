@@ -12,7 +12,7 @@ class AntongChen(AVGECharacterCard):
         self.atk_1_name = 'Fingerstyle'
         self.atk_2_name = "Power Chord"
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         _, pc_used_last_turn_idx = card.env.check_history(
@@ -64,7 +64,7 @@ class AntongChen(AVGECharacterCard):
 
         return Response(ResponseType.SKIP, Notify(f"{str(card)} used Fingerstyle and rolled {heads} heads!", all_players, default_timeout))
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent
         def generate_1() -> PacketType:
             return [AVGECardHPChange(

@@ -11,7 +11,7 @@ class EvelynWu(AVGECharacterCard):
         self.atk_1_name = 'Circular Breathing'
         self.atk_2_name = 'Small Ensemble Lord'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         streak = 0
         turn = card.player.get_last_turn()
         while streak < 4 and turn >= 0:
@@ -52,7 +52,7 @@ class EvelynWu(AVGECharacterCard):
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EvelynWu)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_packet() -> PacketType:
             packet: PacketType = []
             opponent = card.player.opponent

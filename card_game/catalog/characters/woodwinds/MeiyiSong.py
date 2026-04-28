@@ -38,7 +38,7 @@ class MeiyiSong(AVGECharacterCard):
             idx = found_idx + 1
         return played
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         played_items = self._get_played_items_this_turn(card)
         retrievable_items = [
             i for i in played_items
@@ -101,7 +101,7 @@ class MeiyiSong(AVGECharacterCard):
         )
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         all_characters = card.player.get_cards_in_play() + card.player.opponent.get_cards_in_play()
         other_ww_count = sum(
             1

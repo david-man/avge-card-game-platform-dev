@@ -92,7 +92,7 @@ class JuliaCeccarelli(AVGECharacterCard):
         self.atk_1_name = 'Photograph'
         self.atk_2_name = 'Ricochet'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opp_hand = card.player.opponent.cardholders[Pile.HAND]
         items = [c for c in opp_hand if isinstance(c, AVGEItemCard)]
 
@@ -134,7 +134,7 @@ class JuliaCeccarelli(AVGECharacterCard):
             card.propose(AVGEPacket([PlayNonCharacterCard(chosen, ActionTypes.ATK_1, card)], AVGEEngineID(card, ActionTypes.ATK_1, JuliaCeccarelli)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         card.add_listener(_JuliaAtk2KnockoutReactor(card))
 
         def atk() -> PacketType:

@@ -1,0 +1,27 @@
+[Unit]
+Description=AVGE Matchmaking Router
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Update this to your checkout path.
+WorkingDirectory=/opt/avge/card-game-platform
+# Copy router.env.example to /etc/avge/router.env and fill values.
+EnvironmentFile=/etc/avge/router.env
+
+# Use your venv Python if applicable.
+ExecStart=/usr/bin/python3 -m card_game.server.router_server
+Restart=always
+RestartSec=2
+KillMode=process
+TimeoutStopSec=15
+
+# Router logs (room workers write to /tmp/avge-room-<room_id>.log).
+StandardOutput=append:/var/log/avge/router.log
+StandardError=append:/var/log/avge/router.log
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

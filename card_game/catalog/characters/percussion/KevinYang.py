@@ -14,7 +14,7 @@ class KevinYang(AVGECharacterCard):
         self.atk_1_name = 'Rimshot'
         self.atk_2_name = 'Stickshot'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         missing = object()
         roll = card.env.cache.get(card, KevinYang._D6_KEY, missing, True)
         if roll is missing:
@@ -57,7 +57,7 @@ class KevinYang(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         missing = object()
         rolls = [card.env.cache.get(card, key, missing, True) for key in KevinYang._D6_KEYS_4]
         if any(r is missing for r in rolls):

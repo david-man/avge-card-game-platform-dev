@@ -15,7 +15,7 @@ class BettySolomon(AVGECharacterCard):
         self.atk_1_name = 'Outreach'
         self.atk_2_name = 'Multiphonics'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         deck = card.player.cardholders[Pile.DECK]
         character_cards = [c for c in deck if isinstance(c, AVGECharacterCard)]
 
@@ -51,7 +51,7 @@ class BettySolomon(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         r0 = card.env.cache.get(card, BettySolomon._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, BettySolomon._COIN_KEY_1, None, True)
         if r0 is None or r1 is None:

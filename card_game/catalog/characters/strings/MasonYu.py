@@ -4,7 +4,7 @@ import random
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardStatusChange, TransferCard, PlayCharacterCard, AVGEEnergyTransfer
+from card_game.internal_events import InputEvent, AVGECardStatusChange, TransferCard, PlayCharacterCard, AVGEEnergyTransfer, EmptyEvent
 
 
 class MasonYu(AVGECharacterCard):
@@ -20,7 +20,7 @@ class MasonYu(AVGECharacterCard):
         self.atk_1_name = 'Arrangement'
         self.atk_2_name = 'We Play God'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         bench = card.player.cardholders[Pile.BENCH]
         if len(bench) == 0:
             return Response(ResponseType.CORE, Notify('Arrangement failed: no benched characters on your side.', all_players, default_timeout))
@@ -67,10 +67,21 @@ class MasonYu(AVGECharacterCard):
         card.propose(AVGEPacket([arrange_packet], AVGEEngineID(card, ActionTypes.ATK_1, MasonYu)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         if len(card.energy) == 0:
-            return Response(ResponseType.CORE, Notify('We Play God failed: Mason Yu has no energy to discard.', all_players, default_timeout))
+            if(caller_action == ActionTypes.PLAYER_CHOICE):
+                card.propose(AVGEPacket(
+                    [EmptyEvent(
+                        ActionTypes.ATK_2,
+                        card,
+                        ResponseType.CORE,
+                        Notify('We Play God didn\'t play: Mason Yu has no energy to discard.', all_players, default_timeout)
+                    )], AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)
+                ))
+                return Response(ResponseType.CORE, Data())
 
+            else:  
+                return Response(ResponseType.CORE, Notify('We Play God didn\'t play: Mason Yu has no energy to discard.', all_players, default_timeout))
         chars_in_play = [c for p in [card.player, card.player.opponent] for c in p.get_cards_in_play() if isinstance(c, AVGECharacterCard)]
 
         chosen_1 = card.env.cache.get(card, MasonYu._ATK2_TARGET_1, None)
@@ -137,7 +148,7 @@ class MasonYu(AVGECharacterCard):
                     ]),
             )
 
-        action_type = ActionTypes.ATK_1 if attack_choice == 'atk_1' else ActionTypes.ATK_2
+        action_type = ActionTypes.ATK_1 if attack_choice == other.atk_1_name else ActionTypes.ATK_2
         assert isinstance(random_selected, AVGECharacterCard)
 
         def play_god_packet() -> PacketType:
@@ -191,8 +202,7 @@ class MasonYu(AVGECharacterCard):
                 )
             )
             return packet
-
-        card.propose(AVGEPacket([play_god_packet], AVGEEngineID(card, ActionTypes.ATK_2, MasonYu)))
+        card.extend_event([play_god_packet])
         card.env.cache.delete(card, MasonYu._ATK2_TARGET_1)
         card.env.cache.delete(card, MasonYu._ATK2_TARGET_2)
         card.env.cache.delete(card, MasonYu._ATK2_RANDOM_SELECTED)

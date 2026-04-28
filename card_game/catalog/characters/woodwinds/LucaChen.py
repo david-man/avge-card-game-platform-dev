@@ -10,7 +10,7 @@ class LucaChen(AVGECharacterCard):
         self.atk_1_name = 'Sparkling Run'
         self.atk_2_name = 'Piccolo Solo'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def gen() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()
@@ -44,7 +44,7 @@ class LucaChen(AVGECharacterCard):
         )
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         all_characters = card.player.get_cards_in_play() + card.player.opponent.get_cards_in_play()
         other_ww_count = sum(
             1

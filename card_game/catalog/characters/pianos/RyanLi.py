@@ -51,7 +51,7 @@ class RyanLi(AVGECharacterCard):
         self.add_listener(RyanLiMaidDamageModifier(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_packet() -> PacketType:
             dmg = 50
             bench = [

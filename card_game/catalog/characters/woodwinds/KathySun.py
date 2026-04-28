@@ -17,7 +17,7 @@ class KathySun(AVGECharacterCard):
         self.atk_1_name = 'Analysis Paralysis'
         self.atk_2_name = 'Flutter Tongue'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
         opponent_hand = opponent.cardholders[Pile.HAND]
         opponent_deck = opponent.cardholders[Pile.DECK]
@@ -95,7 +95,7 @@ class KathySun(AVGECharacterCard):
             ]),
         )
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         missing = object()
         roll = card.env.cache.get(card, KathySun._D6_ROLL_KEY, missing, True)
         if roll is missing:

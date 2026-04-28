@@ -86,12 +86,12 @@ class ArrangerStatusReactor(AVGEReactor):
 							lambda r : True,
 							ActionTypes.PASSIVE,
 							affected_character,
-							IntegerInputData('Arranger: Shuffle a random card from discard into deck? (0 = no, 1 = yes)', 0, 1)
+							StrSelectionQuery('Arranger: Shuffle a random card from discard into deck?', ['Yes', 'No'], ['Yes', 'No'], False, False)
 						)
 					]),
 			)
 
-		if(not decision):
+		if(not decision == 'YES'):
 			return Response(ResponseType.ACCEPT, Data())
 
 		random_discard_card = random.choice(list(discard))
@@ -110,4 +110,4 @@ class ArrangerStatusReactor(AVGEReactor):
 		self.propose(
 			AVGEPacket(p, AVGEEngineID(self.env, ActionTypes.ENV, None))
 		)
-		return Response(ResponseType.ACCEPT, Notify('Arranger: Shuffled a random discard card into the deck.', [affected_character.player.unique_id], default_timeout))
+		return Response(ResponseType.ACCEPT, RevealCards('Arranger: Shuffled a random discard card into the deck.', [affected_character.player.unique_id], default_timeout, [random_discard_card]))

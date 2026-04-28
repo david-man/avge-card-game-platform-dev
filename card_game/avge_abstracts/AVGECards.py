@@ -98,9 +98,9 @@ class AVGECharacterCard(AVGECard):
         self.has_passive : bool = False#any ability that activates when the card gets put in play
         self.active_name : str | None = None#any ability that can be activated whenever
 
-    def atk_1(self, card : 'AVGECharacterCard') -> Response:
+    def atk_1(self, card : 'AVGECharacterCard', caller_action : ActionTypes) -> Response:
         raise NotImplementedError()
-    def atk_2(self, card : 'AVGECharacterCard') -> Response:
+    def atk_2(self, card : 'AVGECharacterCard', caller_action : ActionTypes) -> Response:
         raise NotImplementedError()
     def can_play_active(self) -> bool:
         raise NotImplementedError()
@@ -114,9 +114,11 @@ class AVGECharacterCard(AVGECard):
         if(args is None):
             args = {}
         if(args['type'] == ActionTypes.ATK_1):
-            return self.atk_1(card)
+            assert isinstance(args['caller_type'], ActionTypes)
+            return self.atk_1(card, args['caller_type'])
         elif(args['type'] == ActionTypes.ATK_2):
-            return self.atk_2(card)
+            assert isinstance(args['caller_type'], ActionTypes)
+            return self.atk_2(card, args['caller_type'])
         elif(args['type'] == ActionTypes.ACTIVATE_ABILITY):
             if(card != self):
                 raise Exception("Tried to steal an ability. This is currently not supported.")

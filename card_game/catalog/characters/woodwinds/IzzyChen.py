@@ -111,7 +111,7 @@ class IzzyChen(AVGECharacterCard):
         self.env.cache.delete(self, IzzyChen._ACTIVE_STADIUM_CHOICE)
         return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_packet() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()

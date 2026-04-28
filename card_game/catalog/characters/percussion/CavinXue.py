@@ -74,7 +74,7 @@ class CavinXue(AVGECharacterCard):
         self.add_listener(CavinMaidBoostModifier(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         def generate() -> PacketType:

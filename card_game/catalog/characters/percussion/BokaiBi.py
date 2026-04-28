@@ -130,7 +130,7 @@ class BokaiBi(AVGECharacterCard):
         self.add_listener(reactor)
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
 
         roll = card.env.cache.get(card, BokaiBi._D6_KEY, None, True)

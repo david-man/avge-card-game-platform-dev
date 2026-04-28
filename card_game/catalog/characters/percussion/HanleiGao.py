@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from card_game.avge_abstracts import *
 from card_game.constants import *
-from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard
+from card_game.internal_events import InputEvent, AVGECardHPChange, TransferCard, EmptyEvent
 
 
 class HanleiGao(AVGECharacterCard):
@@ -13,7 +13,7 @@ class HanleiGao(AVGECharacterCard):
         self.atk_1_name = 'Stick Trick'
         self.atk_2_name = 'Tricky Rhythms'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         packet : PacketType = []
         def gen() -> PacketType:
             p: PacketType = []
@@ -67,7 +67,7 @@ class HanleiGao(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_dmg() -> PacketType:
             packet: PacketType = []
             opponent_hand = card.player.opponent.cardholders[Pile.HAND]
@@ -96,6 +96,13 @@ class HanleiGao(AVGECharacterCard):
                                 None,
                             )
                         )
+            if(len(packet) == 0):
+                packet.append(EmptyEvent(
+                    ActionTypes.ATK_2,
+                    card,
+                    ResponseType.CORE,
+                    Data()
+                ))
             return packet
 
         card.propose(AVGEPacket([generate_dmg], AVGEEngineID(card, ActionTypes.ATK_2, HanleiGao)))

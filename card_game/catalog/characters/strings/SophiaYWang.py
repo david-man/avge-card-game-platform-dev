@@ -150,7 +150,7 @@ class SophiaYWang(AVGECharacterCard):
         if len(packet) > 0:
             card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, SophiaYWang)))
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         deck = card.player.cardholders[Pile.DECK]
         hand = card.player.cardholders[Pile.HAND]
 
@@ -213,7 +213,7 @@ class SophiaYWang(AVGECharacterCard):
 
         return Response(ResponseType.INTERRUPT, Interrupt[AVGEEvent](follow_up))
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         card.add_listener(_SophiaAtk2KnockoutReactor(card))
 
         def atk() -> PacketType:

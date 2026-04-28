@@ -78,7 +78,7 @@ class InaMa(AVGECharacterCard):
         )
         return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         r0 = card.env.cache.get(card, InaMa._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, InaMa._COIN_KEY_1, None, True)
         r2 = card.env.cache.get(card, InaMa._COIN_KEY_2, None, True)

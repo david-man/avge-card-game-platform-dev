@@ -10,7 +10,7 @@ class HenryWang(AVGECharacterCard):
         self.atk_1_name = 'Glissando'
         self.atk_2_name = 'Improv'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         _, used_last_turn_idx = card.env.check_history(
             card.player.get_last_turn(),
             PlayCharacterCard,
@@ -47,7 +47,7 @@ class HenryWang(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent = card.player.opponent
 
         def generate_packet() -> PacketType:

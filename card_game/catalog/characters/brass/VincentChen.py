@@ -79,7 +79,7 @@ class VincentChen(AVGECharacterCard):
         self.atk_1_name = 'Fanfare'
         self.atk_2_name = 'Cherry Flavored Valve Oil'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def generate_packet()-> PacketType:
             return [AVGECardHPChange(
                 card.player.opponent.get_active_card(),
@@ -96,7 +96,7 @@ class VincentChen(AVGECharacterCard):
 
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
         # attach reactor to heal one benched character for the same amount dealt
         def generate_packet() -> PacketType:

@@ -10,7 +10,7 @@ class OwenLandry(AVGECharacterCard):
         self.atk_1_name = 'Feedback Loop'
         self.atk_2_name = 'Domain Expansion'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         def generate_packet() -> PacketType:
@@ -45,7 +45,7 @@ class OwenLandry(AVGECharacterCard):
         card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, OwenLandry)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer
 
         def generate_packet() -> PacketType:

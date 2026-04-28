@@ -74,7 +74,7 @@ class DavidMan(AVGECharacterCard):
         self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, DavidMan)))
         return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def make_hit():
             def hit() -> PacketType:
                 packet: PacketType = []

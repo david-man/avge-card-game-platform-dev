@@ -618,6 +618,7 @@ class PlayCharacterCard(AVGEEvent):
             return Response(ResponseType.CORE, self.core_notif)
         else:
             args['type'] = self.card_action
+            args['caller_type'] = self.catalyst_action
             assert isinstance(self.caller, AVGECharacterCard)
             return self.card.play_card(self.caller, args)
     def invert_core(self, args : dict | None = None):

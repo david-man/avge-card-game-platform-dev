@@ -79,7 +79,7 @@ class WestonPoe(AVGECharacterCard):
         self.add_listener(_WestonRightBackAtYouReactor(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
 
         def gen() -> PacketType:
             packet: PacketType = []

@@ -96,7 +96,7 @@ class EmilyWang(AVGECharacterCard):
         self.propose(AVGEPacket(packet, AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, EmilyWang)))
         return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         r0 = card.env.cache.get(card, EmilyWang._COIN_KEY_0, None, True)
         r1 = card.env.cache.get(card, EmilyWang._COIN_KEY_1, None, True)
         r2 = card.env.cache.get(card, EmilyWang._COIN_KEY_2, None, True)
@@ -116,28 +116,24 @@ class EmilyWang(AVGECharacterCard):
             )
 
         heads = int(r0) + int(r1) + int(r2)
-        packet: PacketType = []
-        for _ in range(max(0, heads)):
-            def generate_packet() -> PacketType:
-                active = card.player.opponent.get_active_card()
-                ret: PacketType = []
-                if isinstance(active, AVGECharacterCard):
-                    ret.append(
-                        AVGECardHPChange(
-                            active,
-                            40,
-                            AVGEAttributeModifier.SUBSTRACTIVE,
-                            CardType.STRING,
-                            ActionTypes.ATK_1,
-                            None,
-                            card,
-                        )
+        def generate_packet() -> PacketType:
+            active = card.player.opponent.get_active_card()
+            ret: PacketType = []
+            if isinstance(active, AVGECharacterCard):
+                ret.append(
+                    AVGECardHPChange(
+                        active,
+                        40,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.STRING,
+                        ActionTypes.ATK_1,
+                        None,
+                        card,
                     )
-                return ret
+                )
+            return ret
 
-            packet.append(generate_packet)
-
-        if len(packet) > 0:
-            card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, EmilyWang)))
+        for _ in range(max(0, heads)):
+            card.propose(AVGEPacket([generate_packet], AVGEEngineID(card, ActionTypes.ATK_1, EmilyWang)))
 
         return self.generic_response(card, ActionTypes.ATK_1)

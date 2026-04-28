@@ -12,7 +12,7 @@ class ChristmasKim(AVGECharacterCard):
         self.atk_1_name = 'Strum'
         self.atk_2_name = 'Surprise Delivery'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
 
         def gen() -> PacketType:
@@ -32,7 +32,7 @@ class ChristmasKim(AVGECharacterCard):
         )
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import InputEvent, TransferCard, ReorderCardholder, AVGECardHPChange, EmptyEvent
 
         player = card.player

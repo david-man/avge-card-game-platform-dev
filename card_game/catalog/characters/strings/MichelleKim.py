@@ -11,7 +11,7 @@ class MichelleKim(AVGECharacterCard):
         self.atk_1_name = 'Open Strings'
         self.atk_2_name = 'VocaRock!!'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def atk_active() -> PacketType:
             packet: PacketType = []
             active = card.player.opponent.get_active_card()
@@ -68,7 +68,7 @@ class MichelleKim(AVGECharacterCard):
                 return True
             idx = found_idx + 1
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         miku_used_this_turn = self._miku_used_this_turn(card)
 
         dmg = 80 if miku_used_this_turn else 30

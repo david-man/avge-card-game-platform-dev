@@ -13,7 +13,7 @@ class MichaelTu(AVGECharacterCard):
         self.atk_1_name = 'Synchro Summon'
         self.atk_2_name = 'Electric Cello'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         player = card.player
         deck = player.cardholders[Pile.DECK]
         hand = player.cardholders[Pile.HAND]
@@ -78,7 +78,7 @@ class MichaelTu(AVGECharacterCard):
         card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.ATK_1, MichaelTu)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
         from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
         from card_game.catalog.stadiums.RileyHall import RileyHall

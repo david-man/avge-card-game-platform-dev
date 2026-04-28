@@ -55,7 +55,6 @@ class CastReserve(AVGEItemCard):
 		for c in selected_three_raw:
 			assert isinstance(c, AVGEItemCard)
 			selected_three.append(c)
-		revealed_selected: list[AVGECard] = [c for c in selected_three]
 
 		chosen_for_shuffle_probe = [card.env.cache.get(card, key, missing, False) for key in opp_keys]
 		if chosen_for_shuffle_probe[0] is missing:

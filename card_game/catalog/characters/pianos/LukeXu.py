@@ -148,7 +148,7 @@ class LukeXu(AVGECharacterCard):
 
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         def hit() -> PacketType:
             active = card.player.opponent.get_active_card()
             packet: PacketType = []

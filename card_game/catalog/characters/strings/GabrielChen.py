@@ -102,7 +102,7 @@ class GabrielChen(AVGECharacterCard):
         self.add_listener(_GabrielThresholdReactor(self))
         return Response(ResponseType.CORE, Data())
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         r0 = card.env.cache.get(card, GabrielChen._COIN_KEY_0, None)
         r1 = card.env.cache.get(card, GabrielChen._COIN_KEY_1, None)
         if r0 is None or r1 is None:

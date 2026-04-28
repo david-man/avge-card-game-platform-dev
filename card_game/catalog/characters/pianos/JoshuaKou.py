@@ -69,7 +69,7 @@ class JoshuaKou(AVGECharacterCard):
         )
         return Response(ResponseType.CORE, Data())
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         _, used_last_turn_idx = card.env.check_history(
             card.player.get_last_turn(),
             PlayCharacterCard,

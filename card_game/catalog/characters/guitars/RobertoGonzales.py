@@ -50,7 +50,7 @@ class RobertoGonzales(AVGECharacterCard):
         self.atk_1_name = 'Guitar Shredding'
         self.atk_2_name = 'Distortion'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange, TransferCard, AVGEEnergyTransfer
 
         opponent = card.player.opponent
@@ -81,7 +81,7 @@ class RobertoGonzales(AVGECharacterCard):
         card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, RobertoGonzales)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange
         def gen() -> PacketType:
             packet: PacketType = []

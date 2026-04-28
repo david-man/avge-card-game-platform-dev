@@ -86,7 +86,7 @@ class BarronLee(AVGECharacterCard):
         self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.PASSIVE, BarronLee)))
         return self.generic_response(self, ActionTypes.PASSIVE)
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import InputEvent, AVGECardHPChange
         opponent = card.player.opponent
         # deal 20 damage to opponent active

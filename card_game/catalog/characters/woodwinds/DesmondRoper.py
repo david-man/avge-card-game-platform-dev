@@ -11,7 +11,7 @@ class DesmondRoper(AVGECharacterCard):
         self.atk_1_name = 'Circular Breathing'
         self.atk_2_name = 'Speedrun Central'
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         streak = 0
         turn = card.player.get_last_turn()
         while streak < 4 and turn >= 0:
@@ -52,7 +52,7 @@ class DesmondRoper(AVGECharacterCard):
         card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, DesmondRoper)))
         return self.generic_response(card, ActionTypes.ATK_1)
 
-    def atk_2(self, card: AVGECharacterCard) -> Response:
+    def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         _, played_to_active_idx = card.env.check_history(
             card.env.round_id,
             TransferCard,

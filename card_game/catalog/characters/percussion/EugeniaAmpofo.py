@@ -126,7 +126,7 @@ class EugeniaAmpofo(AVGECharacterCard):
         self.propose(AVGEPacket([generate_packet], AVGEEngineID(self, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)))
         return self.generic_response(self, ActionTypes.ACTIVATE_ABILITY)
 
-    def atk_1(self, card: AVGECharacterCard) -> Response:
+    def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         packet : PacketType = []
         def generate() -> PacketType:
             p: PacketType = []
