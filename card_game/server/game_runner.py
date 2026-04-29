@@ -33,6 +33,9 @@ from ..constants import (
     D6Data,
     Response,
     ResponseType,
+    Animation,
+    SoundEffect,
+    ParticleExplosion,
     AVGEPlayerAttribute,
     PlayerID,
     ActionTypes,
@@ -252,7 +255,9 @@ class FrontendGameBridge:
         self.env = env if isinstance(env, AVGEEnvironment) else build_environment_from_default_setups()
         self._max_forward_steps = 5000
         self._pending_packet_commands: list[str] = []
+        self._pending_packet_command_payloads: list[dict[str, Any] | None] = []
         self._outbound_command_queue: list[str] = []
+        self._outbound_command_payload_queue: list[dict[str, Any] | None] = []
         self._awaiting_frontend_ack = False
         self._awaiting_frontend_ack_command: str | None = None
         self._last_emitted_phase_token: str | None = None
@@ -385,13 +390,14 @@ class FrontendGameBridge:
         self._awaiting_frontend_ack_command = None
         return True
 
-    def _emit_next_command_if_ready(self) -> list[str]:
+    def _emit_next_command_if_ready(self) -> tuple[list[str], list[dict[str, Any] | None]]:
         if self._awaiting_frontend_ack:
-            return []
+            return [], []
         if not self._outbound_command_queue:
-            return []
+            return [], []
 
         next_command = self._outbound_command_queue.pop(0)
+        next_payload = self._outbound_command_payload_queue.pop(0) if self._outbound_command_payload_queue else None
         self._awaiting_frontend_ack = True
         self._awaiting_frontend_ack_command = next_command
         log_ack_trace_bridge(
@@ -399,7 +405,7 @@ class FrontendGameBridge:
             command=next_command,
             remaining_queue=len(self._outbound_command_queue),
         )
-        return [next_command]
+        return [next_command], [next_payload]
 
     def _append_phase_command_if_changed(self, commands: list[str], phase: GamePhase) -> None:
         phase_token = self._frontend_phase_token(phase)
@@ -474,6 +480,100 @@ class FrontendGameBridge:
             if token not in targets:
                 targets.append(token)
         return targets
+
+    def _animation_payload_from_response(self, response: Response) -> dict[str, Any] | None:
+        animation = getattr(response, 'accompanying_animation', None)
+        if not isinstance(animation, Animation):
+            return None
+
+        keyframes_payload: list[dict[str, Any]] = []
+        for keyframe in animation.keyframes:
+            if isinstance(keyframe, SoundEffect):
+                sound_key = keyframe.sound_key.strip() if isinstance(keyframe.sound_key, str) else ''
+                if sound_key:
+                    keyframes_payload.append({
+                        'key': sound_key,
+                        'kind': 'sound',
+                    })
+                continue
+
+            if isinstance(keyframe, ParticleExplosion):
+                particle_key = keyframe.particle_key.strip() if isinstance(keyframe.particle_key, str) else ''
+                if not particle_key:
+                    continue
+
+                payload: dict[str, Any] = {
+                    'key': particle_key,
+                    'kind': 'particles',
+                }
+                card_id = getattr(keyframe.card, 'unique_id', None)
+                if isinstance(card_id, str) and card_id.strip():
+                    payload['card_id'] = card_id.strip()
+                keyframes_payload.append(payload)
+                continue
+
+            # Defensive compatibility: accept Effect-like objects from any
+            # module identity so bridge output remains stable across reloads.
+            sound_key_like = getattr(keyframe, 'sound_key', None)
+            if isinstance(sound_key_like, str) and sound_key_like.strip():
+                keyframes_payload.append({
+                    'key': sound_key_like.strip(),
+                    'kind': 'sound',
+                })
+                continue
+
+            particle_key_like = getattr(keyframe, 'particle_key', None)
+            if isinstance(particle_key_like, str) and particle_key_like.strip():
+                payload = {
+                    'key': particle_key_like.strip(),
+                    'kind': 'particles',
+                }
+                card_like = getattr(keyframe, 'card', None)
+                card_id_like = getattr(card_like, 'unique_id', None)
+                if isinstance(card_id_like, str) and card_id_like.strip():
+                    payload['card_id'] = card_id_like.strip()
+                keyframes_payload.append(payload)
+                continue
+
+            # Legacy compatibility: tuple[(asset key), (animation kind)].
+            if isinstance(keyframe, tuple) and len(keyframe) == 2:
+                raw_key, raw_type = keyframe
+                if not isinstance(raw_key, str) or not raw_key.strip():
+                    continue
+
+                if isinstance(raw_type, str):
+                    animation_type = raw_type.strip().lower()
+                else:
+                    raw_type_value = getattr(raw_type, 'value', None)
+                    animation_type = raw_type_value.strip().lower() if isinstance(raw_type_value, str) else ''
+
+                if animation_type not in {'sound', 'particles'}:
+                    continue
+
+                keyframes_payload.append({
+                    'key': raw_key.strip(),
+                    'kind': animation_type,
+                })
+
+        if len(keyframes_payload) == 0:
+            return None
+
+        targets = self._notify_targets_from_players(animation.players)
+        target_token = 'both' if len(targets) != 1 else targets[0]
+        return {
+            'target': target_token,
+            'keyframes': keyframes_payload,
+        }
+
+    def _response_payloads_for_commands(self, response: Response, commands: list[str]) -> list[dict[str, Any] | None]:
+        payloads: list[dict[str, Any] | None] = [None] * len(commands)
+        if len(commands) == 0:
+            return payloads
+
+        animation_payload = self._animation_payload_from_response(response)
+        if animation_payload is not None:
+            payloads[0] = {'animation': animation_payload}
+        return payloads
 
     def _normalize_notify_timeout(self, timeout: int | None) -> int:
         if timeout is None:
@@ -567,6 +667,7 @@ class FrontendGameBridge:
     def _enqueue_frontend_event_work(self, event_name: str, payload: dict[str, Any]) -> None:
         commands, used_input = self._apply_frontend_event(event_name, payload)
         self._outbound_command_queue.extend(commands)
+        self._outbound_command_payload_queue.extend([None] * len(commands))
 
         if used_input is not None:
             self._pending_engine_input_args = used_input
@@ -574,7 +675,9 @@ class FrontendGameBridge:
         if not self._outbound_command_queue:
             drain_input = self._pending_engine_input_args
             self._pending_engine_input_args = None
-            self._outbound_command_queue.extend(self._drain_engine(input_args=drain_input, stop_after_command_batch=True))
+            drained_commands, drained_payloads = self._drain_engine(input_args=drain_input, stop_after_command_batch=True)
+            self._outbound_command_queue.extend(drained_commands)
+            self._outbound_command_payload_queue.extend(drained_payloads)
 
     def _clear_pending_input_query_state(self) -> None:
         self._pending_input_query_event = None
@@ -621,6 +724,7 @@ class FrontendGameBridge:
 
         # Intentional resend path for reconnect/resync flows.
         self._outbound_command_queue.insert(0, normalized_pending_command)
+        self._outbound_command_payload_queue.insert(0, None)
         log_ack_trace_bridge(
             'pending_input_query_resent',
             command=normalized_pending_command,
@@ -657,9 +761,10 @@ class FrontendGameBridge:
         # Perform one deterministic drain pass per ACK cycle.
         drain_input = self._pending_engine_input_args
         self._pending_engine_input_args = None
-        drained = self._drain_engine(input_args=drain_input, stop_after_command_batch=True)
-        if drained:
-            self._outbound_command_queue.extend(drained)
+        drained_commands, drained_payloads = self._drain_engine(input_args=drain_input, stop_after_command_batch=True)
+        if drained_commands:
+            self._outbound_command_queue.extend(drained_commands)
+            self._outbound_command_payload_queue.extend(drained_payloads)
             return
 
         log_ack_trace_bridge(
@@ -686,24 +791,29 @@ class FrontendGameBridge:
             if event_name == 'terminal_log':
                 if self._accept_frontend_ack(payload):
                     self._pump_outbound_until_next_command()
+                    commands, command_payloads = self._emit_next_command_if_ready()
 
                     return {
-                        'commands': self._emit_next_command_if_ready(),
+                        'commands': commands,
+                        'command_payloads': command_payloads,
                         'setup_payload': environment_to_setup_payload(self.env),
                         'force_environment_sync': self._consume_force_environment_sync_flag(),
                     }
 
                 return {
                     'commands': [],
+                    'command_payloads': [],
                     'setup_payload': environment_to_setup_payload(self.env),
                     'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
             if event_name in {'setup_loaded', 'resync_requested'}:
                 self._queue_pending_input_query_resend()
+                commands, command_payloads = self._emit_next_command_if_ready()
 
                 return {
-                    'commands': self._emit_next_command_if_ready(),
+                    'commands': commands,
+                    'command_payloads': command_payloads,
                     'setup_payload': environment_to_setup_payload(self.env),
                     'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
@@ -711,6 +821,7 @@ class FrontendGameBridge:
             if event_name == 'surrender_timeout':
                 return {
                     'commands': [],
+                    'command_payloads': [],
                     'setup_payload': environment_to_setup_payload(self.env),
                     'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
@@ -728,14 +839,17 @@ class FrontendGameBridge:
 
                 return {
                     'commands': [],
+                    'command_payloads': [],
                     'setup_payload': environment_to_setup_payload(self.env),
                     'force_environment_sync': self._consume_force_environment_sync_flag(),
                 }
 
             self._enqueue_frontend_event_work(event_name, payload)
+            commands, command_payloads = self._emit_next_command_if_ready()
 
             return {
-                'commands': self._emit_next_command_if_ready(),
+                'commands': commands,
+                'command_payloads': command_payloads,
                 'setup_payload': environment_to_setup_payload(self.env),
                 'force_environment_sync': self._consume_force_environment_sync_flag(),
             }
@@ -895,8 +1009,13 @@ class FrontendGameBridge:
 
         return commands, None
 
-    def _drain_engine(self, input_args: dict[str, Any] | None, stop_after_command_batch: bool = False) -> list[str]:
+    def _drain_engine(
+        self,
+        input_args: dict[str, Any] | None,
+        stop_after_command_batch: bool = False,
+    ) -> tuple[list[str], list[dict[str, Any] | None]]:
         commands_to_emit: list[str] = []
+        payloads_to_emit: list[dict[str, Any] | None] = []
         steps = 0
         next_args = input_args
 
@@ -919,6 +1038,7 @@ class FrontendGameBridge:
                 next_args = None
 
             response_commands = self._commands_from_response(response)
+            response_payloads = self._response_payloads_for_commands(response, response_commands)
 
             # In incremental ACK-gated mode, emit core state-mutation commands
             # immediately so frontend can apply the visual change before any
@@ -929,14 +1049,18 @@ class FrontendGameBridge:
             ):
                 if self._pending_packet_commands:
                     commands_to_emit.extend(self._pending_packet_commands)
+                    payloads_to_emit.extend(self._pending_packet_command_payloads)
                     self._pending_packet_commands = []
+                    self._pending_packet_command_payloads = []
                 commands_to_emit.extend(response_commands)
+                payloads_to_emit.extend(response_payloads)
                 break
 
             # Keep command updates packet-scoped until packet completion/interruption.
             if response.response_type == ResponseType.NEXT_PACKET:
                 # New packet boundary; clear stale buffer defensively.
                 self._pending_packet_commands = []
+                self._pending_packet_command_payloads = []
 
             should_buffer_response_commands = response.response_type not in {
                 ResponseType.SKIP,
@@ -945,6 +1069,7 @@ class FrontendGameBridge:
 
             if response_commands and should_buffer_response_commands:
                 self._pending_packet_commands.extend(response_commands)
+                self._pending_packet_command_payloads.extend(response_payloads)
 
             if response.response_type in {
                 ResponseType.FINISHED_PACKET,
@@ -953,7 +1078,9 @@ class FrontendGameBridge:
             }:
                 if self._pending_packet_commands:
                     commands_to_emit.extend(self._pending_packet_commands)
+                    payloads_to_emit.extend(self._pending_packet_command_payloads)
                     self._pending_packet_commands = []
+                    self._pending_packet_command_payloads = []
                     if stop_after_command_batch:
                         break
 
@@ -961,8 +1088,10 @@ class FrontendGameBridge:
                 # Packet rolled back; discard accumulated mid-packet state commands
                 # and emit SKIP rollback/sync commands immediately.
                 self._pending_packet_commands = []
+                self._pending_packet_command_payloads = []
                 if response_commands:
                     commands_to_emit.extend(response_commands)
+                    payloads_to_emit.extend(response_payloads)
                     if stop_after_command_batch:
                         break
 
@@ -973,17 +1102,21 @@ class FrontendGameBridge:
                 # an immediate query boundary.
                 if self._pending_packet_commands:
                     commands_to_emit.extend(self._pending_packet_commands)
+                    payloads_to_emit.extend(self._pending_packet_command_payloads)
                     self._pending_packet_commands = []
+                    self._pending_packet_command_payloads = []
                     if stop_after_command_batch:
                         # Do not drop the query command when an input boundary
                         # follows a packet command in the same drain pass.
                         if response_commands:
                             commands_to_emit.extend(response_commands)
+                            payloads_to_emit.extend(response_payloads)
                         break
 
                 # Query prompts should be sent immediately, but packet state should remain buffered.
                 if response_commands:
                     commands_to_emit.extend(response_commands)
+                    payloads_to_emit.extend(response_payloads)
                     if stop_after_command_batch:
                         break
 
@@ -995,11 +1128,14 @@ class FrontendGameBridge:
                 # HP change) so frontend can animate them before winner overlay.
                 if self._pending_packet_commands:
                     commands_to_emit.extend(self._pending_packet_commands)
+                    payloads_to_emit.extend(self._pending_packet_command_payloads)
                     self._pending_packet_commands = []
+                    self._pending_packet_command_payloads = []
 
                 winner_command = self._winner_command_from_environment()
                 if winner_command is not None:
                     commands_to_emit.append(winner_command)
+                    payloads_to_emit.append(None)
                 break
 
             if response.response_type == ResponseType.NO_MORE_EVENTS:
@@ -1015,7 +1151,9 @@ class FrontendGameBridge:
         # so frontend is not starved waiting for any update.
         if steps >= self._max_forward_steps and self._pending_packet_commands:
             commands_to_emit.extend(self._pending_packet_commands)
+            payloads_to_emit.extend(self._pending_packet_command_payloads)
             self._pending_packet_commands = []
+            self._pending_packet_command_payloads = []
 
         # In ACK-gated incremental mode, we may emit one command batch and return
         # before the engine fully consumes query/input args. Persist remaining args
@@ -1023,7 +1161,7 @@ class FrontendGameBridge:
         if next_args is not None:
             self._pending_engine_input_args = next_args
 
-        return commands_to_emit
+        return commands_to_emit, payloads_to_emit
 
     def _auto_advance_when_idle(self) -> bool:
         # Recovery path: if engine reports idle while still in transitional/no-input
@@ -1215,8 +1353,10 @@ class FrontendGameBridge:
             if move_target:
                 same_holder_transfer = source.pile_from == source.pile_to
                 pile_to_type = getattr(source.pile_to, 'pile_type', None)
-                if same_holder_transfer and pile_to_type == Pile.DECK:
-                    commands.append(f'shuffle-animation {self._normalize_zone_id(move_target)}')
+                if same_holder_transfer and pile_to_type in {Pile.DECK, Pile.DISCARD}:
+                    commands.append(
+                        f'shuffle-single-card {source.card.unique_id} {self._normalize_zone_id(move_target)}'
+                    )
                 else:
                     commands.append(f'mv {source.card.unique_id} {move_target}')
             return _return_core_commands()

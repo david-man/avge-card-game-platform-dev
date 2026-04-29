@@ -4,7 +4,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from card_game.constants import Data, Notify, PlayerID, Response, ResponseType, RevealCards
+from card_game.constants import (
+    Animation,
+    Data,
+    Notify,
+    ParticleExplosion,
+    PlayerID,
+    Response,
+    ResponseType,
+    RevealCards,
+    SoundEffect,
+)
 from card_game.internal_events import PlayCharacterCard, PlayNonCharacterCard
 from card_game.server.game_runner import FrontendGameBridge
 from card_game.server.scanner_commands import normalize_scanner_command
@@ -21,6 +31,12 @@ def _make_bridge() -> FrontendGameBridge:
     bridge._pending_input_query_event = None
     bridge._pending_input_query_command = None
     bridge._last_emitted_phase_token = None
+    bridge._pending_packet_commands = []
+    bridge._pending_packet_command_payloads = []
+    bridge._outbound_command_queue = []
+    bridge._outbound_command_payload_queue = []
+    bridge._awaiting_frontend_ack = False
+    bridge._awaiting_frontend_ack_command = None
     return bridge
 
 
@@ -50,6 +66,44 @@ def test_accept_plain_data_response_emits_no_command() -> None:
     commands = bridge._commands_from_response(response)
 
     assert commands == []
+
+
+def test_response_accompanying_animation_serializes_for_first_command_payload() -> None:
+    bridge = _make_bridge()
+    response = Response(
+        ResponseType.ACCEPT,
+        Notify('ready check', [PlayerID.P1], 4),
+        accompanying_animation=Animation(
+            keyframes=[
+                SoundEffect('reveal.mp3'),
+                ParticleExplosion(SimpleNamespace(unique_id='card-7'), 'logo.png'),
+            ],
+            players=[PlayerID.P1],
+        ),
+    )
+
+    commands = bridge._commands_from_response(response)
+    payloads = bridge._response_payloads_for_commands(response, commands)
+
+    assert commands == ['notify player-1 ready_check 4']
+    assert payloads == [
+        {
+            'animation': {
+                'target': 'player-1',
+                'keyframes': [
+                    {
+                        'key': 'reveal.mp3',
+                        'kind': 'sound',
+                    },
+                    {
+                        'key': 'logo.png',
+                        'kind': 'particles',
+                        'card_id': 'card-7',
+                    },
+                ],
+            },
+        },
+    ]
 
 
 def test_core_play_non_character_reveal_cards_emits_single_reveal_with_message() -> None:

@@ -166,7 +166,7 @@ class AVGEItemCard(AVGECard):
     def generic_response(self, caller : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
         if(caller == self):
             return Response(ResponseType.CORE, RevealCards(
-                f"{str(self)} was used!", all_players, default_timeout, [self]
+                f"{self.player.username} used {str(self)}!", all_players, default_timeout, [self]
             ))
         else:
             return Response(ResponseType.CORE, RevealCards(

@@ -29,6 +29,8 @@ class CastReserve(AVGEItemCard):
 		def _check_player_choice(result):
 			if len(result) != 3:
 				return False
+			if(all(s is None for s in result)):
+				return True
 			if not all(isinstance(s, AVGEItemCard) for s in result):
 				return False
 			if not all(s in deck for s in result):
@@ -45,7 +47,7 @@ class CastReserve(AVGEItemCard):
 							_check_player_choice,
 							ActionTypes.NONCHAR,
 							card,
-							CardSelectionQuery('CastReserve: Choose 3 unique item cards from your deck.', deck_items, list(deck), True, False)
+							CardSelectionQuery('Cast Reserve: Either choose 3 unique item cards from your deck or choose none at all.', deck_items, list(deck), True, False)
 						)
 					]),
 			)
@@ -53,6 +55,8 @@ class CastReserve(AVGEItemCard):
 		selected_three_raw = [card.env.cache.get(card, key, None, False) for key in player_keys]
 		selected_three: list[AVGEItemCard] = []
 		for c in selected_three_raw:
+			if(c is None):
+				return self.generic_response(card)
 			assert isinstance(c, AVGEItemCard)
 			selected_three.append(c)
 

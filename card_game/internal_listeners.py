@@ -88,7 +88,8 @@ class AVGEWeaknessModifier(AVGEModifier):
         event = self.attached_event
         assert(isinstance(event, AVGECardHPChange))
         assert(not event.caller is None)
-        if(type_weaknesses[event.target_card.card_type]) == event.change_type and isinstance(event.caller, AVGECharacterCard):
+        # if(type_weaknesses[event.target_card.card_type]) == event.change_type and isinstance(event.caller, AVGECharacterCard):
+        if isinstance(event.caller, AVGECharacterCard):
             coin_toss = event.caller.env.cache.get(event.caller, AVGEWeaknessModifier._CRIT_KEY,
                                                         None, True)
             if coin_toss is None:
@@ -103,8 +104,9 @@ class AVGEWeaknessModifier(AVGEModifier):
                                         CoinflipData("Critical! Flip a coin and get heads to double the damage!")
                                     )]
                                 ))
-            if(coin_toss == 1):
+            if(coin_toss == 1 or coin_toss == 0):
                 event.modify_magnitude(event.magnitude)
+                event.is_crit = True
         return Response(ResponseType.ACCEPT, Data())
 
 class AVGEPlayerAttributeChangePostChecker(AVGEPostcheck):

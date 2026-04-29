@@ -1,6 +1,6 @@
 from __future__ import annotations
 from enum import Enum, StrEnum
-from typing import Any, TYPE_CHECKING, Callable, TypeVar, Sequence
+from typing import Any, TYPE_CHECKING, Callable, TypeVar, Sequence, Tuple
 from dataclasses import dataclass
 if TYPE_CHECKING:
     from card_game.engine.event import Event
@@ -97,14 +97,30 @@ class ResponseType(StrEnum):
     NO_MORE_EVENTS = "NO_MORE_EVENTS"
     NEXT_EVENT = "NEXT_EVENT"
     NEXT_PACKET = 'NEXT_PACKET'
+@dataclass
+class Effect():
+    pass
+@dataclass
+class SoundEffect(Effect):
+    sound_key : str
+@dataclass
+class ParticleExplosion(Effect):
+    card : AVGECard
+    particle_key : str
+@dataclass
+class Animation():
+    keyframes : list[Effect]#list of parallel effects
+    players : list[PlayerID]
 
 EV = TypeVar('EV', bound='Event')
 class Response():
     def __init__(self, 
                  response_type : ResponseType, 
-                 data : Data):
+                 data : Data,
+                 accompanying_animation : Animation | None = None):
         self.response_type = response_type
         self.data = data
+        self.accompanying_animation = accompanying_animation
 
 @dataclass
 class AVGEEngineID():

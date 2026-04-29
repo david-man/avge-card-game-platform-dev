@@ -54,12 +54,14 @@ def _make_bridge_with_cards(*cards: _FakeCard) -> FrontendGameBridge:
     bridge._pending_input_query_command = None
     bridge._last_emitted_phase_token = None
     bridge._outbound_command_queue = []
+    bridge._outbound_command_payload_queue = []
     bridge._awaiting_frontend_ack = False
     bridge._awaiting_frontend_ack_command = None
     bridge._pending_frontend_events = []
     bridge._pending_ordering_listener_by_token = None
     bridge._last_emitted_ordering_query_signature = None
     bridge._pending_packet_commands = []
+    bridge._pending_packet_command_payloads = []
     bridge._pending_engine_input_args = None
     bridge._max_forward_steps = 5000
     return bridge
@@ -222,7 +224,7 @@ def test_build_input_command_for_multi_coin_and_d6_queries() -> None:
     assert d6_command == 'input d6 player-1 Roll_now [4,2]'
 
 
-def test_commands_from_response_transfer_same_deck_emits_shuffle_animation() -> None:
+def test_commands_from_response_transfer_same_deck_emits_single_card_shuffle_animation() -> None:
     card_a = _FakeCard('card-a')
     bridge = _make_bridge_with_cards(card_a)
     bridge.env.stadium_cardholder = object()
@@ -243,7 +245,7 @@ def test_commands_from_response_transfer_same_deck_emits_shuffle_animation() -> 
 
     commands = bridge._commands_from_response(response)
 
-    assert commands == ['shuffle-animation p1-deck']
+    assert commands == ['shuffle-single-card card-a p1-deck']
 
 
 def test_parse_frontend_input_result_for_multi_coinflip_values() -> None:

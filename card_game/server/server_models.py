@@ -13,6 +13,7 @@ class PendingCommandAck:
     command_id: int
     command: str
     required_slots: set[PlayerSlot]
+    response_payload: dict[str, Any] | None = None
     acked_slots: set[PlayerSlot] = field(default_factory=set)
     delivered_slots: set[PlayerSlot] = field(default_factory=set)
 

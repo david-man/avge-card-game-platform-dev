@@ -614,16 +614,34 @@ def _emit_pending_packets_to_connected_clients(exclude_slots: set[PlayerSlot] | 
         log_protocol_send(packets, slot)
 
 
-def _extract_bridge_commands(bridge_result: dict[str, Any]) -> list[str]:
+def _extract_bridge_commands(bridge_result: dict[str, Any]) -> list[dict[str, Any]]:
     global entity_setup_payload
     next_setup = bridge_result.get('setup_payload')
     if isinstance(next_setup, dict):
         entity_setup_payload = next_setup
 
-    return [
-        command for command in bridge_result.get('commands', [])
-        if isinstance(command, str) and command.strip()
-    ]
+    raw_commands = bridge_result.get('commands', [])
+    raw_payloads = bridge_result.get('command_payloads', [])
+    payloads = raw_payloads if isinstance(raw_payloads, list) else []
+
+    extracted: list[dict[str, Any]] = []
+    for index, command in enumerate(raw_commands):
+        if isinstance(command, dict):
+            command_text = command.get('command')
+            response_payload = command.get('response_payload')
+        else:
+            command_text = command
+            response_payload = payloads[index] if index < len(payloads) else None
+
+        if not isinstance(command_text, str) or not command_text.strip():
+            continue
+
+        extracted.append({
+            'command': command_text.strip(),
+            'response_payload': response_payload if isinstance(response_payload, dict) else None,
+        })
+
+    return extracted
 
 
 def _bridge_requests_force_environment_sync(bridge_result: dict[str, Any]) -> bool:
@@ -774,27 +792,48 @@ def _issue_environment_resync_packet_for_source(
     return _issue_backend_packet('environment', body, is_response=True)
 
 
-def _enqueue_bridge_commands(commands: list[str], source_slot: str | None) -> None:
+def _enqueue_bridge_commands(commands: list[str] | list[dict[str, Any]], source_slot: str | None) -> None:
     global next_command_id, winner_announced, winner_main_menu_ack_slots
-    expanded_commands: list[str] = []
+    expanded_commands: list[dict[str, Any]] = []
     for command in commands:
-        command_text = command.strip()
-        if not command_text:
+        command_text: str | None = None
+        response_payload: dict[str, Any] | None = None
+        if isinstance(command, str):
+            command_text = command.strip()
+        elif isinstance(command, dict):
+            raw_command = command.get('command')
+            if isinstance(raw_command, str):
+                command_text = raw_command.strip()
+            raw_payload = command.get('response_payload')
+            if isinstance(raw_payload, dict):
+                response_payload = raw_payload
+
+        if not isinstance(command_text, str) or not command_text:
             continue
 
-        expanded_commands.append(command_text)
+        expanded_commands.append({
+            'command': command_text,
+            'response_payload': response_payload,
+        })
 
-    if any(command.strip().lower().startswith('winner ') for command in expanded_commands):
+    if any(
+        isinstance(entry.get('command'), str)
+        and str(entry['command']).strip().lower().startswith('winner ')
+        for entry in expanded_commands
+    ):
         winner_announced = True
         winner_main_menu_ack_slots = set()
         _mark_room_finished_once('winner_declared')
 
-    for command in expanded_commands:
+    for entry in expanded_commands:
+        command = str(entry.get('command', '')).strip()
+        response_payload = entry.get('response_payload') if isinstance(entry.get('response_payload'), dict) else None
         pending_command_acks.append(
             PendingCommandAck(
                 command_id=next_command_id,
                 command=command,
                 required_slots=_classify_required_ack_slots(command, source_slot),
+                response_payload=response_payload,
             )
         )
         next_command_id += 1

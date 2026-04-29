@@ -31,6 +31,7 @@ class AVGECardHPChange(AVGEEvent):
         self.modifier_type = modifier_type
         self.old_amt = None
         self.final_change = None
+        self.is_crit = False
     def modify_magnitude(self, change : int):
         #please use this function when modifying magnitudes, thanks!
         if(self.modifier_type != AVGEAttributeModifier.SET_STATE):
@@ -66,9 +67,17 @@ class AVGECardHPChange(AVGEEvent):
                                                 self.caller,
                                                 None)]
             )
+        animation = None
+        if(self.modifier_type == AVGEAttributeModifier.ADDITIVE and self.magnitude > 0):
+            animation = Animation(
+                [SoundEffect("sparkle.mp3"), ParticleExplosion(self.target_card, "regeneration.png")], all_players)
+        elif(self.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE and self.magnitude > 0):
+            animation = Animation([SoundEffect("punch.mp3")], all_players)
+            if(self.is_crit):
+                animation = Animation([SoundEffect("heavy_punch.mp3"), ParticleExplosion(self.target_card, "crit.png")], all_players)
         if(self.core_notif is None):
-            return Response(ResponseType.CORE, Data())
-        return Response(ResponseType.CORE, self.core_notif)
+            return Response(ResponseType.CORE, Data(), animation)
+        return Response(ResponseType.CORE, self.core_notif, animation)
     
     def invert_core(self, args : dict | None = None):
         assert(not self.old_amt is None)
@@ -243,9 +252,10 @@ class AVGEEnergyTransfer(AVGEEvent):
     def core(self, args = None) -> Response:
         self.token.detach()
         self.token.attach(self.target)
+        animation = Animation([SoundEffect("play_chip.ogg")], all_players)
         if(self.core_notif is None):
-            return Response(ResponseType.CORE, Data())
-        return Response(ResponseType.CORE, self.core_notif)
+            return Response(ResponseType.CORE, Data(), animation)
+        return Response(ResponseType.CORE, self.core_notif, animation)
     def invert_core(self, args = None):
         self.token.detach()
         self.token.attach(self.source)
@@ -532,9 +542,13 @@ class TransferCard(AVGEEvent):
             self.temp_cache[self._POST_TRANSFER] = True
             if(len(to_dos) > 0):
                 self.card.env.extend_event(to_dos)
+
+        animation = Animation([SoundEffect("card_shove.ogg")], all_players)
+        if(self.catalyst_action == ActionTypes.PLAYER_CHOICE):
+            animation = Animation([SoundEffect("card_slide.ogg")], all_players)
         if(self.core_notif is None):
-            return Response(ResponseType.CORE, Data())
-        return Response(ResponseType.CORE, self.core_notif)
+            return Response(ResponseType.CORE, Data(), animation)
+        return Response(ResponseType.CORE, self.core_notif, animation)
     
     def invert_core(self, args : dict | None = None):
         if(isinstance(self.card, AVGEToolCard)):
@@ -580,9 +594,10 @@ class ReorderCardholder(AVGEEvent):
         self.original_order = [k for k in self.cardholder.get_order()]#copies order
     def core(self, args : dict | None = None) -> Response:
         self.cardholder.reorder(self.new_order)
+        animation = Animation([SoundEffect("shuffle_deck.wav")], all_players)
         if(self.core_notif is None):
-            return Response(ResponseType.CORE, Data())
-        return Response(ResponseType.CORE, self.core_notif)
+            return Response(ResponseType.CORE, Data(), animation)
+        return Response(ResponseType.CORE, self.core_notif, animation)
     def invert_core(self, args : dict | None = None):
         self.cardholder.reorder(self.original_order)
     def generate_internal_listeners(self):

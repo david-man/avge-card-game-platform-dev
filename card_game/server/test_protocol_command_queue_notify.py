@@ -60,10 +60,41 @@ def test_reveal_both_targets_both_connected_slots() -> None:
     assert required == {'p1', 'p2'}
 
 
+def test_sound_single_player_targets_single_slot() -> None:
+    transport_state = MultiplayerTransportState()
+    transport_state.sid_by_slot['p1'] = 'sid-p1'
+    transport_state.sid_by_slot['p2'] = 'sid-p2'
+
+    required = classify_required_ack_slots(
+        'sound player-2 reveal',
+        source_slot=None,
+        transport_state=transport_state,
+        normalize_client_slot=_normalize_client_slot,
+    )
+
+    assert required == {'p2'}
+
+
+def test_sound_both_targets_both_connected_slots() -> None:
+    transport_state = MultiplayerTransportState()
+    transport_state.sid_by_slot['p1'] = 'sid-p1'
+    transport_state.sid_by_slot['p2'] = 'sid-p2'
+
+    required = classify_required_ack_slots(
+        'sound both reveal',
+        source_slot=None,
+        transport_state=transport_state,
+        normalize_client_slot=_normalize_client_slot,
+    )
+
+    assert required == {'p1', 'p2'}
+
+
 def test_classify_command_response_category_matches_frontend_contract() -> None:
     assert classify_command_response_category('input selection player-1 choose_one [A],[A],1 false false') == 'query_input'
     assert classify_command_response_category('notify both hello_world -1') == 'query_notify'
     assert classify_command_response_category('reveal player-1 [card-1] card_revealed 5') == 'query_notify'
+    assert classify_command_response_category('sound player-2 reveal') == 'query_notify'
     assert classify_command_response_category('lock-input p2') == 'lock_state'
     assert classify_command_response_category('unlock_input p1') == 'lock_state'
     assert classify_command_response_category('winner player-1') == 'winner'
@@ -107,3 +138,48 @@ def test_build_command_packet_includes_response_category() -> None:
     assert body.get('command_id') == 9
     assert body.get('target_slots') == ['p1', 'p2']
     assert body.get('response_category') == 'query_notify'
+
+
+def test_build_command_packet_includes_response_payload_when_present() -> None:
+    pending = PendingCommandAck(
+        command_id=11,
+        command='hp card-1 40 50',
+        required_slots={'p1', 'p2'},
+        response_payload={
+            'animation': {
+                'target': 'both',
+                'keyframes': [['reveal', 'sound']],
+            },
+        },
+    )
+
+    def issue_backend_packet(packet_type: str, body: dict[str, object], is_response: bool) -> dict[str, object]:
+        return {
+            'PacketType': packet_type,
+            'Body': body,
+            'IsResponse': is_response,
+        }
+
+    def issue_backend_packet_for_session(_session, packet_type: str, body: dict[str, object], is_response: bool) -> dict[str, object]:
+        return {
+            'PacketType': packet_type,
+            'Body': body,
+            'IsResponse': is_response,
+        }
+
+    packet = build_command_packet(
+        pending,
+        is_response=True,
+        session=None,
+        issue_backend_packet=issue_backend_packet,
+        issue_backend_packet_for_session=issue_backend_packet_for_session,
+    )
+
+    body = packet['Body']
+    assert isinstance(body, dict)
+    assert body.get('response_payload') == {
+        'animation': {
+            'target': 'both',
+            'keyframes': [['reveal', 'sound']],
+        },
+    }

@@ -25,7 +25,7 @@ def classify_command_response_category(command: str) -> BackendCommandResponseCa
     if action == 'input':
         return 'query_input'
 
-    if action in {'notify', 'reveal'}:
+    if action in {'notify', 'reveal', 'sound'}:
         return 'query_notify'
 
     if action == 'winner':
@@ -70,7 +70,7 @@ def classify_required_ack_slots(
         if transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None
     }
 
-    if action in {'notify', 'reveal'} and len(parts) >= 2:
+    if action in {'notify', 'reveal', 'sound'} and len(parts) >= 2:
         broadcast_target = parts[1].strip().lower()
         if broadcast_target in {'both', 'all'}:
             return connected_slots if connected_slots else {'p1', 'p2'}
@@ -80,7 +80,7 @@ def classify_required_ack_slots(
         if targeted_slot is not None:
             return {targeted_slot}
 
-    if action in {'notify', 'reveal'} and len(parts) >= 2:
+    if action in {'notify', 'reveal', 'sound'} and len(parts) >= 2:
         targeted_slot = normalize_target_slot(parts[1])
     elif action == 'input' and len(parts) >= 3:
         targeted_slot = normalize_target_slot(parts[2])
@@ -111,6 +111,8 @@ def build_command_packet(
         'target_slots': sorted(pending.required_slots),
         'response_category': classify_command_response_category(pending.command),
     }
+    if isinstance(pending.response_payload, dict):
+        body['response_payload'] = pending.response_payload
     if session is not None:
         return issue_backend_packet_for_session(session, 'command', body, is_response)
     return issue_backend_packet('command', body, is_response)
