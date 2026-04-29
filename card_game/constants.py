@@ -15,7 +15,7 @@ max_bench_size = 3
 initial_tokens = 100
 kos_to_win = 3
 
-per_turn_token_add = 100
+per_turn_token_add = 1
 per_turn_supporter = 1
 per_turn_swaps = 1
 per_turn_atks = 1
