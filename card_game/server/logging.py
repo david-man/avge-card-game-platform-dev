@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from card_game.server.server_types import JsonObject, CommandPayload
 
 
 def _format_value(value: Any) -> str:
@@ -9,7 +10,7 @@ def _format_value(value: Any) -> str:
     return str(value)
 
 
-def _log_with_payload(prefix: str, payload: dict[str, Any]) -> None:
+def _log_with_payload(prefix: str, payload: JsonObject) -> None:
     formatted_fields = ' '.join(
         f'{key}={_format_value(value)}' for key, value in payload.items()
     )
@@ -44,7 +45,7 @@ def log_protocol_ack_mismatch(
     })
 
 
-def log_protocol_send(packets: list[dict[str, Any]], client_slot: str | None = None) -> None:
+def log_protocol_send(packets: list[JsonObject], client_slot: str | None = None) -> None:
     _log_with_payload('[PROTOCOL][SEND]', {
         'count': len(packets),
         'packets': [(packet.get('PacketType'), packet.get('SEQ')) for packet in packets],
@@ -117,11 +118,11 @@ def log_energy_move(
     reason: str,
     running: str,
     game_phase: str,
-    payload: dict[str, Any],
+    payload: JsonObject,
     attach_to: str | None = None,
     token: str | None = None,
 ) -> None:
-    fields: dict[str, Any] = {
+    fields: JsonObject = {
         'status': status,
         'reason': reason,
         'running': running,

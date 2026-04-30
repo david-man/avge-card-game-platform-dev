@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from threading import RLock
 from time import monotonic
 from typing import Any, Callable
+from card_game.server.server_types import JsonObject, CommandPayload
 from uuid import uuid4
 import json
 import os
@@ -24,16 +25,16 @@ from ..avge_abstracts.AVGECards import AVGEToolCard
 from ..catalog import *
 
 try:
-    from .room_worker import RoomWorker
-    from .room_worker import RoomWorkerSnapshot
+    from .workers.room_worker import RoomWorker
+    from .workers.room_worker import RoomWorkerSnapshot
 except ImportError:  # pragma: no cover - direct script execution fallback
-    from room_worker import RoomWorker  # type: ignore
-    from room_worker import RoomWorkerSnapshot  # type: ignore
+    from card_game.server.workers.room_worker import RoomWorker  # type: ignore
+    from card_game.server.workers.room_worker import RoomWorkerSnapshot  # type: ignore
 
 try:
-    from .router_storage import RouterStorage
+    from .storage.router_storage import RouterStorage
 except ImportError:  # pragma: no cover - direct script execution fallback
-    from router_storage import RouterStorage  # type: ignore
+    from card_game.server.storage.router_storage import RouterStorage  # type: ignore
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -198,7 +199,7 @@ class MatchmakingRouter:
         with self._lock:
             self._superseded_notifier = notifier
 
-    def register_auth_socket(self, session_id: str, socket_sid: str) -> tuple[bool, dict[str, Any]]:
+    def register_auth_socket(self, session_id: str, socket_sid: str) -> tuple[bool, JsonObject]:
         with self._lock:
             session = self._ensure_session_locked(session_id)
             if session is None:
@@ -415,7 +416,7 @@ class MatchmakingRouter:
 
             return session
 
-    def session_error_payload(self, session_id: str | None) -> tuple[dict[str, Any], int]:
+    def session_error_payload(self, session_id: str | None) -> tuple[JsonObject, int]:
         if not isinstance(session_id, str) or not session_id.strip():
             return {"ok": False, "error": "session_id is required.", "error_code": "session_id_required"}, 400
 
@@ -429,7 +430,7 @@ class MatchmakingRouter:
 
         return {"ok": False, "error": "Unknown session.", "error_code": "unknown_session"}, 401
 
-    def enqueue(self, session_id: str) -> dict[str, Any]:
+    def enqueue(self, session_id: str) -> JsonObject:
         with self._lock:
             now = monotonic()
             self._cleanup_expired_rooms_locked(now)
@@ -507,7 +508,7 @@ class MatchmakingRouter:
                 "status": "waiting",
             }
 
-    def dequeue(self, session_id: str) -> dict[str, Any]:
+    def dequeue(self, session_id: str) -> JsonObject:
         with self._lock:
             before = len(self._state.queue)
             self._state.queue = [entry for entry in self._state.queue if entry.session_id != session_id]
@@ -517,7 +518,7 @@ class MatchmakingRouter:
                 "removed": removed,
             }
 
-    def status(self, session_id: str) -> dict[str, Any]:
+    def status(self, session_id: str) -> JsonObject:
         with self._lock:
             now = monotonic()
             self._cleanup_expired_rooms_locked(now)
@@ -547,7 +548,7 @@ class MatchmakingRouter:
                 "queue_position": position,
             }
 
-    def rejoin_room(self, session_id: str, room_id: str | None = None) -> dict[str, Any]:
+    def rejoin_room(self, session_id: str, room_id: str | None = None) -> JsonObject:
         with self._lock:
             now = monotonic()
             self._cleanup_expired_rooms_locked(now)
@@ -582,7 +583,7 @@ class MatchmakingRouter:
                 "room": self._serialize_room_locked(room),
             }
 
-    def mark_room_finished(self, room_id: str, reason: str) -> dict[str, Any]:
+    def mark_room_finished(self, room_id: str, reason: str) -> JsonObject:
         with self._lock:
             room = self._state.rooms_by_id.get(room_id)
             if room is None:
@@ -955,7 +956,7 @@ class MatchmakingRouter:
             for session_id, sid_list in superseded_socket_sids:
                 self._superseded_notifier(session_id, sid_list)
 
-    def _serialize_room_locked(self, room: RoomRecord) -> dict[str, Any]:
+    def _serialize_room_locked(self, room: RoomRecord) -> JsonObject:
         worker_snapshot: RoomWorkerSnapshot | None = None
         if room.worker is not None:
             worker_snapshot = room.worker.snapshot()
@@ -994,7 +995,7 @@ def _cookie_session_id() -> str | None:
     return None
 
 
-def _payload_session_id(payload: dict[str, Any]) -> str | None:
+def _payload_session_id(payload: JsonObject) -> str | None:
     value = payload.get("session_id")
     if isinstance(value, str) and value.strip():
         return value.strip()
@@ -1008,7 +1009,7 @@ def _query_session_id() -> str | None:
     return None
 
 
-def _payload_username(payload: dict[str, Any]) -> str | None:
+def _payload_username(payload: JsonObject) -> str | None:
     value = payload.get("username")
     if not isinstance(value, str):
         return None
@@ -1042,7 +1043,7 @@ def _notify_superseded_session(session_id: str, socket_sids: list[str]) -> None:
 router.set_superseded_notifier(_notify_superseded_session)
 
 
-def _session_response_payload(session: SessionIdentity) -> dict[str, Any]:
+def _session_response_payload(session: SessionIdentity) -> JsonObject:
     return {
         "ok": True,
         "session_id": session.session_id,
@@ -1051,7 +1052,7 @@ def _session_response_payload(session: SessionIdentity) -> dict[str, Any]:
     }
 
 
-def _resolve_authenticated_session(payload: dict[str, Any] | None = None) -> tuple[SessionIdentity | None, tuple[dict[str, Any], int] | None]:
+def _resolve_authenticated_session(payload: JsonObject | None = None) -> tuple[SessionIdentity | None, tuple[JsonObject, int] | None]:
     payload_dict = payload if isinstance(payload, dict) else {}
     session_id = _payload_session_id(payload_dict) or _query_session_id() or _cookie_session_id()
     if session_id is None:
@@ -1064,7 +1065,7 @@ def _resolve_authenticated_session(payload: dict[str, Any] | None = None) -> tup
     return session, None
 
 
-def _validate_deck_payload(payload: dict[str, Any]) -> tuple[str, str, tuple[dict[str, Any], int] | None]:
+def _validate_deck_payload(payload: JsonObject) -> tuple[str, str, tuple[JsonObject, int] | None]:
     raw_name = payload.get("name")
     if not isinstance(raw_name, str) or not raw_name.strip():
         return "", "", ({"ok": False, "error": "name is required."}, 400)
@@ -1083,7 +1084,7 @@ def _validate_deck_payload(payload: dict[str, Any]) -> tuple[str, str, tuple[dic
     return raw_name.strip()[:64], card_payload_json, None
 
 
-def _serialize_deck_response(deck_id: str, name: str, card_payload_json: str, updated_at: float) -> dict[str, Any]:
+def _serialize_deck_response(deck_id: str, name: str, card_payload_json: str, updated_at: float) -> JsonObject:
     try:
         cards = json.loads(card_payload_json)
     except Exception:
@@ -1196,7 +1197,7 @@ def auth_login() -> Any:
 
 
 @app.get("/api/v1/auth/session")
-def auth_session() -> tuple[dict[str, Any], int]:
+def auth_session() -> tuple[JsonObject, int]:
     session_id = request.args.get("session_id") or _cookie_session_id()
     if not isinstance(session_id, str) or not session_id.strip():
         return router.session_error_payload(None)
@@ -1217,7 +1218,7 @@ def auth_logout() -> Any:
     if payload is not None and not isinstance(payload, dict):
         return {"ok": False, "error": "Body must be a JSON object."}, 400
 
-    payload_dict: dict[str, Any] = payload if isinstance(payload, dict) else {}
+    payload_dict: JsonObject = payload if isinstance(payload, dict) else {}
     session_id = _payload_session_id(payload_dict) or _cookie_session_id()
     if session_id is None:
         return router.session_error_payload(None)
@@ -1346,7 +1347,7 @@ def deck_select(deck_id: str) -> Any:
 
 
 @app.route("/matchmaking/queue", methods=["POST", "OPTIONS"])
-def matchmaking_queue() -> tuple[dict[str, Any], int]:
+def matchmaking_queue() -> tuple[JsonObject, int]:
     if request.method == "OPTIONS":
         return {"ok": True}, 204
 
@@ -1375,7 +1376,7 @@ def matchmaking_queue() -> tuple[dict[str, Any], int]:
 
 
 @app.get("/matchmaking/status")
-def matchmaking_status() -> tuple[dict[str, Any], int]:
+def matchmaking_status() -> tuple[JsonObject, int]:
     session_id = request.args.get("session_id") or _cookie_session_id()
     if not isinstance(session_id, str) or not session_id.strip():
         return router.session_error_payload(None)
@@ -1389,7 +1390,7 @@ def matchmaking_status() -> tuple[dict[str, Any], int]:
 
 
 @app.route("/rooms/rejoin", methods=["POST", "OPTIONS"])
-def room_rejoin() -> tuple[dict[str, Any], int]:
+def room_rejoin() -> tuple[JsonObject, int]:
     if request.method == "OPTIONS":
         return {"ok": True}, 204
 
@@ -1411,7 +1412,7 @@ def room_rejoin() -> tuple[dict[str, Any], int]:
 
 
 @app.route("/rooms/finish", methods=["POST", "OPTIONS"])
-def room_finish() -> tuple[dict[str, Any], int]:
+def room_finish() -> tuple[JsonObject, int]:
     if request.method == "OPTIONS":
         return {"ok": True}, 204
 
