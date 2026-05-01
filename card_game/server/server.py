@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from threading import Condition
 from threading import RLock
 from threading import Timer
-from typing import Any
+from typing import Any, Literal, cast
 from card_game.server.server_types import JsonObject, CommandPayload
 import os
 
@@ -148,9 +148,24 @@ def _env_csv(name: str) -> list[str]:
     return runtime_env_csv(name)
 
 
+type SocketIOAsyncMode = Literal['threading', 'eventlet', 'gevent', 'gevent_uwsgi']
+
+
+def _env_socketio_async_mode(name: str, default: SocketIOAsyncMode) -> SocketIOAsyncMode:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+
+    normalized = raw.strip().lower()
+    if normalized in {'threading', 'eventlet', 'gevent', 'gevent_uwsgi'}:
+        return cast(SocketIOAsyncMode, normalized)
+    return default
+
+
 SERVER_ALLOWED_ORIGINS = _env_csv('SERVER_ALLOWED_ORIGINS')
 if not SERVER_ALLOWED_ORIGINS:
     SERVER_ALLOWED_ORIGINS = _env_csv('ROUTER_ALLOWED_ORIGINS')
+SERVER_SOCKETIO_ASYNC_MODE = _env_socketio_async_mode('SERVER_SOCKETIO_ASYNC_MODE', 'gevent')
 
 
 pending_command_acks: list[PendingCommandAck] = []
@@ -293,7 +308,11 @@ if SocketIO is not None:
     socketio_origins: str | list[str] = '*'
     if SERVER_ALLOWED_ORIGINS and '*' not in SERVER_ALLOWED_ORIGINS:
         socketio_origins = SERVER_ALLOWED_ORIGINS
-    socketio = SocketIO(app, cors_allowed_origins=socketio_origins)
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins=socketio_origins,
+        async_mode=SERVER_SOCKETIO_ASYNC_MODE,
+    )
 
 
 def _utc_now_iso() -> str:

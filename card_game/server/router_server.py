@@ -5,7 +5,7 @@ from dataclasses import field
 from datetime import datetime, timezone
 from threading import RLock
 from time import monotonic
-from typing import Any, Callable
+from typing import Any, Callable, Literal, cast
 from card_game.server.server_types import JsonObject, CommandPayload
 from uuid import uuid4
 import json
@@ -66,6 +66,20 @@ def _env_csv(name: str) -> list[str]:
         return []
     return [part.strip() for part in raw.split(",") if part.strip()]
 
+
+type SocketIOAsyncMode = Literal["threading", "eventlet", "gevent", "gevent_uwsgi"]
+
+
+def _env_socketio_async_mode(name: str, default: SocketIOAsyncMode) -> SocketIOAsyncMode:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+
+    normalized = raw.strip().lower()
+    if normalized in {"threading", "eventlet", "gevent", "gevent_uwsgi"}:
+        return cast(SocketIOAsyncMode, normalized)
+    return default
+
 SESSION_COOKIE_NAME = "avge_session"
 SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 ROOM_FINISH_GRACE_SECONDS = 5
@@ -73,6 +87,7 @@ ROUTER_HOST = os.getenv("ROUTER_HOST", "0.0.0.0")
 ROUTER_PORT = _env_int("ROUTER_PORT", 5600, minimum=1, maximum=65535)
 ROUTER_DEBUG = _env_bool("ROUTER_DEBUG", False)
 ROUTER_USE_RELOADER = _env_bool("ROUTER_USE_RELOADER", False)
+ROUTER_SOCKETIO_ASYNC_MODE = _env_socketio_async_mode("ROUTER_SOCKETIO_ASYNC_MODE", "gevent")
 ROUTER_ALLOWED_ORIGINS = _env_csv("ROUTER_ALLOWED_ORIGINS")
 ROUTER_COOKIE_SECURE = _env_bool("ROUTER_COOKIE_SECURE", False)
 ROUTER_COOKIE_SAMESITE = os.getenv("ROUTER_COOKIE_SAMESITE", "Lax").strip() or "Lax"
@@ -1024,7 +1039,11 @@ router = MatchmakingRouter()
 socketio: Any = None
 if SocketIO is not None:
     socketio_origins: str | list[str] = '*' if not ROUTER_ALLOWED_ORIGINS else ROUTER_ALLOWED_ORIGINS
-    socketio = SocketIO(app, cors_allowed_origins=socketio_origins)
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins=socketio_origins,
+        async_mode=ROUTER_SOCKETIO_ASYNC_MODE,
+    )
 
 
 def _notify_superseded_session(session_id: str, socket_sids: list[str]) -> None:
