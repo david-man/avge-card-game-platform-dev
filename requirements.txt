@@ -1,0 +1,5 @@
+Flask>=3.0,<4.0
+Flask-SocketIO>=5.3,<6.0
+gevent>=24.2.1
+gevent-websocket
+pytest>=8.0,<9.0
