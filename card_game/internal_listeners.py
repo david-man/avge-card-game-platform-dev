@@ -88,10 +88,8 @@ class AVGEWeaknessModifier(AVGEModifier):
         event = self.attached_event
         assert(isinstance(event, AVGECardHPChange))
         assert(not event.caller is None)
-        # if(type_weaknesses[event.target_card.card_type]) == event.change_type and isinstance(event.caller, AVGECharacterCard):
-        if isinstance(event.caller, AVGECharacterCard):
-            coin_toss = event.caller.env.cache.get(event.caller, AVGEWeaknessModifier._CRIT_KEY,
-                                                        None, True)
+        if(type_weaknesses[event.target_card.card_type]) == event.change_type and isinstance(event.caller, AVGECharacterCard):
+            coin_toss = event.caller.env.cache.get(event.caller, AVGEWeaknessModifier._CRIT_KEY,None, True)
             if coin_toss is None:
                 return Response(ResponseType.INTERRUPT,
                                 Interrupt[InputEvent](
