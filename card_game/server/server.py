@@ -148,6 +148,13 @@ def _env_csv(name: str) -> list[str]:
     return runtime_env_csv(name)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 type SocketIOAsyncMode = Literal['threading', 'eventlet', 'gevent', 'gevent_uwsgi']
 
 
@@ -162,10 +169,18 @@ def _env_socketio_async_mode(name: str, default: SocketIOAsyncMode) -> SocketIOA
     return default
 
 
+ROUTER_ALLOWED_ORIGINS = _env_csv('ROUTER_ALLOWED_ORIGINS')
+ROUTER_SOCKETIO_ASYNC_MODE = _env_socketio_async_mode('ROUTER_SOCKETIO_ASYNC_MODE', 'gevent')
+ROUTER_DEBUG = _env_bool('ROUTER_DEBUG', False)
+ROUTER_USE_RELOADER = _env_bool('ROUTER_USE_RELOADER', False)
+
+
 SERVER_ALLOWED_ORIGINS = _env_csv('SERVER_ALLOWED_ORIGINS')
 if not SERVER_ALLOWED_ORIGINS:
-    SERVER_ALLOWED_ORIGINS = _env_csv('ROUTER_ALLOWED_ORIGINS')
-SERVER_SOCKETIO_ASYNC_MODE = _env_socketio_async_mode('SERVER_SOCKETIO_ASYNC_MODE', 'gevent')
+    SERVER_ALLOWED_ORIGINS = ROUTER_ALLOWED_ORIGINS
+SERVER_SOCKETIO_ASYNC_MODE = _env_socketio_async_mode('SERVER_SOCKETIO_ASYNC_MODE', ROUTER_SOCKETIO_ASYNC_MODE)
+SERVER_DEBUG = _env_bool('SERVER_DEBUG', ROUTER_DEBUG)
+SERVER_USE_RELOADER = _env_bool('SERVER_USE_RELOADER', ROUTER_USE_RELOADER)
 
 
 pending_command_acks: list[PendingCommandAck] = []
@@ -964,8 +979,8 @@ if socketio is not None:
 if __name__ == '__main__':
     server_host = os.getenv('SERVER_HOST', '0.0.0.0')
     server_port = int(os.getenv('SERVER_PORT', '5500'))
-    server_debug = os.getenv('SERVER_DEBUG', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
-    server_use_reloader = os.getenv('SERVER_USE_RELOADER', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+    server_debug = SERVER_DEBUG
+    server_use_reloader = SERVER_USE_RELOADER
     if socketio is not None:
         socketio.run(
             app,

@@ -24,6 +24,7 @@ Required controls:
 Notes:
 - Room workers use the same bind interface as `ROUTER_HOST`.
 - Clients should reach the router origin configured in frontend runtime (`AVGE_ROUTER_BASE_URL`).
+- Room `SERVER_*` overrides default to matching `ROUTER_*` values when unset.
 
 ## 3. Service Supervision
 
