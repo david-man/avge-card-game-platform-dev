@@ -8,15 +8,22 @@ from time import monotonic
 from typing import Any, Callable, Literal, cast
 from card_game.server.server_types import JsonObject, CommandPayload
 from uuid import uuid4
+import importlib
 import json
 import os
 import random
-import socket
 import urllib.error
 import urllib.request
 
 from flask import Flask, jsonify, make_response, request
-from flask_socketio import SocketIO, emit
+
+try:
+    _flask_socketio = importlib.import_module("flask_socketio")
+    SocketIO = getattr(_flask_socketio, "SocketIO", None)
+    emit = getattr(_flask_socketio, "emit", None)
+except Exception:  # pragma: no cover - optional websocket transport dependency
+    SocketIO = None
+    emit = None
 
 from ..avge_abstracts.AVGECards import AVGECard
 from ..avge_abstracts.AVGECards import AVGECharacterCard
@@ -70,6 +77,9 @@ def _env_csv(name: str) -> list[str]:
 type SocketIOAsyncMode = Literal["threading", "eventlet", "gevent", "gevent_uwsgi"]
 
 
+type RoomTransportMode = Literal["pipe"]
+
+
 def _env_socketio_async_mode(name: str, default: SocketIOAsyncMode) -> SocketIOAsyncMode:
     raw = os.getenv(name)
     if raw is None:
@@ -92,12 +102,8 @@ ROUTER_ALLOWED_ORIGINS = _env_csv("ROUTER_ALLOWED_ORIGINS")
 ROUTER_COOKIE_SECURE = _env_bool("ROUTER_COOKIE_SECURE", False)
 ROUTER_COOKIE_SAMESITE = os.getenv("ROUTER_COOKIE_SAMESITE", "Lax").strip() or "Lax"
 
-ROOM_HOST = os.getenv("ROOM_HOST", "127.0.0.1")
-ROOM_BIND_HOST = os.getenv("ROOM_BIND_HOST", ROOM_HOST)
-ROOM_ENDPOINT_SCHEME = os.getenv("ROOM_ENDPOINT_SCHEME", "http").strip() or "http"
-ROOM_BASE_PORT = _env_int("ROOM_BASE_PORT", 5700, minimum=1, maximum=65535)
-ROOM_PORT_RANGE_SIZE = _env_int("ROOM_PORT_RANGE_SIZE", 1024, minimum=1, maximum=65535)
-ROOM_MAX_PORT = min(65535, ROOM_BASE_PORT + ROOM_PORT_RANGE_SIZE - 1)
+ROOM_BIND_HOST = ROUTER_HOST
+ROOM_TRANSPORT_MODE: RoomTransportMode = "pipe"
 ROUTER_DB_PATH = os.getenv(
     "ROUTER_DB_PATH",
     os.path.join(os.path.dirname(__file__), "router.sqlite3"),
@@ -181,9 +187,9 @@ class RoomRecord:
     room_id: str
     player_session_ids: tuple[str, str]
     created_at: float
-    host: str
     bind_host: str
     port: int
+    transport_mode: RoomTransportMode = "pipe"
     status: str = "running"
     finished_at: float | None = None
     retain_until: float | None = None
@@ -197,6 +203,8 @@ class RouterState:
     active_session_id_by_user_id: dict[str, str] = field(default_factory=dict)
     superseded_session_ids: set[str] = field(default_factory=set)
     auth_socket_sids_by_session_id: dict[str, set[str]] = field(default_factory=dict)
+    game_session_id_by_socket_sid: dict[str, str] = field(default_factory=dict)
+    game_session_id_by_client_id: dict[str, str] = field(default_factory=dict)
     rooms_by_id: dict[str, RoomRecord] = field(default_factory=dict)
     room_id_by_session_id: dict[str, str] = field(default_factory=dict)
     queue: list[QueueEntry] = field(default_factory=list)
@@ -206,7 +214,6 @@ class MatchmakingRouter:
     def __init__(self, db_path: str | None = None) -> None:
         self._state = RouterState()
         self._lock = RLock()
-        self._next_room_port = ROOM_BASE_PORT
         self._storage = RouterStorage(db_path or ROUTER_DB_PATH)
         self._superseded_notifier: Callable[[str, list[str]], None] | None = None
 
@@ -238,6 +245,143 @@ class MatchmakingRouter:
 
             for session_id in empty_keys:
                 self._state.auth_socket_sids_by_session_id.pop(session_id, None)
+
+    def register_game_socket(self, session_id: str, socket_sid: str) -> tuple[bool, JsonObject]:
+        with self._lock:
+            session = self._ensure_session_locked(session_id)
+            if session is None:
+                error_body, _ = self.session_error_payload(session_id)
+                return False, error_body
+
+            room = self._active_room_for_session_locked(session_id)
+            if room is None:
+                return False, {
+                    'ok': False,
+                    'error': 'No active room for session.',
+                    'error_code': 'no_active_room',
+                }
+
+            self._state.game_session_id_by_socket_sid[socket_sid] = session_id
+            return True, {
+                'ok': True,
+                'session_id': session_id,
+                'room_id': room.room_id,
+            }
+
+    def unregister_game_socket(self, socket_sid: str) -> str | None:
+        with self._lock:
+            return self._state.game_session_id_by_socket_sid.pop(socket_sid, None)
+
+    def game_session_for_socket(self, socket_sid: str) -> str | None:
+        with self._lock:
+            value = self._state.game_session_id_by_socket_sid.get(socket_sid)
+            return value if isinstance(value, str) and value else None
+
+    def register_game_client(self, client_id: str, session_id: str) -> tuple[bool, JsonObject]:
+        with self._lock:
+            session = self._ensure_session_locked(session_id)
+            if session is None:
+                error_body, _ = self.session_error_payload(session_id)
+                return False, error_body
+
+            room = self._active_room_for_session_locked(session_id)
+            if room is None:
+                return False, {
+                    'ok': False,
+                    'error': 'No active room for session.',
+                    'error_code': 'no_active_room',
+                }
+
+            self._state.game_session_id_by_client_id[client_id] = session_id
+            return True, {
+                'ok': True,
+                'client_id': client_id,
+                'session_id': session_id,
+                'room_id': room.room_id,
+            }
+
+    def unregister_game_client(self, client_id: str) -> str | None:
+        with self._lock:
+            return self._state.game_session_id_by_client_id.pop(client_id, None)
+
+    def game_session_for_client(self, client_id: str) -> str | None:
+        with self._lock:
+            value = self._state.game_session_id_by_client_id.get(client_id)
+            return value if isinstance(value, str) and value else None
+
+    def room_worker_for_session(self, session_id: str) -> tuple[RoomWorker | None, JsonObject | None]:
+        with self._lock:
+            session = self._ensure_session_locked(session_id)
+            if session is None:
+                error_body, _ = self.session_error_payload(session_id)
+                return None, error_body
+
+            room = self._active_room_for_session_locked(session_id)
+            if room is None:
+                return None, {
+                    'ok': False,
+                    'error': 'No active room for session.',
+                    'error_code': 'no_active_room',
+                }
+
+            worker = room.worker
+            if worker is None:
+                return None, {
+                    'ok': False,
+                    'error': 'Room worker unavailable.',
+                    'error_code': 'room_worker_unavailable',
+                }
+
+            return worker, None
+
+    def dispatch_pipe_command_for_session(
+        self,
+        session_id: str,
+        *,
+        method: str,
+        params: JsonObject,
+        timeout_seconds: float = 2.0,
+    ) -> tuple[bool, JsonObject]:
+        worker, lookup_error = self.room_worker_for_session(session_id)
+        if lookup_error is not None:
+            return False, lookup_error
+        assert worker is not None
+
+        try:
+            response = worker.request(method, params, timeout_seconds=timeout_seconds)
+            return True, response if isinstance(response, dict) else {'ok': True}
+        except TimeoutError:
+            return False, {
+                'ok': False,
+                'error': f'Room pipe command timed out: {method}',
+                'error_code': 'room_pipe_timeout',
+            }
+        except Exception as exc:
+            return False, {
+                'ok': False,
+                'error': str(exc) or f'Room pipe command failed: {method}',
+                'error_code': 'room_pipe_failed',
+            }
+
+    def handle_room_worker_event(self, room_id: str, event_type: str, payload: JsonObject) -> None:
+        if event_type == 'socket_emit':
+            if socketio is None:
+                return
+            event_name = payload.get('event')
+            if not isinstance(event_name, str) or not event_name.strip():
+                return
+            socket_payload = payload.get('payload')
+            target_sid = payload.get('to')
+            if isinstance(target_sid, str) and target_sid.strip():
+                socketio.emit(event_name.strip(), socket_payload, to=target_sid.strip())
+            else:
+                socketio.emit(event_name.strip(), socket_payload)
+            return
+
+        if event_type == 'room_finished':
+            reason_raw = payload.get('reason')
+            reason = reason_raw.strip() if isinstance(reason_raw, str) and reason_raw.strip() else 'finished'
+            self.mark_room_finished(room_id, reason)
 
     def login(self, username: str, existing_session_id: str | None) -> SessionIdentity:
         now = monotonic()
@@ -622,6 +766,7 @@ class MatchmakingRouter:
             for session_id in room.player_session_ids:
                 if self._state.room_id_by_session_id.get(session_id) == room.room_id:
                     self._state.room_id_by_session_id.pop(session_id, None)
+                self._clear_transport_bindings_for_session_locked(session_id)
                 session = self._state.sessions_by_id.get(session_id)
                 if session is not None and session.current_room_id == room.room_id:
                     session.current_room_id = None
@@ -648,14 +793,14 @@ class MatchmakingRouter:
                 p1_entry, p2_entry = (entry_b, entry_a)
 
             room_id = f"room-{uuid4().hex[:12]}"
-            room_port = self._reserve_next_room_port_locked()
+            room_port = ROUTER_PORT
             room = RoomRecord(
                 room_id=room_id,
                 player_session_ids=(p1_entry.session_id, p2_entry.session_id),
                 created_at=now,
-                host=ROOM_HOST,
                 bind_host=ROOM_BIND_HOST,
                 port=room_port,
+                transport_mode=ROOM_TRANSPORT_MODE,
                 status="running",
             )
 
@@ -671,7 +816,7 @@ class MatchmakingRouter:
                 if selected is None:
                     return None
                 try:
-                    parsed = json.loads(selected.get('card_payload_json', '[]'))
+                    parsed = json.loads(str(selected.get('card_payload_json', '[]')))
                 except Exception:
                     return None
                 if not isinstance(parsed, list):
@@ -690,7 +835,9 @@ class MatchmakingRouter:
                 p2_username=session_b_name,
                 p1_selected_cards=session_a_selected_cards,
                 p2_selected_cards=session_b_selected_cards,
+                transport_mode=ROOM_TRANSPORT_MODE,
                 on_finished=self._on_room_worker_finished,
+                on_event=self.handle_room_worker_event,
             )
             room.worker = worker
             self._state.rooms_by_id[room_id] = room
@@ -704,38 +851,12 @@ class MatchmakingRouter:
 
             worker.start()
             print(
-                f"[ROUTER] room_started room_id={room_id} endpoint={self._room_endpoint_url(room)} "
+                f"[ROUTER] room_started room_id={room_id} "
                 f"players=({p1_entry.session_id},{p2_entry.session_id})"
             )
             last_assigned_room = room_id
 
         return last_assigned_room
-
-    def _reserve_next_room_port_locked(self) -> int:
-        candidate = self._next_room_port
-        for _ in range(ROOM_PORT_RANGE_SIZE):
-            if candidate > ROOM_MAX_PORT:
-                candidate = ROOM_BASE_PORT
-            if self._is_port_available(candidate):
-                next_candidate = candidate + 1
-                self._next_room_port = ROOM_BASE_PORT if next_candidate > ROOM_MAX_PORT else next_candidate
-                return candidate
-            candidate += 1
-        raise RuntimeError(
-            f'Unable to allocate an available room port in range {ROOM_BASE_PORT}-{ROOM_MAX_PORT}.'
-        )
-
-    def _is_port_available(self, port: int) -> bool:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                sock.bind((ROOM_BIND_HOST, port))
-            except OSError:
-                return False
-        return True
-
-    def _room_endpoint_url(self, room: RoomRecord) -> str:
-        return f"{ROOM_ENDPOINT_SCHEME}://{room.host}:{room.port}"
 
     def _on_room_worker_finished(self, room_id: str, reason: str) -> None:
         with self._lock:
@@ -753,6 +874,7 @@ class MatchmakingRouter:
             for session_id in room.player_session_ids:
                 if self._state.room_id_by_session_id.get(session_id) == room_id:
                     self._state.room_id_by_session_id.pop(session_id, None)
+                self._clear_transport_bindings_for_session_locked(session_id)
                 session = self._state.sessions_by_id.get(session_id)
                 if session is not None and session.current_room_id == room_id:
                     session.current_room_id = None
@@ -803,6 +925,7 @@ class MatchmakingRouter:
             for session_id in room.player_session_ids:
                 if self._state.room_id_by_session_id.get(session_id) == room_id:
                     self._state.room_id_by_session_id.pop(session_id, None)
+                self._clear_transport_bindings_for_session_locked(session_id)
                 session = self._state.sessions_by_id.get(session_id)
                 if session is not None and session.current_room_id == room_id:
                     session.current_room_id = None
@@ -812,6 +935,23 @@ class MatchmakingRouter:
             if entry.session_id == session_id:
                 return idx
         return None
+
+    def _clear_transport_bindings_for_session_locked(self, session_id: str) -> None:
+        stale_game_sids = [
+            sid
+            for sid, sid_session_id in self._state.game_session_id_by_socket_sid.items()
+            if sid_session_id == session_id
+        ]
+        for stale_sid in stale_game_sids:
+            self._state.game_session_id_by_socket_sid.pop(stale_sid, None)
+
+        stale_client_ids = [
+            client_id
+            for client_id, client_session_id in self._state.game_session_id_by_client_id.items()
+            if client_session_id == session_id
+        ]
+        for stale_client_id in stale_client_ids:
+            self._state.game_session_id_by_client_id.pop(stale_client_id, None)
 
     def _ensure_session_locked(self, session_id: str) -> SessionIdentity | None:
         session = self._state.sessions_by_id.get(session_id)
@@ -905,6 +1045,28 @@ class MatchmakingRouter:
             'new_session_id': new_session_id,
             'slot': slot,
         }
+
+        if room.transport_mode == 'pipe':
+            worker = room.worker
+            if worker is None:
+                print(
+                    f'[ROUTER] room_session_takeover_notify_failed room_id={room.room_id} '
+                    f'slot={slot} transport=pipe error=worker_unavailable'
+                )
+                return
+            try:
+                worker.request(
+                    'replace_room_session',
+                    {'payload': payload},
+                    timeout_seconds=1.2,
+                )
+            except Exception as exc:
+                print(
+                    f'[ROUTER] room_session_takeover_notify_failed room_id={room.room_id} '
+                    f'slot={slot} transport=pipe error={exc}'
+                )
+            return
+
         endpoint = f'http://{room.bind_host}:{room.port}/room/replace-session'
         data = json.dumps(payload).encode('utf-8')
         request_obj = urllib.request.Request(
@@ -953,6 +1115,7 @@ class MatchmakingRouter:
             existing = self._state.sessions_by_id.pop(session_id, None)
             if existing is not None:
                 existing.current_room_id = None
+            self._clear_transport_bindings_for_session_locked(session_id)
 
             sid_list = list(self._state.auth_socket_sids_by_session_id.pop(session_id, set()))
             if sid_list:
@@ -978,10 +1141,9 @@ class MatchmakingRouter:
         return {
             "room_id": room.room_id,
             "status": room.status,
-            "host": room.host,
             "bind_host": room.bind_host,
             "port": room.port,
-            "endpoint_url": self._room_endpoint_url(room),
+            "transport_mode": room.transport_mode,
             "player_session_ids": list(room.player_session_ids),
             "created_at": room.created_at,
             "finished_at": room.finished_at,
@@ -1034,6 +1196,23 @@ def _payload_username(payload: JsonObject) -> str | None:
     return normalized[:32]
 
 
+def _payload_protocol_client_id(payload: JsonObject) -> str | None:
+    value = payload.get('client_id')
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _payload_protocol_register_session_id(payload: JsonObject) -> str | None:
+    body = payload.get('Body')
+    if not isinstance(body, dict):
+        return None
+    value = body.get('session_id')
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 app = Flask(__name__)
 router = MatchmakingRouter()
 socketio: Any = None
@@ -1060,6 +1239,20 @@ def _notify_superseded_session(session_id: str, socket_sids: list[str]) -> None:
 
 
 router.set_superseded_notifier(_notify_superseded_session)
+
+
+def _socket_sid() -> str:
+    raw_sid = getattr(request, 'sid', None)
+    return raw_sid if isinstance(raw_sid, str) else ''
+
+
+PACKET_ALLOW_BODY_FALLBACK_BY_TYPE: dict[str, bool] = {
+    'ready': False,
+    'request_environment': False,
+    'update_frontend': True,
+    'init_setup_done': True,
+    'frontend_event': True,
+}
 
 
 def _session_response_payload(session: SessionIdentity) -> JsonObject:
@@ -1408,6 +1601,82 @@ def matchmaking_status() -> tuple[JsonObject, int]:
     return result, 200
 
 
+@app.route('/protocol', methods=['POST', 'OPTIONS'])
+def protocol_proxy() -> tuple[JsonObject, int]:
+    if request.method == 'OPTIONS':
+        return {'ok': True}, 204
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return {'ok': False, 'error': 'Body must be a JSON object.'}, 400
+
+    packet_type_raw = payload.get('PacketType')
+    packet_type = packet_type_raw.strip() if isinstance(packet_type_raw, str) else ''
+    if not packet_type:
+        return {'ok': False, 'error': 'PacketType is required.'}, 400
+
+    client_id = _payload_protocol_client_id(payload)
+    if not client_id:
+        return {'ok': False, 'error': 'client_id is required.'}, 400
+
+    session_id: str | None
+    if packet_type == 'register_client':
+        session_id = _payload_protocol_register_session_id(payload)
+        if not session_id:
+            return {'ok': False, 'error': 'register_client requires Body.session_id.'}, 400
+
+        bind_ok, bind_body = router.register_game_client(client_id, session_id)
+        if not bind_ok:
+            error_code = bind_body.get('error_code') if isinstance(bind_body.get('error_code'), str) else ''
+            status = 401 if error_code in {'session_superseded', 'unknown_session'} else 404
+            return bind_body, status
+    else:
+        session_id = router.game_session_for_client(client_id)
+        if not session_id:
+            return {
+                'ok': False,
+                'error': 'Unknown protocol client_id; register_client is required first.',
+                'error_code': 'unknown_protocol_client',
+            }, 401
+
+    assert isinstance(session_id, str) and session_id
+
+    forwarded_ok, forwarded_body = router.dispatch_pipe_command_for_session(
+        session_id,
+        method='protocol_http_packet',
+        params={'payload': payload},
+        timeout_seconds=3.5,
+    )
+    if not forwarded_ok:
+        if packet_type == 'register_client':
+            router.unregister_game_client(client_id)
+
+        error_code = forwarded_body.get('error_code') if isinstance(forwarded_body.get('error_code'), str) else ''
+        if error_code in {'session_superseded', 'unknown_session'}:
+            status = 401
+        elif error_code == 'no_active_room':
+            status = 404
+        else:
+            status = 502
+        return forwarded_body, status
+
+    response_body_raw = forwarded_body.get('body')
+    response_body: JsonObject | None = (
+        cast(JsonObject, response_body_raw)
+        if isinstance(response_body_raw, dict)
+        else None
+    )
+
+    response_status_raw = forwarded_body.get('status')
+    response_status = response_status_raw if isinstance(response_status_raw, int) else 200
+    if packet_type == 'register_client' and response_status != 200:
+        router.unregister_game_client(client_id)
+
+    if response_body is None:
+        return {'ok': False, 'error': 'Invalid room protocol proxy response.'}, 502
+    return response_body, response_status
+
+
 @app.route("/rooms/rejoin", methods=["POST", "OPTIONS"])
 def room_rejoin() -> tuple[JsonObject, int]:
     if request.method == "OPTIONS":
@@ -1453,6 +1722,17 @@ def room_finish() -> tuple[JsonObject, int]:
 
 
 if socketio is not None:
+    @socketio.on('connect')
+    def socket_connect() -> None:
+        if emit is None:
+            return
+        emit('server_status', {
+            'ok': True,
+            'transport': 'socketio',
+            'message': 'connected',
+        })
+
+
     @socketio.on('auth_register_session')
     def socket_auth_register_session(payload: Any) -> None:
         if emit is None:
@@ -1493,12 +1773,151 @@ if socketio is not None:
         emit('auth_registration_ok', body)
 
 
-    @socketio.on('disconnect')
-    def socket_disconnect() -> None:
-        socket_sid = getattr(request, 'sid', None)
-        sid = socket_sid if isinstance(socket_sid, str) else ''
+    @socketio.on('register_client_or_play')
+    def socket_register_client_or_play(payload: Any) -> None:
+        if emit is None:
+            return
+
+        data = payload if isinstance(payload, dict) else {}
+        raw_session_id = data.get('session_id')
+        session_id = raw_session_id.strip() if isinstance(raw_session_id, str) else ''
+        if not session_id:
+            emit('registration_error', {
+                'ok': False,
+                'error': 'session_id is required.',
+            })
+            return
+
+        sid = _socket_sid()
+        if not sid:
+            emit('registration_error', {
+                'ok': False,
+                'error': 'socket sid unavailable',
+            })
+            return
+
+        ok, register_body = router.register_game_socket(session_id, sid)
+        if not ok:
+            emit('registration_error', register_body)
+            return
+
+        forwarded_ok, forwarded_body = router.dispatch_pipe_command_for_session(
+            session_id,
+            method='register_client_or_play',
+            params={
+                'sid': sid,
+                'payload': data,
+            },
+            timeout_seconds=2.5,
+        )
+        if not forwarded_ok:
+            router.unregister_game_socket(sid)
+            emit('registration_error', forwarded_body)
+
+
+    def _forward_pipe_protocol_socket_event(packet_type: str, payload: Any) -> None:
+        if emit is None:
+            return
+
+        sid = _socket_sid()
+        if not sid:
+            emit('protocol_error', {
+                'ok': False,
+                'error': 'socket sid unavailable',
+                'packet_type': packet_type,
+                'status': 400,
+            })
+            return
+
+        session_id = router.game_session_for_socket(sid)
+        if not session_id:
+            emit('protocol_error', {
+                'ok': False,
+                'error': 'Socket is not registered for gameplay.',
+                'packet_type': packet_type,
+                'status': 401,
+            })
+            return
+
+        forwarded_ok, forwarded_body = router.dispatch_pipe_command_for_session(
+            session_id,
+            method='protocol_socket_event',
+            params={
+                'sid': sid,
+                'packet_type': packet_type,
+                'payload': payload if isinstance(payload, dict) else {},
+                'allow_body_data_fallback': PACKET_ALLOW_BODY_FALLBACK_BY_TYPE.get(packet_type, False),
+            },
+            timeout_seconds=2.5,
+        )
+
+        if not forwarded_ok:
+            emit('protocol_error', {
+                **forwarded_body,
+                'packet_type': packet_type,
+                'status': 502,
+            })
+
+
+    @socketio.on('ready')
+    def socket_ready(payload: Any) -> None:
+        _forward_pipe_protocol_socket_event('ready', payload)
+
+
+    @socketio.on('request_environment')
+    def socket_request_environment(payload: Any) -> None:
+        _forward_pipe_protocol_socket_event('request_environment', payload)
+
+
+    @socketio.on('update_frontend')
+    def socket_update_frontend(payload: Any) -> None:
+        _forward_pipe_protocol_socket_event('update_frontend', payload)
+
+
+    @socketio.on('init_setup_done')
+    def socket_init_setup_done(payload: Any) -> None:
+        _forward_pipe_protocol_socket_event('init_setup_done', payload)
+
+
+    @socketio.on('frontend_event')
+    def socket_frontend_event(payload: Any) -> None:
+        _forward_pipe_protocol_socket_event('frontend_event', payload)
+
+
+    @socketio.on('client_unloading')
+    def socket_client_unloading(_payload: Any) -> None:
+        sid = _socket_sid()
         if not sid:
             return
+
+        session_id = router.game_session_for_socket(sid)
+        if not isinstance(session_id, str) or not session_id:
+            return
+
+        router.unregister_game_socket(sid)
+        router.dispatch_pipe_command_for_session(
+            session_id,
+            method='client_unloading',
+            params={'sid': sid},
+            timeout_seconds=1.2,
+        )
+
+
+    @socketio.on('disconnect')
+    def socket_disconnect() -> None:
+        sid = _socket_sid()
+        if not sid:
+            return
+
+        game_session_id = router.unregister_game_socket(sid)
+        if isinstance(game_session_id, str) and game_session_id:
+            router.dispatch_pipe_command_for_session(
+                game_session_id,
+                method='disconnect',
+                params={'sid': sid},
+                timeout_seconds=1.2,
+            )
+
         router.unregister_auth_socket(sid)
 
 

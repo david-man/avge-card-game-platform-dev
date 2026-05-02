@@ -384,12 +384,13 @@ def test_drain_engine_keeps_requires_query_command_when_flushing_pending_packet_
 
     bridge = _make_drain_bridge_with_forward_responses(notify_response, query_response)
 
-    drained = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
+    drained_commands, drained_payloads = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
 
-    assert drained == [
+    assert drained_commands == [
         'notify player-1 first_packet_command 3',
         'input selection player-2 Pick_cards_now [card-a], [card-a], 1 false false',
     ]
+    assert drained_payloads == [None, None]
 
 
 def test_drain_engine_emits_transfer_move_before_reactor_query() -> None:
@@ -422,11 +423,13 @@ def test_drain_engine_emits_transfer_move_before_reactor_query() -> None:
 
     bridge = _make_drain_bridge_with_forward_responses(transfer_response, query_response)
 
-    first_batch = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
-    second_batch = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
+    first_batch_commands, first_batch_payloads = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
+    second_batch_commands, second_batch_payloads = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
 
-    assert first_batch == ['mv card-a p1-hand']
-    assert second_batch == ['input selection player-2 Pick_cards_now [card-a], [card-a], 1 false false']
+    assert first_batch_commands == ['mv card-a p1-hand']
+    assert first_batch_payloads == [None]
+    assert second_batch_commands == ['input selection player-2 Pick_cards_now [card-a], [card-a], 1 false false']
+    assert second_batch_payloads == [None]
 
 
 def test_requires_query_input_event_is_latched_and_not_reemitted() -> None:

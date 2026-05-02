@@ -230,11 +230,13 @@ def process_protocol_packet(
                 return {'ok': False, 'error': error_message or 'invalid init setup payload'}, 400
 
             init_setup_submission_by_slot[slot] = normalized_submission
+            bench_card_ids = normalized_submission.get('bench_card_ids')
+            bench_count = len(bench_card_ids) if isinstance(bench_card_ids, list) else 0
             print(
                 '[INIT_SETUP][ACCEPT] '
                 f'slot={slot!r} '
                 f"active={normalized_submission.get('active_card_id')!r} "
-                f"bench_count={len(normalized_submission.get('bench_card_ids', []))}"
+                f"bench_count={bench_count}"
             )
             enqueue_init_state_for_connected_clients(force=True)
 

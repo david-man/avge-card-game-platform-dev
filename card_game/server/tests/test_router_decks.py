@@ -243,7 +243,9 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
             p2_username: str,
             p1_selected_cards: list[str] | None,
             p2_selected_cards: list[str] | None,
+            transport_mode: str,
             on_finished,
+            on_event=None,
         ) -> None:
             captured_workers.append(
                 {
@@ -255,7 +257,9 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
                     'p2_username': p2_username,
                     'p1_selected_cards': p1_selected_cards,
                     'p2_selected_cards': p2_selected_cards,
+                    'transport_mode': transport_mode,
                     'on_finished': on_finished,
+                    'on_event': on_event,
                 }
             )
 
@@ -264,6 +268,16 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
 
         def stop(self, reason: str = 'stopped') -> None:
             return
+
+        class _Snapshot:
+            process_pid = None
+            started_at = 0.0
+            finished = False
+            finish_reason = None
+            log_path = '/tmp/fake-room.log'
+
+        def snapshot(self) -> _Snapshot:
+            return self._Snapshot()
 
     previous_worker_cls = router_server.RoomWorker
     try:
@@ -323,6 +337,8 @@ def test_room_assignment_passes_selected_deck_cards_to_worker(tmp_path: Path) ->
             tuple(_valid_deck_cards_beta()),
         }
         assert observed == expected
+        assert worker_args['transport_mode'] == 'pipe'
+        assert callable(worker_args['on_event'])
     finally:
         router_server.RoomWorker = previous_worker_cls
 
