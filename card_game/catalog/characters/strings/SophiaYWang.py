@@ -26,6 +26,9 @@ class _SophiaAtk2KnockoutReactor(AVGEReactor):
     def _set_pending_hits(self, value: int):
         self.owner_card.env.cache.set(self.owner_card, _SophiaAtk2KnockoutReactor._PENDING_HITS_KEY, value)
 
+    def __str__(self):
+        return "Sophia Y. Wang: Ricochet"
+
     def event_match(self, event):
         if not isinstance(event, AVGECardHPChange):
             return False
@@ -85,7 +88,7 @@ class _SophiaAtk2KnockoutReactor(AVGEReactor):
             self.propose(AVGEPacket([splash_remaining], AVGEEngineID(owner, ActionTypes.ATK_2, SophiaYWang)))
             return Response(ResponseType.ACCEPT, Notify('Ricochet: Knockout confirmed, 30 damage to each remaining opposing character.', all_players, default_timeout))
 
-        return Response(ResponseType.ACCEPT, Notify('Ricochet: Damage resolved with no knockout, no splash damage applied.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class SophiaYWang(AVGECharacterCard):

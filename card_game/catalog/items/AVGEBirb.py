@@ -39,8 +39,8 @@ class AVGEBirbNextTurnDamageModifier(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "AVGEBirb Modifier"
+	def __str__(self):
+		return "AVGE Birb buff"
 	
 	def on_packet_completion(self):
 		self.invalidate()
@@ -55,6 +55,9 @@ class AVGEBirb(AVGEItemCard):
 
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
+
+	def __str__(self):
+		return "AVGE Birb"
 	
 	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		opponent = card.player.opponent

@@ -45,7 +45,7 @@ class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
+	def __str__(self):
 		return "Emma Next-Turn Swap Lock"
 
 	def assess(self, args=None):

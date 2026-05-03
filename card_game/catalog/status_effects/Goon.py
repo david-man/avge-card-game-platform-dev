@@ -32,7 +32,7 @@ class GoonStatusTransferModifier(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
+	def __str__(self):
 		return "Goon Retreat Cost Modifier"
 	
 	def modify(self, args = {}) -> Response:
@@ -67,8 +67,8 @@ class GoonStatusChangeReactor(AVGEReactor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "Goon On Status Change Reactor"
+	def __str__(self):
+		return "Goon Status Change Reactor"
 
 	def react(self, args={}):
 		from card_game.internal_events import AVGECardHPChange, AVGECardMaxHPChange, AVGECardStatusChange

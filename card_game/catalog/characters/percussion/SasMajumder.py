@@ -88,7 +88,7 @@ class _SasDiscardReactor(AVGEReactor):
                             deck,
                             ActionTypes.PASSIVE,
                             self.owner_card,
-                            None,
+                            Notify("Cybersecurity: Brought a card back", all_players, default_timeout),
                             0,
                         )
                     )
@@ -97,8 +97,10 @@ class _SasDiscardReactor(AVGEReactor):
             self.owner_card.propose(
                 AVGEPacket([transfer_top], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, SasMajumder))
             )
-
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Sas Majumder: Cybersecurity"
 
 
 class SasMajumder(AVGECharacterCard):

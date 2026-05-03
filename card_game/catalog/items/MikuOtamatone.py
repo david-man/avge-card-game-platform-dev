@@ -43,6 +43,9 @@ class MikuOtamatoneEnergy(AVGEModifier):
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement = max(0, event.energy_requirement - 2)
 		return Response(ResponseType.ACCEPT, Notify('Miku Otamatone: Active has +2 effective energy this turn.', all_players, default_timeout))
+	
+	def __str__(self):
+		return "Miku Otamatone Effect"
 
 
 class MikuOtamatone(AVGEItemCard):

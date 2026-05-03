@@ -35,7 +35,7 @@ class _BarronEnergyCapPostcheck(AVGEAssessor):
                 return Response(
                     ResponseType.SKIP,
                     Notify(
-                        "Barron Lee's ability prevents opposing characters from receiving more than 3 energy!",
+                        "Get Served prevents opposing characters from receiving more than 3 energy!",
                         [PlayerID.P1, PlayerID.P2],
                         default_timeout,
                     ),
@@ -43,7 +43,7 @@ class _BarronEnergyCapPostcheck(AVGEAssessor):
             return Response(
                 ResponseType.FAST_FORWARD,
                 Notify(
-                    "Barron Lee's ability prevents opposing characters from receiving more than 3 energy!",
+                    "Get Served prevents opposing characters from receiving more than 3 energy!",
                     [PlayerID.P1, PlayerID.P2],
                     default_timeout,
                 ),

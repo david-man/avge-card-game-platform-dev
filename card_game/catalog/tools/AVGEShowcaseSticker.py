@@ -36,8 +36,8 @@ class AVGEShowcaseStickerTurnStartReactor(AVGEReactor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "AVGEAmbassador Reactor"
+	def __str__(self):
+		return "AVGE Ambassador"
 
 	def react(self, args=None):
 		from card_game.internal_events import InputEvent, TransferCard

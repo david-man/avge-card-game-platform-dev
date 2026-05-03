@@ -39,6 +39,9 @@ class RyanLiMaidDamageModifier(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(10)
         return Response(ResponseType.ACCEPT, Notify('Moe moe kyun~!: +10 damage for your maid.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Ryan Li: Moe moe kyun~! buff"
 
 
 class RyanLi(AVGECharacterCard):

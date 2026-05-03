@@ -81,6 +81,9 @@ def protocol_packets_emit_payload_for_slot(
         'blocked_pending_peer_ack': blocked_pending_command is not None,
     }
 
+    if slot in {'p1', 'p2'}:
+        payload['client_slot'] = slot
+
     if blocked_pending_command is not None:
         payload['blocked_command'] = blocked_pending_command.command
 

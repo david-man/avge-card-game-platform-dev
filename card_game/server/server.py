@@ -587,14 +587,42 @@ def _issue_environment_resync_packet_for_source(
     )
 
 
+def _normalize_bridge_command_entries(commands: list[str] | list[JsonObject]) -> list[JsonObject]:
+    normalized: list[JsonObject] = []
+    for command in commands:
+        command_text: str | None = None
+        response_payload: JsonObject | None = None
+
+        if isinstance(command, str):
+            command_text = command.strip()
+        elif isinstance(command, dict):
+            raw_command = command.get('command')
+            if isinstance(raw_command, str):
+                command_text = raw_command.strip()
+            raw_payload = command.get('response_payload')
+            if isinstance(raw_payload, dict):
+                response_payload = raw_payload
+
+        if not isinstance(command_text, str) or not command_text:
+            continue
+
+        normalized.append({
+            'command': command_text,
+            'response_payload': response_payload,
+        })
+
+    return normalized
+
+
 def _enqueue_bridge_commands(commands: list[str] | list[JsonObject], source_slot: str | None) -> None:
     global next_command_id, winner_announced, winner_main_menu_ack_slots
+    normalized_commands = _normalize_bridge_command_entries(commands)
     (
         next_command_id,
         winner_announced,
         winner_main_menu_ack_slots,
     ) = runtime_enqueue_bridge_commands(
-        commands,
+        normalized_commands,
         source_slot,
         next_command_id=next_command_id,
         winner_announced=winner_announced,
@@ -661,7 +689,11 @@ def _commands_ready_for_slot(
     )
 
 
-def _acknowledge_head_command(command: str, source_slot: str | None) -> tuple[bool, str | None]:
+def _acknowledge_head_command(
+    command: str | None,
+    source_slot: str | None,
+    command_id: int | None = None,
+) -> tuple[bool, str | None]:
     return acknowledge_head_command(
         command,
         source_slot,
@@ -669,6 +701,7 @@ def _acknowledge_head_command(command: str, source_slot: str | None) -> tuple[bo
         _normalize_client_slot,
         registration_condition,
         transport_lock,
+        command_id,
     )
 
 
@@ -858,19 +891,9 @@ if socketio is not None:
             sid=sid,
             transport_lock=transport_lock,
             transport_state=transport_state,
-            expected_p1_session_id=expected_p1_session_id,
-            expected_p2_session_id=expected_p2_session_id,
-            room_stage=room_stage,
             socketio=socketio,
             emit_fn=emit,
-            expected_slot_for_router_session=_expected_slot_for_router_session,
-            recover_reconnect_token_for_expected_slot=_recover_reconnect_token_for_expected_slot,
-            cancel_disconnect_forfeit_timer_locked=_cancel_disconnect_forfeit_timer_locked,
-            mark_player_join_seen_locked=_mark_player_join_seen_locked,
-            enqueue_environment_for_connected_clients=_enqueue_environment_for_connected_clients,
-            enqueue_init_state_for_connected_clients=_enqueue_init_state_for_connected_clients,
-            registration_condition=registration_condition,
-            short_session_id=_short_session_id,
+            process_protocol_packet=_process_protocol_packet,
             drain_pending_packets_for_session=_drain_pending_packets_for_session,
             protocol_packets_emit_payload_for_slot=_protocol_packets_emit_payload_for_slot,
             log_protocol_send=log_protocol_send,
@@ -884,7 +907,6 @@ if socketio is not None:
             payload,
             sid=sid,
             packet_type='ready',
-            allow_body_data_fallback=False,
             transport_lock=transport_lock,
             transport_state=transport_state,
             process_protocol_packet=_process_protocol_packet,
@@ -900,7 +922,6 @@ if socketio is not None:
             payload,
             sid=sid,
             packet_type='request_environment',
-            allow_body_data_fallback=False,
             transport_lock=transport_lock,
             transport_state=transport_state,
             process_protocol_packet=_process_protocol_packet,
@@ -916,7 +937,6 @@ if socketio is not None:
             payload,
             sid=sid,
             packet_type='update_frontend',
-            allow_body_data_fallback=True,
             transport_lock=transport_lock,
             transport_state=transport_state,
             process_protocol_packet=_process_protocol_packet,
@@ -932,7 +952,6 @@ if socketio is not None:
             payload,
             sid=sid,
             packet_type='init_setup_done',
-            allow_body_data_fallback=True,
             transport_lock=transport_lock,
             transport_state=transport_state,
             process_protocol_packet=_process_protocol_packet,
@@ -948,7 +967,6 @@ if socketio is not None:
             payload,
             sid=sid,
             packet_type='frontend_event',
-            allow_body_data_fallback=True,
             transport_lock=transport_lock,
             transport_state=transport_state,
             process_protocol_packet=_process_protocol_packet,

@@ -42,6 +42,9 @@ class _MeyaGuitarBoost(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(40)
         return Response(ResponseType.ACCEPT, Notify("Distortion: +40 damage!", all_players, default_timeout))
+    
+    def __str__(self):
+        return "Meya Gao: Distortion Buff"
 
 
 class _MeyaAttackBlockAssessor(AVGEAssessor):
@@ -108,6 +111,9 @@ class _MeyaDamageReactor(AVGEReactor):
         attacker.add_listener(_MeyaAttackBlockAssessor(attacker, attacker.player.get_next_turn()))
 
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Meya Gao: Was hit"
 
 
 class MeyaGao(AVGECharacterCard):

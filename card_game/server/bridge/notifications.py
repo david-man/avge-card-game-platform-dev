@@ -4,6 +4,7 @@ from typing import Any, Callable
 
 from ...avge_abstracts.AVGEEvent import Notify, RevealCards, RevealStr
 from ...constants import PlayerID
+from ..protocol.command_codec import join_command
 
 
 def normalize_notify_timeout(timeout: int | None) -> int:
@@ -42,7 +43,7 @@ def notify_from_notify(
     if not targets or len(targets) >= 2:
         return notify_both(notify_data.message, timeout)
     return [
-        f'notify {target} {command_token(notify_data.message)} {timeout}'
+        join_command(['notify', target, command_token(notify_data.message), str(timeout)])
         for target in targets
     ]
 
@@ -67,8 +68,8 @@ def reveal_commands_for_players(
     target_token = 'both' if len(targets) >= 2 or len(targets) == 0 else targets[0]
 
     if isinstance(message_token, str):
-        return [f'reveal {target_token} [{cards_csv}] {message_token} {timeout_token}']
-    return [f'reveal {target_token} [{cards_csv}] {timeout_token}']
+        return [join_command(['reveal', target_token, f'[{cards_csv}]', message_token, str(timeout_token)])]
+    return [join_command(['reveal', target_token, f'[{cards_csv}]', str(timeout_token)])]
 
 
 def notification_commands_from_payload(

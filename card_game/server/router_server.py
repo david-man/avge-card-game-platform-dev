@@ -1246,15 +1246,6 @@ def _socket_sid() -> str:
     return raw_sid if isinstance(raw_sid, str) else ''
 
 
-PACKET_ALLOW_BODY_FALLBACK_BY_TYPE: dict[str, bool] = {
-    'ready': False,
-    'request_environment': False,
-    'update_frontend': True,
-    'init_setup_done': True,
-    'frontend_event': True,
-}
-
-
 def _session_response_payload(session: SessionIdentity) -> JsonObject:
     return {
         "ok": True,
@@ -1846,7 +1837,6 @@ if socketio is not None:
                 'sid': sid,
                 'packet_type': packet_type,
                 'payload': payload if isinstance(payload, dict) else {},
-                'allow_body_data_fallback': PACKET_ALLOW_BODY_FALLBACK_BY_TYPE.get(packet_type, False),
             },
             timeout_seconds=2.5,
         )

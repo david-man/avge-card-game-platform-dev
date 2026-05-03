@@ -50,7 +50,7 @@ class _RossPassiveAssessor(AVGEAssessor):
                             ActionTypes.PASSIVE,
                             self.owner_card,
                             StrSelectionQuery(
-                                "I Am Become Ross: Use Ross's attack?",
+                                f"I Am Become Ross: Use {self.owner_card.player.username}'s Ross's attack?",
                                 ["Yes", "No"],
                                 ["Yes", "No"],
                                 False,

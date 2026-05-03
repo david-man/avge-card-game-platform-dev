@@ -68,7 +68,7 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 			self.invalidate()
 
 	def assess(self, args=None):
-		return Response(ResponseType.SKIP, Notify('MainHall: player already played 3 cards this turn.', all_players, default_timeout))
+		return Response(ResponseType.SKIP, Notify('Main Hall: Small Ensemble Limit prevented this action!', all_players, default_timeout))
 
 
 class MainHall(AVGEStadiumCard):

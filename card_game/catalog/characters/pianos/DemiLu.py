@@ -75,8 +75,8 @@ class DemiLuConstraint(AVGEConstraint):
     def update_status(self):
         return
 
-    def package(self):
-        return 'DemiLu Steinert Warrior Constraint'
+    def __str__(self):
+        return 'Demi Lu: Steinert Warrior'
 
 
 class DemiLu(AVGECharacterCard):

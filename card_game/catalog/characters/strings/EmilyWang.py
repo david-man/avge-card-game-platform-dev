@@ -35,38 +35,15 @@ class EmilyWang(AVGECharacterCard):
         return already_used_idx == -1
 
     def active(self) -> Response:
-        tool = self.env.cache.get(self, EmilyWang._TOOL_DISCARD_KEY, None, True)
         available_tools = list(self.tools_attached)
-        if tool is None:
-            return Response(
-                ResponseType.INTERRUPT,
-                Interrupt[AVGEEvent]([
-                        InputEvent(
-                            self.player,
-                            [EmilyWang._TOOL_DISCARD_KEY],
-                            lambda r: True,
-                            ActionTypes.ACTIVATE_ABILITY,
-                            self,
-                            CardSelectionQuery(
-                                'Profit Margins: Choose a tool attached to this character to discard.',
-                                available_tools,
-                                available_tools,
-                                False,
-                                False,
-                            )
-                        )
-                    ]),
-            )
-
-        if not isinstance(tool, AVGECard) or tool not in self.tools_attached:
+        if(len(available_tools) == 0):
             return Response(ResponseType.CORE, Data())
-
         discard = self.player.cardholders[Pile.DISCARD]
         packet: PacketType = []
         packet.append(
             TransferCard(
-                tool,
-                tool.cardholder,
+                available_tools[0],
+                available_tools[0].cardholder,
                 discard,
                 ActionTypes.ACTIVATE_ABILITY,
                 self,

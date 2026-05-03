@@ -83,6 +83,8 @@ class _JuliaAtk2KnockoutReactor(AVGEReactor):
             return Response(ResponseType.ACCEPT, Notify('Ricochet: Knockout confirmed, 30 damage to each remaining opposing character on the bench.', all_players, default_timeout))
 
         return Response(ResponseType.ACCEPT, Data())
+    def __str__(self):
+        return "Julia Ceccarelli: Ricochet"
 
 class JuliaCeccarelli(AVGECharacterCard):
     _ATK1_ITEM_KEY = "julia_atk1_item"

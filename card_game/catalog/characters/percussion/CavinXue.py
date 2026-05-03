@@ -62,6 +62,9 @@ class CavinMaidBoostModifier(AVGEModifier):
                 default_timeout,
             ),
         )
+    
+    def __str__(self):
+        return "Cavin Xue: Wait no... I'm not into femboys- buff"
 
 
 class CavinXue(AVGECharacterCard):

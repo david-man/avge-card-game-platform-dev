@@ -43,7 +43,7 @@ class MaidStatusDamageShieldModifier(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
+	def __str__(self):
 		return "Maid Status Damage Shield"
 
 	def modify(self, args={}):

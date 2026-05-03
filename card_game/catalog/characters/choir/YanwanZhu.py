@@ -83,7 +83,7 @@ class _YanwanStartReactor(AVGEReactor):
                         AVGEAttributeModifier.ADDITIVE,
                         CardType.CHOIR,
                         ActionTypes.PASSIVE,
-                        None,
+                        Notify("Bass Boost: Healed for 30", all_players, default_timeout),
                         owner,
                     )
                 ]
@@ -96,6 +96,9 @@ class _YanwanStartReactor(AVGEReactor):
                 1,
             )
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Yanwan Zhu: Bass Boost"
 
 
 class YanwanZhu(AVGECharacterCard):

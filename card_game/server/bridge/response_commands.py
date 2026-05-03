@@ -129,8 +129,9 @@ def commands_from_response(bridge: Any, response: Response) -> list[str]:
     payload_notification_commands = bridge._notification_commands_from_payload(response_data)
 
     def _return_core_commands() -> list[str]:
-        commands.extend(payload_notification_commands)
-        return commands
+        if len(payload_notification_commands) == 0:
+            return commands
+        return [*payload_notification_commands, *commands]
 
     if isinstance(source, AVGECardHPChange):
         commands.append(f'hp {source.target_card.unique_id} {int(source.target_card.hp)} {int(source.target_card.max_hp)}')

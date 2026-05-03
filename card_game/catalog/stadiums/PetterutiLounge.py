@@ -44,6 +44,9 @@ class PetterutiMaidDamageModifier(AVGEModifier):
 		assert isinstance(event, AVGECardHPChange)
 		event.modify_magnitude(10)
 		return Response(ResponseType.ACCEPT, Data())
+	
+	def __str__(self):
+		return "Petteruti Lounge: Matcha Maid Cafe, +10 Damage"
 
 
 class PetterutiMaidTransfer(AVGEModifier):
@@ -64,6 +67,8 @@ class PetterutiMaidTransfer(AVGEModifier):
 			return False
 		if(not (event.pile_from.pile_type == Pile.ACTIVE and event.pile_to.pile_type == Pile.BENCH)):
 			return False
+		if(event.energy_requirement == 0):
+			return False
 		return len(event.card.statuses_attached.get(StatusEffect.MAID, [])) > 0
 
 	def event_effect(self) -> bool:
@@ -77,7 +82,10 @@ class PetterutiMaidTransfer(AVGEModifier):
 		event = self.attached_event
 		assert isinstance(event, TransferCard)
 		event.energy_requirement = max(0, event.energy_requirement - 1)
-		return Response(ResponseType.ACCEPT, Data())
+		return Response(ResponseType.ACCEPT, Notify("Petteruti Lounge: Matcha Maid Cafe reduced the retreat cost", all_players, default_timeout))
+	
+	def __str__(self):
+		return "Petteruti Lounge: Matcha Maid Cafe"
 
 
 class PetterutiPowerpointNightPacketListener(AVGEPacketListener):
@@ -104,10 +112,10 @@ class PetterutiPowerpointNightPacketListener(AVGEPacketListener):
 		attacking_player = caller.player
 		opponent_hand = attacking_player.opponent.cardholders[Pile.HAND]
 		if(len(opponent_hand) == 0):
-			return Response(ResponseType.ACCEPT, Notify('Petteruti Lounge: No card to reveal from opponent hand.', [attacking_player.unique_id], default_timeout))
+			return Response(ResponseType.ACCEPT, Data())
 
 		revealed = random.choice(list(opponent_hand))
-		return Response(ResponseType.ACCEPT, RevealCards('Petteruti Lounge: Random card from opponent hand', [attacking_player.unique_id], default_timeout, [revealed]))
+		return Response(ResponseType.ACCEPT, RevealCards('Petteruti Lounge Powerpoint Night: Random card from opponent hand', [attacking_player.unique_id], default_timeout, [revealed]))
 
 
 class PetterutiLounge(AVGEStadiumCard):

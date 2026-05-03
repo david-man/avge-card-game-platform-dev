@@ -6,14 +6,35 @@ from card_game.server.server_types import JsonObject, CommandPayload
 from ..logging import log_ack_wait
 
 
+def _command_entries_for_frontend_event_response(
+    commands: list[str],
+    command_payloads: list[CommandPayload],
+) -> list[JsonObject]:
+    entries: list[JsonObject] = []
+    for index, raw_command in enumerate(commands):
+        if not isinstance(raw_command, str):
+            continue
+
+        command_text = raw_command.strip()
+        if not command_text:
+            continue
+
+        response_payload = command_payloads[index] if index < len(command_payloads) else None
+        entries.append({
+            'command': command_text,
+            'response_payload': response_payload if isinstance(response_payload, dict) else None,
+        })
+
+    return entries
+
+
 def build_frontend_event_response(
     bridge: Any,
     commands: list[str],
     command_payloads: list[CommandPayload],
 ) -> JsonObject:
     return {
-        'commands': commands,
-        'command_payloads': command_payloads,
+        'commands': _command_entries_for_frontend_event_response(commands, command_payloads),
         'setup_payload': bridge._current_setup_payload(),
         'force_environment_sync': bridge._consume_force_environment_sync_flag(),
     }

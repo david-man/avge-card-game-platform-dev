@@ -42,6 +42,9 @@ class _RobertoGuitarBoost(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(40)
         return Response(ResponseType.ACCEPT, Notify("Distortion: +40 damage!", all_players, default_timeout))
+    
+    def __str__(self):
+        return "Roberto Gonzales: Distortion Buff"
 
 
 class RobertoGonzales(AVGECharacterCard):

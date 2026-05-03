@@ -5,6 +5,7 @@ from card_game.server.server_types import JsonObject, CommandPayload
 
 from ...avge_abstracts.AVGEEnvironment import GamePhase
 from ..logging import log_ack_trace_bridge
+from ..protocol.command_codec import to_wire_command
 
 
 def accept_frontend_ack(bridge: Any, payload: JsonObject) -> bool:
@@ -45,16 +46,26 @@ def emit_next_command_if_ready(bridge: Any) -> tuple[list[str], list[CommandPayl
     if not bridge._outbound_command_queue:
         return [], []
 
-    next_command = bridge._outbound_command_queue.pop(0)
-    next_payload = bridge._outbound_command_payload_queue.pop(0) if bridge._outbound_command_payload_queue else None
-    bridge._awaiting_frontend_ack = True
-    bridge._awaiting_frontend_ack_command = next_command
-    log_ack_trace_bridge(
-        'emit_command_waiting_ack',
-        command=next_command,
-        remaining_queue=len(bridge._outbound_command_queue),
-    )
-    return [next_command], [next_payload]
+    while bridge._outbound_command_queue:
+        raw_next_command = bridge._outbound_command_queue.pop(0)
+        next_payload = bridge._outbound_command_payload_queue.pop(0) if bridge._outbound_command_payload_queue else None
+        if not isinstance(raw_next_command, str):
+            continue
+
+        next_command = to_wire_command(raw_next_command)
+        if not next_command:
+            continue
+
+        bridge._awaiting_frontend_ack = True
+        bridge._awaiting_frontend_ack_command = next_command
+        log_ack_trace_bridge(
+            'emit_command_waiting_ack',
+            command=next_command,
+            remaining_queue=len(bridge._outbound_command_queue),
+        )
+        return [next_command], [next_payload]
+
+    return [], []
 
 
 def append_phase_command_if_changed(bridge: Any, commands: list[str], phase: GamePhase) -> None:

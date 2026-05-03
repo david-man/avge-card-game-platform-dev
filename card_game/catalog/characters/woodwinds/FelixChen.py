@@ -43,6 +43,9 @@ class FelixSynesthesiaModifier(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(-10)
         return Response(ResponseType.ACCEPT, Notify('Synesthesia: Damage from opponent attacks reduced by 10.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Felix Chen: Synesthesia Debuff"
 
 
 class FelixChen(AVGECharacterCard):

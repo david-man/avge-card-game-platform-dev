@@ -25,8 +25,8 @@ class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
     def make_announcement(self) -> bool:
         return True
 
-    def package(self):
-        return "RileyHall Reactor"
+    def __str__(self):
+        return "Riley Hall: Attendance Policy"
 
     def react(self, args=None):
         event = self.attached_event
@@ -47,13 +47,13 @@ class RileyHallStartTurnBenchGapDamageReactor(AVGEReactor):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.ALL,
                     ActionTypes.NONCHAR,
-                    None,
+                    Notify(f'Riley Hall: Attendance Policy dealt {max(0, min(current_hp - 1, damage_per_character))} damage', all_players, default_timeout),
                     self.owner_card,
                 )
             )
 
         self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, RileyHall)), 1)
-        return Response(ResponseType.ACCEPT, Notify('Riley Hall: Applied attendance nonlethal damage at turn start.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class RileyHall(AVGEStadiumCard):

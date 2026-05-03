@@ -39,6 +39,9 @@ class JordanOpponentAttackBoost(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(20)
         return Response(ResponseType.ACCEPT, Notify('Trickster: Opponent attack +20 this turn.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Jordan Roosevelt: Trickster Buff"
 
 
 class JordanSelfAttackBoost(AVGEModifier):
@@ -72,6 +75,9 @@ class JordanSelfAttackBoost(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(60)
         return Response(ResponseType.ACCEPT, Notify('Trickster: Jordan attack +60 this turn.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Jordan Roosevelt: Trickster Buff"
 
 
 class JordanRoosevelt(AVGECharacterCard):

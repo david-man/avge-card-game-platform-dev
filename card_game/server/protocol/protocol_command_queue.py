@@ -5,6 +5,7 @@ from typing import Any, Callable, Literal, cast
 from card_game.server.server_types import JsonObject, CommandPayload
 
 from ..models.server_models import ClientSession, PendingCommandAck, PlayerSlot, MultiplayerTransportState
+from .command_codec import command_action, split_command
 
 BackendCommandResponseCategory = Literal[
     'replay_command',
@@ -18,7 +19,7 @@ BackendCommandResponseCategory = Literal[
 
 
 def classify_command_response_category(command: str) -> BackendCommandResponseCategory:
-    parts = command.strip().split()
+    parts = split_command(command)
     if not parts:
         return 'other'
 
@@ -58,7 +59,7 @@ def classify_required_ack_slots(
     transport_state: MultiplayerTransportState,
     normalize_client_slot: Callable[[Any], str | None],
 ) -> set[PlayerSlot]:
-    parts = command.strip().split()
+    parts = split_command(command)
     if not parts:
         return set()
 
@@ -71,19 +72,18 @@ def classify_required_ack_slots(
         if transport_state.sid_by_slot[cast(PlayerSlot, slot)] is not None
     }
 
-    if action in {'notify', 'reveal', 'sound'} and len(parts) >= 2:
-        broadcast_target = parts[1].strip().lower()
-        if broadcast_target in {'both', 'all'}:
-            return connected_slots if connected_slots else {'p1', 'p2'}
+    # Query-notification commands (notify/reveal/sound) are visual state gates
+    # for both clients. Require ACK from all connected slots before advancing
+    # to the next queued command, even when the command target is single-player.
+    if action in {'notify', 'reveal', 'sound'}:
+        return connected_slots if connected_slots else {'p1', 'p2'}
 
     if action in {'lock-input', 'lock_input', 'unlock-input', 'unlock_input'} and len(parts) >= 2:
         targeted_slot = normalize_target_slot(parts[1])
         if targeted_slot is not None:
             return {targeted_slot}
 
-    if action in {'notify', 'reveal', 'sound'} and len(parts) >= 2:
-        targeted_slot = normalize_target_slot(parts[1])
-    elif action == 'input' and len(parts) >= 3:
+    if action == 'input' and len(parts) >= 3:
         targeted_slot = normalize_target_slot(parts[2])
 
     if targeted_slot is not None:
@@ -134,7 +134,7 @@ def commands_ready_for_slot(
 
     head = pending_command_acks[0]
     normalized_slot = normalize_client_slot(slot)
-    is_notify_command = head.command.strip().lower().startswith('notify ')
+    is_notify_command = command_action(head.command) == 'notify'
 
     if normalized_slot is None:
         packets.append(
@@ -169,18 +169,24 @@ def commands_ready_for_slot(
 
 
 def acknowledge_head_command(
-    command: str,
+    command: str | None,
     source_slot: str | None,
     pending_command_acks: list[PendingCommandAck],
     normalize_client_slot: Callable[[Any], str | None],
     registration_condition: Condition,
     transport_lock: RLock,
+    command_id: int | None = None,
 ) -> tuple[bool, str | None]:
     if not pending_command_acks:
         return False, None
 
     head = pending_command_acks[0]
-    if head.command != command:
+    _ = command
+    has_command_id = isinstance(command_id, int) and not isinstance(command_id, bool)
+    if not has_command_id:
+        return False, None
+
+    if head.command_id != command_id:
         return False, None
 
     normalized_slot = normalize_client_slot(source_slot)

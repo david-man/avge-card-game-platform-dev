@@ -88,6 +88,9 @@ class DanielZhuSharePainModifier(AVGEModifier):
             ResponseType.ACCEPT,
             Notify(f'Share the Pain: Redirected {redirect_damage} damage to Daniel Zhu.', all_players, default_timeout),
         )
+    
+    def __str__(self):
+        return "Daniel Zhu: Share the Pain"
 
 
 class DanielZhu(AVGECharacterCard):

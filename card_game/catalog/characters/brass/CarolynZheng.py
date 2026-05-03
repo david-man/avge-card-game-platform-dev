@@ -59,12 +59,15 @@ class _CarolynAttackModifier(AVGEModifier):
     def on_packet_completion(self):
         return
     
+    def __str__(self):
+        return "Carolyn Zheng: Procrastinate"
+    
     def modify(self, args=None):
         assert(isinstance(self.attached_event, AVGECardHPChange))
         event : AVGECardHPChange = self.attached_event
         # If this character did not attack during the previous turn, deal +30 damage.
         event.modify_magnitude(30)
-        return Response(ResponseType.ACCEPT, Notify("Carolyn Zheng buffed her own attack by 30 damage!", all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Notify("Procrastinate: Carolyn Zheng buffed her own attack by 30 damage!", all_players, default_timeout))
 
 
 class CarolynZheng(AVGECharacterCard):

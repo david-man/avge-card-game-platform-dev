@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-from card_game.server.server_types import JsonObject, CommandPayload
+from card_game.server.server_types import JsonObject
 
 
 def extract_bridge_commands(bridge_result: JsonObject) -> tuple[list[JsonObject], JsonObject | None]:
@@ -9,17 +8,16 @@ def extract_bridge_commands(bridge_result: JsonObject) -> tuple[list[JsonObject]
     resolved_setup = next_setup if isinstance(next_setup, dict) else None
 
     raw_commands = bridge_result.get('commands', [])
-    raw_payloads = bridge_result.get('command_payloads', [])
-    payloads = raw_payloads if isinstance(raw_payloads, list) else []
+    if not isinstance(raw_commands, list):
+        raw_commands = []
 
     extracted: list[JsonObject] = []
-    for index, command in enumerate(raw_commands):
-        if isinstance(command, dict):
-            command_text = command.get('command')
-            response_payload = command.get('response_payload')
-        else:
-            command_text = command
-            response_payload = payloads[index] if index < len(payloads) else None
+    for command in raw_commands:
+        if not isinstance(command, dict):
+            continue
+
+        command_text = command.get('command')
+        response_payload = command.get('response_payload')
 
         if not isinstance(command_text, str) or not command_text.strip():
             continue

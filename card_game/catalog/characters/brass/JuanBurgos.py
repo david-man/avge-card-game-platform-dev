@@ -33,6 +33,9 @@ class _JuanBenchAttackBoost(AVGEModifier):
     def update_status(self):
         return
 
+    def __str__(self):
+        return "Juan Burgos: Baking Buff"
+    
     def modify(self, args=None):
         assert isinstance(self.attached_event, AVGECardHPChange)
         event : AVGECardHPChange = self.attached_event

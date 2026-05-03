@@ -126,6 +126,7 @@ from .bridge.command_utils import (
     reorder_target_command_arg as bridge_reorder_target_command_arg,
     transfer_target_command_arg as bridge_transfer_target_command_arg,
 )
+from .protocol.command_codec import join_command as bridge_join_command
 from .bridge.init_setup import (
     build_player_setup_for_init as bridge_build_player_setup_for_init,
 )
@@ -377,7 +378,7 @@ class FrontendGameBridge:
             notify_data,
             notify_targets_from_players_fn=self._notify_targets_from_players,
             notify_both=self._notify_both,
-            command_token=self._command_token,
+            command_token=bridge_command_token,
             normalize_timeout=self._normalize_notify_timeout,
         )
 
@@ -394,7 +395,7 @@ class FrontendGameBridge:
             message,
             timeout,
             notify_targets_from_players_fn=self._notify_targets_from_players,
-            command_token=self._command_token,
+            command_token=bridge_command_token,
             normalize_timeout=self._normalize_notify_timeout,
         )
 
@@ -532,15 +533,16 @@ class FrontendGameBridge:
         if player is None:
             player = getattr(source, 'player_for', None)
         normalized_timeout = self._normalize_notify_timeout(timeout)
+        message_token = bridge_command_token(message)
         if player is not None and hasattr(player, 'unique_id'):
             token = self._player_id_to_frontend(player.unique_id)
-            return [f'notify {token} {self._command_token(message)} {normalized_timeout}']
+            return [bridge_join_command(['notify', token, message_token, str(normalized_timeout)])]
         return self._notify_both(message, timeout=normalized_timeout)
 
     def _notify_both(self, message: str, timeout: int | None = -1) -> list[str]:
-        msg = self._command_token(message)
+        msg = bridge_command_token(message)
         normalized_timeout = self._normalize_notify_timeout(timeout)
-        return [f'notify both {msg} {normalized_timeout}']
+        return [bridge_join_command(['notify', 'both', msg, str(normalized_timeout)])]
 
     def _notify_current_turn_player(self, message: str, timeout: int | None = -1) -> list[str]:
         turn_player = getattr(self.env, 'player_turn', None)
@@ -549,7 +551,7 @@ class FrontendGameBridge:
             return self._notify_both(message, timeout=timeout)
         token = self._player_id_to_frontend(turn_player_id)
         normalized_timeout = self._normalize_notify_timeout(timeout)
-        return [f'notify {token} {self._command_token(message)} {normalized_timeout}']
+        return [bridge_join_command(['notify', token, bridge_command_token(message), str(normalized_timeout)])]
 
     def _winner_command_from_surrender_payload(self, data: JsonObject) -> str | None:
         return bridge_winner_command_from_surrender_payload(
@@ -623,7 +625,7 @@ class FrontendGameBridge:
         return bridge_csv_from_display_entries(values)
 
     def _command_token(self, raw: str) -> str:
-        return bridge_command_token(raw)
+        return bridge_command_token(raw, for_space_delimited_protocol=True)
 
     def _canonical_event_name(self, raw_event_type: object) -> str:
         return bridge_canonical_event_name(raw_event_type)

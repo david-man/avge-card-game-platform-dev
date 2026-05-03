@@ -35,8 +35,16 @@ class _FakeListener:
     def __init__(self, name: str):
         self._name = name
 
-    def package(self) -> str:
+    def __str__(self) -> str:
         return self._name
+
+
+class _FakeListenerWithDeprecatedPackage:
+    def __str__(self) -> str:
+        return 'from-str'
+
+    def package(self) -> str:
+        raise AssertionError('package() should not be used for ordering tokens')
 
 
 def _make_bridge_with_cards(*cards: _FakeCard) -> FrontendGameBridge:
@@ -99,7 +107,29 @@ def test_build_input_command_for_card_selection_query() -> None:
 
     command = bridge._build_input_command(event, query)
 
-    assert command == 'input selection player-1 Pick_cards_now [card-a,card-b], [card-a], 2 true false'
+    assert command == 'input:;:selection:;:player-1:;:Pick cards now:;:[card-a,card-b]:;:[card-a]:;:2:;:true:;:false'
+
+
+def test_build_input_command_for_card_selection_query_preserves_spaced_card_ids() -> None:
+    card_a = _FakeCard('BUO Stand')
+    card_b = _FakeCard('Main Hall')
+    bridge = _make_bridge_with_cards(card_a, card_b)
+
+    event = SimpleNamespace(
+        player_for=SimpleNamespace(unique_id=PlayerID.P1),
+        input_keys=['k1', 'k2'],
+    )
+    query = CardSelectionQuery(
+        'Pick cards now',
+        [card_a],
+        [card_a, card_b],
+        False,
+        True,
+    )
+
+    command = bridge._build_input_command(event, query)
+
+    assert command == 'input:;:selection:;:player-1:;:Pick cards now:;:[BUO Stand,Main Hall]:;:[BUO Stand]:;:2:;:true:;:false'
 
 
 def test_parse_frontend_input_result_for_card_selection_query() -> None:
@@ -113,6 +143,22 @@ def test_parse_frontend_input_result_for_card_selection_query() -> None:
     )
 
     parsed = bridge._parse_frontend_input_result(event, {'ordered_selections': ['card-a', 'none']})
+
+    assert isinstance(parsed, dict)
+    assert parsed.get('input_result') == [card_a, None]
+
+
+def test_parse_frontend_input_result_for_card_selection_query_with_spaced_ids() -> None:
+    card_a = _FakeCard('BUO Stand')
+    card_b = _FakeCard('Main Hall')
+    bridge = _make_bridge_with_cards(card_a, card_b)
+
+    event = SimpleNamespace(
+        query_data=CardSelectionQuery('Pick cards now', [card_a, card_b], [card_a, card_b], True, False),
+        input_keys=['k1', 'k2'],
+    )
+
+    parsed = bridge._parse_frontend_input_result(event, {'ordered_selections': ['BUO Stand', 'none']})
 
     assert isinstance(parsed, dict)
     assert parsed.get('input_result') == [card_a, None]
@@ -177,6 +223,39 @@ def test_parse_frontend_input_result_pads_missing_allows_none_string_selections(
     assert parsed.get('input_result') == ['A', None]
 
 
+def test_build_input_command_for_str_selection_query_preserves_spaced_values() -> None:
+    bridge = _make_bridge_with_cards()
+    event = SimpleNamespace(
+        player_for=SimpleNamespace(unique_id=PlayerID.P1),
+        input_keys=['k1', 'k2'],
+    )
+    query = StrSelectionQuery(
+        'Pick strings now',
+        ['BUO Stand', 'Main Hall'],
+        ['BUO Stand'],
+        False,
+        True,
+    )
+
+    command = bridge._build_input_command(event, query)
+
+    assert command == 'input:;:selection:;:player-1:;:Pick strings now:;:[BUO Stand]:;:[BUO Stand,Main Hall]:;:2:;:true:;:false'
+
+
+def test_parse_frontend_input_result_for_str_selection_query_with_spaces() -> None:
+    bridge = _make_bridge_with_cards()
+
+    event = SimpleNamespace(
+        query_data=StrSelectionQuery('Pick strings now', ['BUO Stand', 'Main Hall'], ['BUO Stand', 'Main Hall'], True, False),
+        input_keys=['k1', 'k2'],
+    )
+
+    parsed = bridge._parse_frontend_input_result(event, {'ordered_selections': ['BUO Stand', 'none']})
+
+    assert isinstance(parsed, dict)
+    assert parsed.get('input_result') == ['BUO Stand', None]
+
+
 def test_build_input_command_for_integer_query() -> None:
     bridge = _make_bridge_with_cards()
     event = SimpleNamespace(
@@ -186,7 +265,7 @@ def test_build_input_command_for_integer_query() -> None:
 
     command = bridge._build_input_command(event, IntegerInputData('Pick a number', 0, 10))
 
-    assert command == 'input numerical-entry player-2 Pick_a_number'
+    assert command == 'input:;:numerical-entry:;:player-2:;:Pick a number'
 
 
 def test_build_input_command_for_coin_and_d6_queries() -> None:
@@ -200,8 +279,8 @@ def test_build_input_command_for_coin_and_d6_queries() -> None:
         coin_command = bridge._build_input_command(event, CoinflipData('Flip now'))
         d6_command = bridge._build_input_command(event, D6Data('Roll now'))
 
-    assert coin_command == 'input coin player-1 Flip_now 1'
-    assert d6_command == 'input d6 player-1 Roll_now 6'
+    assert coin_command == 'input:;:coin:;:player-1:;:Flip now:;:1'
+    assert d6_command == 'input:;:d6:;:player-1:;:Roll now:;:6'
 
 
 def test_build_input_command_for_multi_coin_and_d6_queries() -> None:
@@ -219,8 +298,8 @@ def test_build_input_command_for_multi_coin_and_d6_queries() -> None:
         coin_command = bridge._build_input_command(coin_event, CoinflipData('Flip now'))
         d6_command = bridge._build_input_command(d6_event, D6Data('Roll now'))
 
-    assert coin_command == 'input coin player-1 Flip_now [1,0,1]'
-    assert d6_command == 'input d6 player-1 Roll_now [4,2]'
+    assert coin_command == 'input:;:coin:;:player-1:;:Flip now:;:[1,0,1]'
+    assert d6_command == 'input:;:d6:;:player-1:;:Roll now:;:[4,2]'
 
 
 def test_commands_from_response_transfer_same_deck_emits_single_card_shuffle_animation() -> None:
@@ -296,7 +375,7 @@ def test_requires_query_ordering_query_emits_and_parses_round_trip() -> None:
     commands = bridge._commands_from_response(response)
 
     assert commands == [
-        'input selection player-1 order_listeners [l0_alpha,l1_beta], [l0_alpha,l1_beta], 2 false false'
+        'input:;:selection:;:player-1:;:order_listeners:;:[l0_alpha,l1_beta]:;:[l0_alpha,l1_beta]:;:2:;:false:;:false'
     ]
 
     assert isinstance(bridge._pending_ordering_listener_by_token, dict)
@@ -310,6 +389,30 @@ def test_requires_query_ordering_query_emits_and_parses_round_trip() -> None:
     assert command_side_effects == []
     assert isinstance(parsed_args, dict)
     assert parsed_args.get('group_ordering') == [listener_b, listener_a]
+
+
+def test_requires_query_ordering_query_uses_str_over_deprecated_package() -> None:
+    bridge = _make_bridge_with_cards()
+    listener = _FakeListenerWithDeprecatedPackage()
+
+    response = Response(ResponseType.REQUIRES_QUERY, OrderingQuery([listener]))
+    commands = bridge._commands_from_response(response)
+
+    assert commands == [
+        'input:;:selection:;:player-1:;:order_listeners:;:[l0_from-str]:;:[l0_from-str]:;:1:;:false:;:false'
+    ]
+
+
+def test_requires_query_ordering_query_preserves_spaces_in_listener_tokens() -> None:
+    bridge = _make_bridge_with_cards()
+    listener = _FakeListener('vincent heal reactor')
+
+    response = Response(ResponseType.REQUIRES_QUERY, OrderingQuery([listener]))
+    commands = bridge._commands_from_response(response)
+
+    assert commands == [
+        'input:;:selection:;:player-1:;:order_listeners:;:[l0_vincent heal reactor]:;:[l0_vincent heal reactor]:;:1:;:false:;:false'
+    ]
 
 
 def test_requires_query_ordering_query_rejects_noncanonical_payload_key() -> None:
@@ -364,7 +467,7 @@ def test_requires_query_legacy_non_data_query_payload_emits_unhandled_notify() -
 
     commands = bridge._commands_from_response(Response(ResponseType.REQUIRES_QUERY, Data()))
 
-    assert commands == ['notify both UNHANDLED_QUERY_DATA -1']
+    assert commands == ['notify:;:both:;:UNHANDLED_QUERY_DATA:;:-1']
 
 
 def test_drain_engine_keeps_requires_query_command_when_flushing_pending_packet_commands() -> None:
@@ -387,8 +490,8 @@ def test_drain_engine_keeps_requires_query_command_when_flushing_pending_packet_
     drained_commands, drained_payloads = bridge._drain_engine(input_args=None, stop_after_command_batch=True)
 
     assert drained_commands == [
-        'notify player-1 first_packet_command 3',
-        'input selection player-2 Pick_cards_now [card-a], [card-a], 1 false false',
+        'notify:;:player-1:;:first packet command:;:3',
+        'input:;:selection:;:player-2:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false',
     ]
     assert drained_payloads == [None, None]
 
@@ -428,7 +531,7 @@ def test_drain_engine_emits_transfer_move_before_reactor_query() -> None:
 
     assert first_batch_commands == ['mv card-a p1-hand']
     assert first_batch_payloads == [None]
-    assert second_batch_commands == ['input selection player-2 Pick_cards_now [card-a], [card-a], 1 false false']
+    assert second_batch_commands == ['input:;:selection:;:player-2:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false']
     assert second_batch_payloads == [None]
 
 
@@ -451,7 +554,7 @@ def test_requires_query_input_event_is_latched_and_not_reemitted() -> None:
     first_commands = bridge._commands_from_response(response)
     second_commands = bridge._commands_from_response(response)
 
-    assert first_commands == ['input selection player-2 Pick_cards_now [card-a], [card-a], 1 false false']
+    assert first_commands == ['input:;:selection:;:player-2:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false']
     assert second_commands == []
     assert bridge._pending_input_query_event is query_event
     assert bridge._pending_input_query_command == first_commands[0]
@@ -470,7 +573,7 @@ def test_pump_outbound_waits_for_pending_input_query_latch() -> None:
     )
     bridge.env._engine.event_running = query_event
     bridge._pending_input_query_event = query_event
-    bridge._pending_input_query_command = 'input selection player-1 Pick_cards_now [card-a], [card-a], 1 false false'
+    bridge._pending_input_query_command = 'input:;:selection:;:player-1:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false'
 
     forward_calls = 0
 
@@ -500,14 +603,17 @@ def test_setup_loaded_resends_latched_input_query_command() -> None:
     )
     bridge.env._engine.event_running = query_event
     bridge._pending_input_query_event = query_event
-    bridge._pending_input_query_command = 'input selection player-1 Pick_cards_now [card-a], [card-a], 1 false false'
+    bridge._pending_input_query_command = 'input:;:selection:;:player-1:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false'
 
     with patch('card_game.server.game_runner.environment_to_setup_payload', return_value={}):
         response = bridge.handle_frontend_event('setup_loaded', {}, None)
 
-    assert response['commands'] == ['input selection player-1 Pick_cards_now [card-a], [card-a], 1 false false']
+    assert response['commands'] == [{
+        'command': 'input:;:selection:;:player-1:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false',
+        'response_payload': None,
+    }]
     assert bridge._awaiting_frontend_ack is True
-    assert bridge._awaiting_frontend_ack_command == 'input selection player-1 Pick_cards_now [card-a], [card-a], 1 false false'
+    assert bridge._awaiting_frontend_ack_command == 'input:;:selection:;:player-1:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false'
 
 
 def test_input_result_accept_clears_pending_input_query_latch() -> None:
@@ -523,7 +629,7 @@ def test_input_result_accept_clears_pending_input_query_latch() -> None:
     )
     bridge.env._engine.event_running = query_event
     bridge._pending_input_query_event = query_event
-    bridge._pending_input_query_command = 'input selection player-1 Pick_cards_now [card-a], [card-a], 1 false false'
+    bridge._pending_input_query_command = 'input:;:selection:;:player-1:;:Pick cards now:;:[card-a]:;:[card-a]:;:1:;:false:;:false'
 
     command_side_effects, parsed_args = bridge._apply_frontend_event(
         'input_result',

@@ -48,8 +48,8 @@ class JaydenBrownFourLeafCloverReactor(AVGEReactor):
     def make_announcement(self) -> bool:
         return True
 
-    def package(self):
-        return 'JaydenBrown Four-leaf Clover Reactor'
+    def __str__(self):
+        return 'Jayden Brown: Four-leaf Clover'
 
     def react(self, args=None):
         if args is None:
@@ -82,8 +82,8 @@ class JaydenBrownFourLeafCloverReactor(AVGEReactor):
 
         if choice == 'Yes' and len(event.input_keys) > 0:
             env.cache.set(self.owner_card, event.input_keys[0], 1)
-            return Response(ResponseType.CORE, Notify('Four-leaf Clover! Turned the first coin flip to heads', all_players, default_timeout))
-        return Response(ResponseType.CORE, Data())
+            return Response(ResponseType.ACCEPT, Notify('Four-leaf Clover! Turned the first coin flip to heads', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 class JaydenBrown(AVGECharacterCard):
     _D6_ROLL_KEY = 'jayden_d6_roll'

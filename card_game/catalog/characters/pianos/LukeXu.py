@@ -30,8 +30,8 @@ class LukeXuPassiveConstraint(AVGEConstraint):
         if self.owner_card.env.round_id != self.round_played or self.owner_card.env.player_turn != self.owner_card.player:
             self.invalidate()
 
-    def package(self):
-        return 'LukeXu Nullify Constraint'
+    def __str__(self):
+        return 'Luke Xu: Nullify Constraint'
 
 
 class _LukeNullifyTransferReactor(AVGEReactor):
@@ -62,6 +62,9 @@ class _LukeNullifyTransferReactor(AVGEReactor):
             args = {}
         self.owner_card._activate_nullify_for_turn()
         return Response(ResponseType.ACCEPT, Notify('Nullify: Opponent abilities have no effect this turn.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Luke Xu: Nullify"
 
 
 class LukeNextAttackHalvedModifier(AVGEModifier):
@@ -99,6 +102,9 @@ class LukeNextAttackHalvedModifier(AVGEModifier):
         # rounded up halving: x - floor(x/2) == ceil(x/2)
         event.modify_magnitude(-math.floor(event.magnitude / 2))
         return Response(ResponseType.ACCEPT, Notify('Damper Pedal: Incoming damage halved.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Luke Xu: Damper Pedal Debuff"
 
 
 class LukeXu(AVGECharacterCard):

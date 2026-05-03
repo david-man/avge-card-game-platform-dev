@@ -93,7 +93,7 @@ class BaseEvent(Event):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "base-event"
 
     def core(self, args={}):
@@ -134,7 +134,7 @@ class CountingExternalListener(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "counting-external-listener"
 
 
@@ -158,7 +158,7 @@ class SkipListener(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "skip-listener"
 
 
@@ -186,7 +186,7 @@ class CountingInternalListener(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "counting-internal-listener"
 
 
@@ -215,7 +215,7 @@ class QueryListener(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "query-listener"
 
 
@@ -242,7 +242,7 @@ class CountingModifierListener(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "counting-modifier-listener"
 
 
@@ -250,6 +250,9 @@ class TagConstraint(Constraint[Event]):
     def __init__(self, identifier: str):
         super().__init__()
         self.identifier = identifier
+
+    def __str__(self):
+        return "tag-constraint"
 
     def match(self, obj) -> bool:
         if isinstance(obj, Constraint):
@@ -260,7 +263,7 @@ class TagConstraint(Constraint[Event]):
         return True
 
     def response_data_on_attach(self, attached_to: AbstractEventListener[Event]) -> Data:
-        return ConstraintAnnouncement(constrainer_announced=self.package())
+        return ConstraintAnnouncement(constrainer_announced=str(self))
 
     def update_status(self):
         return
@@ -268,7 +271,7 @@ class TagConstraint(Constraint[Event]):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "tag-constraint"
 
 
@@ -613,7 +616,7 @@ class CacheTouchModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "cache-touch-modifier"
 
 
@@ -647,7 +650,7 @@ class RequestInputModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "request-input-modifier"
 
 
@@ -677,7 +680,7 @@ class DownstreamBlockAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "downstream-block-assessor"
 
 
@@ -729,7 +732,7 @@ class listdInterruptModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "listd-interrupt-modifier"
 
 
@@ -796,7 +799,7 @@ class ForceFastForwardAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "force-fast-forward-assessor"
 
 
@@ -822,7 +825,7 @@ class ForceFastForwardDownstreamModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "force-fast-forward-downstream-modifier"
 
 
@@ -856,7 +859,7 @@ class InterruptThenFastForwardAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "interrupt-then-fast-forward-assessor"
 
 
@@ -882,7 +885,7 @@ class DownstreamOverrideModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "downstream-override-modifier"
 
 
@@ -914,7 +917,7 @@ class InterruptThenAcceptAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "interrupt-then-accept-assessor"
 
 
@@ -974,7 +977,7 @@ class OrderedInterruptAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "ordered-interrupt-assessor"
 
 
@@ -1042,7 +1045,7 @@ class OrderedInterruptModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "ordered-interrupt-modifier"
 
 
@@ -1089,7 +1092,7 @@ class OrderedInterruptReactor(TestReactor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "ordered-interrupt-reactor"
 
 
@@ -1149,7 +1152,7 @@ class PriorityEscalatingReactor(TestReactor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "priority-escalating-reactor"
 
 
@@ -1207,7 +1210,7 @@ class InterruptThenSkipAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "interrupt-then-skip-assessor"
 
 
@@ -1277,7 +1280,7 @@ class AttachTracingModifier(TestModifier):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "attach-tracing-modifier"
 
 
@@ -1330,7 +1333,7 @@ class AttachTracingAssessor(TestAssessor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "attach-tracing-assessor"
 
 
@@ -1370,7 +1373,7 @@ class AttachTracingReactor(TestReactor):
     def make_announcement(self) -> bool:
         return False
 
-    def package(self):
+    def __str__(self):
         return "attach-tracing-reactor"
 
 

@@ -40,7 +40,7 @@ class _PascalDelayedReactor(AVGEReactor):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.PERCUSSION,
                     ActionTypes.PASSIVE,
-                    None,
+                    Notify("Ominous Chimes: 70 damage", all_players, default_timeout),
                     self.owner_card,
                 )
             )
@@ -51,6 +51,9 @@ class _PascalDelayedReactor(AVGEReactor):
         )
         self.invalidate()
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Pascal Kim: Ominous Chimes"
 
 
 class PascalKim(AVGECharacterCard):

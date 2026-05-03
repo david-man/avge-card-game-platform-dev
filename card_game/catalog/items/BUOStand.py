@@ -51,11 +51,15 @@ class BUOStandNextAttackModifier(AVGEModifier):
 		else:
 			event.modify_magnitude(20)
 			return Response(ResponseType.ACCEPT, Notify('BUO Stand: +20 damage on your first attack this turn.', all_players, default_timeout))
+	def __str__(self):
+		return "BUO Stand Buff"
 
 class BUOStand(AVGEItemCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
+	def __str__(self):
+		return "BUO Stand"
 	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		active = card.player.get_active_card()
 		if(len(active.energy) == 0):

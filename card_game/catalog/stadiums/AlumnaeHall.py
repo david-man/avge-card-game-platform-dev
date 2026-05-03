@@ -52,7 +52,10 @@ class AlumnaeHallDrawPunishReactor(AVGEReactor):
 			return packet
 
 		self.propose(AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, AlumnaeHall)), 1)
-		return Response(ResponseType.ACCEPT, Notify('Alumnae Hall: Draw trigger applied nonlethal damage to the drawing player\'s in-play characters.', all_players, default_timeout))
+		return Response(ResponseType.ACCEPT, Notify('Alumnae Hall: Intense Reverb', all_players, default_timeout))
+	
+	def __str__(self):
+		return "Alumnae Hall: Intense Reverb"
 
 
 class AlumnaeHall(AVGEStadiumCard):
@@ -81,4 +84,5 @@ class AlumnaeHall(AVGEStadiumCard):
 		self.add_listener(AlumnaeHallDrawPunishReactor(self))
 		if(len(packet) > 0):
 			self.propose(AVGEPacket(packet, AVGEEngineID(self, ActionTypes.NONCHAR, AlumnaeHall)))
+			return Response(ResponseType.CORE, Notify('Alumnae Hall: Return by 4PM', all_players, default_timeout))
 		return Response(ResponseType.CORE, Data())

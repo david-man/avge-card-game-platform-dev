@@ -78,6 +78,8 @@ class AVGEWeaknessModifier(AVGEModifier):
         super().__init__(group = EngineGroup.INTERNAL_1,
                          identifier = AVGEEngineID(env, ActionTypes.ENV, None),
                          requires_runtime_info=False)
+    def __str__(self):
+        return "AVGE Weakness Modifier"
     def update_status(self):
         return
     def event_match(self, event):
@@ -170,6 +172,8 @@ class AVGETransferEnergyRequirementReactor(AVGEReactor):
                          identifier = AVGEEngineID(env, ActionTypes.ENV, None),
                          
                           requires_runtime_info=False)
+    def __str__(self):
+        return "AVGE Transfer Energy Requirement Reactor"
     def update_status(self):
         return
     def event_match(self, event):

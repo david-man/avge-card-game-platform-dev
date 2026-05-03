@@ -29,7 +29,7 @@ class BAIEmailStadiumPlayLockAssessor(AVGEAssessor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
+	def __str__(self):
 		return "BAIEmail Stadium Lock Assessor"
 
 	def assess(self, args=None):
@@ -97,3 +97,6 @@ class BAIEmail(AVGEItemCard):
 			card.propose(AVGEPacket(packet, AVGEEngineID(card, ActionTypes.NONCHAR, BAIEmail)))
 
 		return self.generic_response(card)
+	
+	def __str__(self):
+		return "BAI Email"

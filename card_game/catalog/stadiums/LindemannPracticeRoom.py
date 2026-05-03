@@ -50,14 +50,14 @@ class LindemannReducedAttackCostModifier(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "LindemannPracticeRoom Reduced Attack Cost"
+	def __str__(self):
+		return "Lindemann Practice Room: Sectionals"
 
 	def modify(self, args=None):
 		event = self.attached_event
 		assert isinstance(event, PlayCharacterCard)
 		event.energy_requirement = max(0, event.energy_requirement - 1)
-		return Response(ResponseType.ACCEPT, Data())
+		return Response(ResponseType.ACCEPT, Notify('Lindemann Practice Room: Sectionals', all_players, default_timeout))
 
 
 class LindemannPracticeRoom(AVGEStadiumCard):

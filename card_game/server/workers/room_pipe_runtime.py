@@ -96,19 +96,9 @@ def _dispatch_command(method: str, params: dict[str, Any]) -> dict[str, Any]:
             sid=sid,
             transport_lock=room_server.transport_lock,
             transport_state=room_server.transport_state,
-            expected_p1_session_id=room_server.expected_p1_session_id,
-            expected_p2_session_id=room_server.expected_p2_session_id,
-            room_stage=room_server.room_stage,
             socketio=room_server.socketio,
             emit_fn=_emit_fn_for_sid(sid),
-            expected_slot_for_router_session=room_server._expected_slot_for_router_session,
-            recover_reconnect_token_for_expected_slot=room_server._recover_reconnect_token_for_expected_slot,
-            cancel_disconnect_forfeit_timer_locked=room_server._cancel_disconnect_forfeit_timer_locked,
-            mark_player_join_seen_locked=room_server._mark_player_join_seen_locked,
-            enqueue_environment_for_connected_clients=room_server._enqueue_environment_for_connected_clients,
-            enqueue_init_state_for_connected_clients=room_server._enqueue_init_state_for_connected_clients,
-            registration_condition=room_server.registration_condition,
-            short_session_id=room_server._short_session_id,
+            process_protocol_packet=room_server._process_protocol_packet,
             drain_pending_packets_for_session=room_server._drain_pending_packets_for_session,
             protocol_packets_emit_payload_for_slot=room_server._protocol_packets_emit_payload_for_slot,
             log_protocol_send=room_server.log_protocol_send,
@@ -127,13 +117,11 @@ def _dispatch_command(method: str, params: dict[str, Any]) -> dict[str, Any]:
             raise ValueError('protocol_socket_event requires packet_type')
 
         payload = params.get('payload')
-        allow_body_data_fallback = params.get('allow_body_data_fallback') is True
 
         room_server.runtime_handle_protocol_socket_event(
             payload,
             sid=sid,
             packet_type=packet_type,
-            allow_body_data_fallback=allow_body_data_fallback,
             transport_lock=room_server.transport_lock,
             transport_state=room_server.transport_state,
             process_protocol_packet=room_server._process_protocol_packet,

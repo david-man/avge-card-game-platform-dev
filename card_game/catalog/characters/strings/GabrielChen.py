@@ -30,6 +30,9 @@ class _GabrielThresholdReactor(AVGEReactor):
 
     def update_status(self):
         return
+    
+    def __str__(self):
+        return "Gabriel Chen: You Know What It Is"
 
     def react(self, args=None):
         if args is None:
@@ -78,13 +81,13 @@ class _GabrielThresholdReactor(AVGEReactor):
                     AVGEAttributeModifier.SUBSTRACTIVE,
                     CardType.STRING,
                     ActionTypes.PASSIVE,
-                    None,
+                    Notify('You know what it is: Dealt 70 damage to a random opposing character.', all_players, default_timeout),
                     owner,
                 )
             ], AVGEEngineID(owner, ActionTypes.PASSIVE, GabrielChen))
         )
         self.invalidate()
-        return Response(ResponseType.ACCEPT, Notify('You know what it is: Dealt 70 damage to a random opposing character.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 class GabrielChen(AVGECharacterCard):
     _COIN_KEY_0 = "gabrielchen_coin_0"

@@ -52,7 +52,7 @@ class ArrangerStatusReactor(AVGEReactor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
+	def __str__(self):
 		return "Arranger Status Reactor"
 
 	def react(self, args={}):
@@ -91,7 +91,7 @@ class ArrangerStatusReactor(AVGEReactor):
 					]),
 			)
 
-		if(not decision == 'YES'):
+		if(not decision == 'Yes'):
 			return Response(ResponseType.ACCEPT, Data())
 
 		random_discard_card = random.choice(list(discard))
@@ -103,11 +103,11 @@ class ArrangerStatusReactor(AVGEReactor):
 				deck,
 				ActionTypes.PASSIVE,
 				affected_character,
-				None,
+				RevealCards('Arranger: Shuffled a random discard card into the deck.', [affected_character.player.unique_id], default_timeout, [random_discard_card]),
 				random.randint(0, len(deck)),
 			)
 		)
 		self.propose(
 			AVGEPacket(p, AVGEEngineID(self.env, ActionTypes.ENV, None))
 		)
-		return Response(ResponseType.ACCEPT, RevealCards('Arranger: Shuffled a random discard card into the deck.', [affected_character.player.unique_id], default_timeout, [random_discard_card]))
+		return Response(ResponseType.ACCEPT, Data())

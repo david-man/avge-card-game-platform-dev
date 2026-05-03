@@ -72,7 +72,7 @@ class _GraceTurnEndReactor(AVGEReactor):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.GUITAR,
                         ActionTypes.PASSIVE,
-                        None,
+                        Notify("Royalties: 10 damage", all_players, default_timeout),
                         self.owner_card,
                     )
                 )
@@ -82,6 +82,9 @@ class _GraceTurnEndReactor(AVGEReactor):
                 1
             )
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Grace Zhao: Royalties"
 
 
 class GraceZhao(AVGECharacterCard):

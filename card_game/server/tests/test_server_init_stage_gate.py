@@ -34,14 +34,14 @@ def _stub_server_for_packet_test(monkeypatch, fake_bridge: _FakeBridge, stage: s
 
     monkeypatch.setattr(server, '_commands_ready_for_slot', lambda source_slot, is_response, session=None: [])
     monkeypatch.setattr(server, '_emit_ready_commands_to_connected_clients', lambda: None)
-    monkeypatch.setattr(server, '_acknowledge_head_command', lambda command, source_slot: (False, None))
+    monkeypatch.setattr(server, '_acknowledge_head_command', lambda command, source_slot, command_id=None: (False, None))
     monkeypatch.setattr(server, '_extract_bridge_commands', lambda result: [])
     monkeypatch.setattr(server, '_enqueue_bridge_commands', lambda commands, source_slot=None: None)
     monkeypatch.setattr(server, '_bridge_requests_force_environment_sync', lambda result: False)
     monkeypatch.setattr(server, '_force_environment_sync_for_connected_clients', lambda: None)
 
 
-def test_update_frontend_input_response_not_ignored_during_init(monkeypatch) -> None:
+def test_update_frontend_requires_client_event_payload(monkeypatch) -> None:
     fake_bridge = _FakeBridge()
     _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='init')
 
@@ -58,10 +58,222 @@ def test_update_frontend_input_response_not_ignored_during_init(monkeypatch) -> 
 
     response, status = server._process_protocol_packet(payload, client_slot='p1')
 
+    assert status == 400
+    assert response.get('ok') is False
+    assert response.get('error') == 'client_event is required.'
+    assert fake_bridge.calls == []
+
+
+def test_update_frontend_client_event_input_response_not_ignored_during_init(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='init')
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'update_frontend',
+        'Body': {
+            'client_event': {
+                'event_kind': 'input_result',
+                'command': 'input selection player-1 msg [A], [A], 1 false true',
+                'command_id': 1,
+                'response_data': {
+                    'ordered_selections': ['none'],
+                },
+                'context': {
+                    'source': 'client_event',
+                },
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
     assert status == 200
     assert response.get('ok') is True
     assert len(fake_bridge.calls) >= 1
     assert fake_bridge.calls[0][0] == 'input_result'
+
+
+def test_update_frontend_client_event_requires_event_kind(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='init')
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'update_frontend',
+        'Body': {
+            'client_event': {
+                'command': 'input selection player-1 msg [A], [A], 1 false true',
+                'command_id': 1,
+                'response_data': {
+                    'ordered_selections': ['none'],
+                },
+                'context': {
+                    'source': 'client_event',
+                },
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
+    assert status == 400
+    assert response.get('ok') is False
+    assert response.get('error') == 'client_event.event_kind is required and must be one of: ack, input_result, notify_result, frontend_event.'
+    assert fake_bridge.calls == []
+
+
+def test_update_frontend_ack_forwards_wire_command_when_bridge_expects_wire(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    fake_bridge._awaiting_frontend_ack_command = 'notify:;:both:;:attack resolved:;:-1'
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='live')
+    monkeypatch.setattr(
+        server,
+        '_acknowledge_head_command',
+        lambda command, source_slot, command_id=None: (True, 'notify:;:both:;:attack resolved:;:-1'),
+    )
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'update_frontend',
+        'Body': {
+            'client_event': {
+                'event_kind': 'ack',
+                'command_id': 41,
+                'command': 'notify:;:both:;:attack resolved:;:-1',
+                'context': {},
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
+    assert status == 200
+    assert response.get('ok') is True
+    assert len(fake_bridge.calls) == 1
+    assert fake_bridge.calls[0][0] == 'terminal_log'
+    assert fake_bridge.calls[0][1].get('command') == 'notify:;:both:;:attack resolved:;:-1'
+
+
+def test_update_frontend_ack_forwards_wire_phase_command(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    fake_bridge._awaiting_frontend_ack_command = 'phase no-input'
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='live')
+    monkeypatch.setattr(
+        server,
+        '_acknowledge_head_command',
+        lambda command, source_slot, command_id=None: (True, 'phase:;:no-input'),
+    )
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'update_frontend',
+        'Body': {
+            'client_event': {
+                'event_kind': 'ack',
+                'command_id': 42,
+                'command': 'phase:;:no-input',
+                'context': {},
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
+    assert status == 200
+    assert response.get('ok') is True
+    assert len(fake_bridge.calls) == 1
+    assert fake_bridge.calls[0][0] == 'terminal_log'
+    assert fake_bridge.calls[0][1].get('command') == 'phase:;:no-input'
+
+
+def test_update_frontend_ack_accepts_command_id_without_command_text(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    fake_bridge._awaiting_frontend_ack_command = 'notify:;:both:;:attack resolved:;:-1'
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='live')
+
+    def _ack(command, source_slot, command_id=None):
+        if command_id == 77:
+            return True, 'notify:;:both:;:attack resolved:;:-1'
+        return False, None
+
+    monkeypatch.setattr(server, '_acknowledge_head_command', _ack)
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'update_frontend',
+        'Body': {
+            'client_event': {
+                'event_kind': 'ack',
+                'command_id': 77,
+                'context': {},
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
+    assert status == 200
+    assert response.get('ok') is True
+    assert len(fake_bridge.calls) == 1
+    assert fake_bridge.calls[0][0] == 'terminal_log'
+    assert fake_bridge.calls[0][1].get('command') == 'notify:;:both:;:attack resolved:;:-1'
+
+
+def test_update_frontend_ack_requires_command_id(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='live')
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'update_frontend',
+        'Body': {
+            'client_event': {
+                'event_kind': 'ack',
+                'command': 'notify:;:both:;:attack resolved:;:-1',
+                'context': {},
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
+    assert status == 400
+    assert response.get('ok') is False
+    assert response.get('error') == 'client_event.command_id is required for ack/input_result/notify_result.'
+    assert fake_bridge.calls == []
+
+
+def test_frontend_event_client_event_ack_uses_update_dispatch(monkeypatch) -> None:
+    fake_bridge = _FakeBridge()
+    fake_bridge._awaiting_frontend_ack_command = 'phase no-input'
+    _stub_server_for_packet_test(monkeypatch, fake_bridge, stage='live')
+    monkeypatch.setattr(
+        server,
+        '_acknowledge_head_command',
+        lambda command, source_slot, command_id=None: (True, 'phase:;:no-input'),
+    )
+
+    payload = {
+        'ACK': 0,
+        'PacketType': 'frontend_event',
+        'Body': {
+            'client_event': {
+                'event_kind': 'ack',
+                'command_id': 43,
+                'command': 'phase:;:no-input',
+                'context': {},
+            },
+        },
+    }
+
+    response, status = server._process_protocol_packet(payload, client_slot='p1')
+
+    assert status == 200
+    assert response.get('ok') is True
+    assert len(fake_bridge.calls) == 1
+    assert fake_bridge.calls[0][0] == 'terminal_log'
+    assert fake_bridge.calls[0][1].get('command') == 'phase:;:no-input'
 
 
 def test_frontend_event_non_winner_still_ignored_during_init(monkeypatch) -> None:
@@ -72,9 +284,12 @@ def test_frontend_event_non_winner_still_ignored_during_init(monkeypatch) -> Non
         'ACK': 0,
         'PacketType': 'frontend_event',
         'Body': {
-            'event_type': 'card_moved',
-            'response_data': {'card_id': 'CARD-1'},
-            'context': {},
+            'client_event': {
+                'event_kind': 'frontend_event',
+                'event_type': 'card_moved',
+                'response_data': {'card_id': 'CARD-1'},
+                'context': {},
+            },
         },
     }
 
@@ -105,9 +320,12 @@ def test_frontend_event_rejected_when_waiting_for_other_client_response(monkeypa
         'ACK': 0,
         'PacketType': 'frontend_event',
         'Body': {
-            'event_type': 'energy_moved',
-            'response_data': {'energy_id': '1', 'to_zone_id': 'shared-energy'},
-            'context': {},
+            'client_event': {
+                'event_kind': 'frontend_event',
+                'event_type': 'energy_moved',
+                'response_data': {'energy_id': '1', 'to_zone_id': 'shared-energy'},
+                'context': {},
+            },
         },
     }
 
@@ -146,9 +364,12 @@ def test_frontend_event_allowed_for_required_slot_when_pending(monkeypatch) -> N
         'ACK': 0,
         'PacketType': 'frontend_event',
         'Body': {
-            'event_type': 'card_moved',
-            'response_data': {'card_id': 'CARD-1'},
-            'context': {},
+            'client_event': {
+                'event_kind': 'frontend_event',
+                'event_type': 'card_moved',
+                'response_data': {'card_id': 'CARD-1'},
+                'context': {},
+            },
         },
     }
 
@@ -182,9 +403,12 @@ def test_frontend_event_rejected_for_acked_slot_while_other_slot_still_pending(m
         'ACK': 0,
         'PacketType': 'frontend_event',
         'Body': {
-            'event_type': 'phase2_attack_button_clicked',
-            'response_data': {},
-            'context': {},
+            'client_event': {
+                'event_kind': 'frontend_event',
+                'event_type': 'phase2_attack_button_clicked',
+                'response_data': {},
+                'context': {},
+            },
         },
     }
 

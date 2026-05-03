@@ -6,6 +6,109 @@ from card_game.constants import *
 from card_game.engine.engine_constants import EngineGroup
 
 
+class _BokaiTransferReactor(AVGEReactor):
+    def __init__(self, owner_card: AVGECharacterCard):
+        super().__init__(
+            identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, BokaiBi),
+            group=EngineGroup.EXTERNAL_REACTORS,
+        )
+        self.owner_card = owner_card
+
+    def _find_matching_hand_card(self, target_card: AVGECard) -> AVGECard | None:
+        for hand_card in self.owner_card.player.cardholders[Pile.HAND]:
+            if type(hand_card) == type(target_card):
+                return hand_card
+        return None
+
+    def _is_play_like_hand_transfer(self, event: AVGEEvent) -> bool:
+        from card_game.internal_events import TransferCard
+
+        if not isinstance(event, TransferCard):
+            return False
+        if event.pile_from.pile_type != Pile.HAND:
+            return False
+        return event.pile_to.pile_type in (Pile.BENCH, Pile.ACTIVE, Pile.TOOL, Pile.STADIUM)
+
+    def event_match(self, event):
+        from card_game.internal_events import TransferCard, PlayNonCharacterCard
+
+        if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type not in [Pile.ACTIVE, Pile.BENCH]:
+            return False
+        if isinstance(event, TransferCard):
+            if not self._is_play_like_hand_transfer(event):
+                return False
+            if event.card.player != self.owner_card.player.opponent:
+                return False
+            return self._find_matching_hand_card(event.card) is not None
+        if isinstance(event, PlayNonCharacterCard):
+            if event.card.player != self.owner_card.player.opponent:
+                return False
+            return self._find_matching_hand_card(event.card) is not None
+        return False
+
+    def event_effect(self) -> bool:
+        return True
+
+    def update_status(self):
+        return
+
+    def react(self) -> Response:
+        from card_game.internal_events import AVGECardHPChange, InputEvent, PlayNonCharacterCard, TransferCard
+
+        assert isinstance(self.attached_event, (TransferCard, PlayNonCharacterCard))
+        overlap = self._find_matching_hand_card(self.attached_event.card)
+        if overlap is None:
+            return Response(ResponseType.ACCEPT, Data())
+
+        choice = self.owner_card.env.cache.get(self.owner_card, BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY, None, True)
+        if choice is None:
+            return Response(
+                ResponseType.INTERRUPT,
+                Interrupt[AVGEEvent]([
+                        InputEvent(
+                            self.owner_card.player,
+                            [BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY],
+                            lambda r: True,
+                            ActionTypes.PASSIVE,
+                            self.owner_card,
+                            StrSelectionQuery(
+                                "Algorithm: Reveal matching hand card to deal 20 damage?",
+                                ["Yes", "No"],
+                                ["Yes", "No"],
+                                False,
+                                False,
+                            )
+                        )
+                    ]),
+            )
+
+        if choice == "Yes":
+            def gen() -> PacketType:
+                packet: PacketType = []
+                revealed_cards: list[AVGECard] = [overlap]
+                packet.append(
+                    AVGECardHPChange(
+                        self.owner_card.player.opponent.get_active_card(),
+                        20,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        CardType.PERCUSSION,
+                        ActionTypes.PASSIVE,
+                        RevealCards("Algorithm: Dealt 20 damage in exchange for revealing this card", all_players, default_timeout, revealed_cards),
+                        self.owner_card,
+                    )
+                )
+                return packet
+            self.owner_card.propose(
+                AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, BokaiBi))
+            )
+            return Response(ResponseType.ACCEPT, Data())
+
+        return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Bokai Bi: Algorithm"
+
+
 class BokaiBi(AVGECharacterCard):
     _D6_KEY = "bokaibi_d6_roll"
     _PASSIVE_DAMAGE_CHOICE_KEY = "bokaibi_passive_damage_choice"
@@ -16,118 +119,7 @@ class BokaiBi(AVGECharacterCard):
         self.has_passive = True
 
     def passive(self) -> Response:
-        class _BokaiTransferReactor(AVGEReactor):
-            def __init__(self, owner_card: AVGECharacterCard):
-                super().__init__(
-                    identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, BokaiBi),
-                    group=EngineGroup.EXTERNAL_REACTORS,
-                )
-                self.owner_card = owner_card
-                self._matched_hand_card: AVGECard | None = None
-
-            def _find_matching_hand_card(self, target_card: AVGECard) -> AVGECard | None:
-                for hand_card in self.owner_card.player.cardholders[Pile.HAND]:
-                    if type(hand_card) == type(target_card):
-                        return hand_card
-                return None
-
-            def _is_play_like_hand_transfer(self, event: AVGEEvent) -> bool:
-                from card_game.internal_events import TransferCard
-
-                if not isinstance(event, TransferCard):
-                    return False
-                if event.pile_from.pile_type != Pile.HAND:
-                    return False
-                return event.pile_to.pile_type in (Pile.BENCH, Pile.ACTIVE, Pile.TOOL, Pile.STADIUM)
-
-            def event_match(self, event):
-                from card_game.internal_events import TransferCard, PlayNonCharacterCard
-
-                self._matched_hand_card = None
-                if self.owner_card.cardholder is None or self.owner_card.cardholder.pile_type not in [Pile.ACTIVE, Pile.BENCH]:
-                    return False
-                if isinstance(event, TransferCard):
-                    if not self._is_play_like_hand_transfer(event):
-                        return False
-                    if event.card.player != self.owner_card.player.opponent:
-                        return False
-                    overlap = self._find_matching_hand_card(event.card)
-                    if overlap is None:
-                        return False
-                    self._matched_hand_card = overlap
-                    return True
-                elif isinstance(event, PlayNonCharacterCard):
-                    if event.card.player != self.owner_card.player.opponent:
-                        return False
-                    overlap = self._find_matching_hand_card(event.card)
-                    if overlap is None:
-                        return False
-                    self._matched_hand_card = overlap
-                    return True
-                return False
-
-            def event_effect(self) -> bool:
-                return True
-
-            def update_status(self):
-                return
-
-            def react(self) -> Response:
-                from card_game.internal_events import AVGECardHPChange, InputEvent, PlayNonCharacterCard, TransferCard
-
-                assert isinstance(self.attached_event, (TransferCard, PlayNonCharacterCard))
-                overlap = self._matched_hand_card if self._matched_hand_card is not None else self._find_matching_hand_card(self.attached_event.card)
-                if overlap is None:
-                    self._matched_hand_card = None
-                    return Response(ResponseType.CORE, Data())
-
-                choice = self.owner_card.env.cache.get(self.owner_card, BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY, None, True)
-                if choice is None:
-                    return Response(
-                        ResponseType.INTERRUPT,
-                        Interrupt[AVGEEvent]([
-                                InputEvent(
-                                    self.owner_card.player,
-                                    [BokaiBi._PASSIVE_DAMAGE_CHOICE_KEY],
-                                    lambda r: True,
-                                    ActionTypes.PASSIVE,
-                                    self.owner_card,
-                                    StrSelectionQuery(
-                                        "Algorithm: Reveal matching hand card to deal 20 damage?",
-                                        ["Yes", "No"],
-                                        ["Yes", "No"],
-                                        False,
-                                        False,
-                                    )
-                                )
-                            ]),
-                    )
-
-                if choice == "Yes":
-                    def gen() -> PacketType:
-                        packet: PacketType = []
-                        revealed_cards: list[AVGECard] = [overlap]
-                        packet.append(
-                            AVGECardHPChange(
-                                self.owner_card.player.opponent.get_active_card(),
-                                20,
-                                AVGEAttributeModifier.SUBSTRACTIVE,
-                                CardType.PERCUSSION,
-                                ActionTypes.PASSIVE,
-                                RevealCards("Algorithm: revealed matching hand card", all_players, default_timeout, revealed_cards),
-                                self.owner_card,
-                            )
-                        )
-                        return packet
-                    self.owner_card.propose(
-                        AVGEPacket([gen], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, BokaiBi))
-                    )
-
-                self._matched_hand_card = None
-                return Response(ResponseType.CORE, Data())
-
-        reactor = _BokaiTransferReactor(self)
-        self.add_listener(reactor)
+        self.add_listener(_BokaiTransferReactor(self))
         return Response(ResponseType.CORE, Data())
 
     def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:

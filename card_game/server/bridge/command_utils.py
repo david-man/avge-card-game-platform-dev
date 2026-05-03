@@ -186,11 +186,13 @@ def csv_from_display_entries(values: object) -> str:
     return ','.join(result)
 
 
-def command_token(raw: str) -> str:
+def command_token(raw: str, *, for_space_delimited_protocol: bool = False) -> str:
     normalized = (raw or '').strip()
     if not normalized:
         return 'message'
-    return normalized.replace(' ', '_')
+    if for_space_delimited_protocol:
+        return normalized.replace(' ', '_')
+    return normalized
 
 
 def canonical_event_name(raw_event_type: object) -> str:

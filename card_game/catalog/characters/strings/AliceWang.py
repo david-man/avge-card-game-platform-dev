@@ -14,6 +14,9 @@ class _AliceHandEqualizerReactor(AVGEReactor):
         )
         self.owner_card = owner_card
 
+    def __str__(self):
+        return "Alice Chen: Euclidean Algorithm"
+
     def event_match(self, event):
         from card_game.internal_events import TurnEnd
 
@@ -91,7 +94,7 @@ class _AliceHandEqualizerReactor(AVGEReactor):
             AVGEPacket([apply_discards], AVGEEngineID(owner, ActionTypes.PASSIVE, AliceWang)),
             1,
         )
-        return Response(ResponseType.ACCEPT, Notify('Euclidean Algorithm: Opponent discards until hand sizes match.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Notify('Euclidean Algorithm: Opponent discarded until hand sizes match.', all_players, default_timeout))
 
 class AliceWang(AVGECharacterCard):
     _CARDS_TO_DISCARD_BASE_KEY = "alice_cards_to_discard_"

@@ -26,8 +26,8 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "SteinertBasement Duo Queue"
+	def __str__(self):
+		return "Steinert Basement: Duo Queue"
 
 	def react(self, args=None):
 		event = self.attached_event
@@ -36,12 +36,12 @@ class SteinertBasementTwoInPlayBonusDrawReactor(AVGEReactor):
 		deck = player.cardholders[Pile.DECK]
 		hand = player.cardholders[Pile.HAND]
 		if(len(deck) == 0):
-			return Response(ResponseType.ACCEPT, Notify('Steinert Basement: No extra card available for Duo Queue.', [player.unique_id], default_timeout))
+			return Response(ResponseType.ACCEPT, Data())
 
 		self.propose(AVGEPacket([
-			TransferCard(deck.peek(), deck, hand, ActionTypes.ENV, self.owner_card, None)
+			TransferCard(deck.peek(), deck, hand, ActionTypes.ENV, self.owner_card, Notify('Steinert Basement: Duo Queue grants one additional draw this turn.', all_players, default_timeout))
 		], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, SteinertBasement)))
-		return Response(ResponseType.ACCEPT, Notify('Steinert Basement: Duo Queue grants one additional draw this turn.', [player.unique_id], default_timeout))
+		return Response(ResponseType.ACCEPT, Data())
 
 
 class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
@@ -74,14 +74,14 @@ class SteinertBasementAttackExtraCostAssessor(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "SteinertBasement AttackCost"
+	def __str__(self):
+		return "Steinert Basement: 15 Minute Walk"
 
 	def modify(self, args=None):
 		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement += 1
-		return Response(ResponseType.ACCEPT, Notify("Steinert Basement: Attack cost increased by 1", all_players, default_timeout))
+		return Response(ResponseType.ACCEPT, Notify("Steinert Basement: 15 Minute Walk increased attack cost", [event.card.player.unique_id], default_timeout))
 
 
 class SteinertBasement(AVGEStadiumCard):

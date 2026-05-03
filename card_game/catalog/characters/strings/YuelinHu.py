@@ -67,7 +67,7 @@ class _YuelinBirbDrawReactor(AVGEReactor):
             )
 
         if yn != 'Yes':
-            return Response(ResponseType.ACCEPT, Notify('Musical Cat Summoned!: You kept AVGE Birb in hand.', all_players, default_timeout))
+            return Response(ResponseType.ACCEPT, Data())
 
         assert isinstance(self.attached_event, TransferCard)
         birb = self.attached_event.card
@@ -92,14 +92,17 @@ class _YuelinBirbDrawReactor(AVGEReactor):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.STRING,
                         ActionTypes.PASSIVE,
-                        None,
+                        Notify("Musical Cat Summoned! 20 damage", all_players, default_timeout),
                         owner,
                     )
                 )
             return packet
 
         owner.propose(AVGEPacket([discard_and_damage], AVGEEngineID(owner, ActionTypes.PASSIVE, YuelinHu)))
-        return Response(ResponseType.ACCEPT, Notify('Musical Cat Summoned!: Discarded AVGE Birb to deal 20 damage.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Yuelin Hu: Musical Cat Summoned"
 
 
 class YuelinHu(AVGECharacterCard):

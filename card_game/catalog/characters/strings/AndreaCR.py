@@ -6,6 +6,7 @@ from card_game.internal_events import InputEvent, ReorderCardholder, EmptyEvent,
 
 class AndreaCR(AVGECharacterCard):
     _REORDER_BASE_KEY = "andreacr_reorder_top"
+    _BOTTOM_CARD_KEY = "andreacr_bottom_card"
     _ENERGY_REMOVAL_KEY = "andreacr_energy_removal_target"
 
     def __init__(self, unique_id):
@@ -16,40 +17,129 @@ class AndreaCR(AVGECharacterCard):
     def atk_1(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         opponent_deck = card.player.opponent.cardholders[Pile.DECK]
         consider_count = min(3, len(opponent_deck))
-        if consider_count == 0:
-            return self.generic_response(card, ActionTypes.ATK_1)
-
-        top_cards = list(opponent_deck.peek_n(consider_count))
-        keys = [AndreaCR._REORDER_BASE_KEY + str(i) for i in range(consider_count)]
-        chosen_order = [card.env.cache.get(card, key, None, True) for key in keys]
-        if len(chosen_order) == 0 or chosen_order[0] is None:
-            return Response(
-                ResponseType.INTERRUPT,
-                Interrupt[AVGEEvent]([
-                        InputEvent(
-                            card.player,
-                            keys,
-                            lambda res : True,
+        if consider_count <= 1:
+            card.propose(
+                AVGEPacket(
+                    [
+                        EmptyEvent(
                             ActionTypes.ATK_1,
                             card,
-                            CardSelectionQuery(
-                                'Foresight: Reorder the top cards of your opponent deck',
-                                top_cards,
-                                top_cards,
-                                False,
-                                False,
-                            )
+                            ResponseType.CORE,
+                            Notify(
+                                f"{str(card)} tried to use Foresight, but there were not enough cards in the opponent deck.",
+                                all_players,
+                                default_timeout,
+                            ),
                         )
-                    ]),
+                    ],
+                    AVGEEngineID(card, ActionTypes.ATK_1, AndreaCR),
+                )
             )
+            return Response(ResponseType.CORE, Data())
 
-        chosen_cards = [c for c in chosen_order if isinstance(c, AVGECard)]
+        top_cards = list(opponent_deck.peek_n(consider_count))
+        missing = object()
+        bottom_card: AVGECard | None = None
+
+        if consider_count == 2:
+            reorder_keys = [AndreaCR._REORDER_BASE_KEY + str(i) for i in range(2)]
+            chosen_order_probe = [card.env.cache.get(card, key, missing, False) for key in reorder_keys]
+            if any(selection is missing for selection in chosen_order_probe):
+                return Response(
+                    ResponseType.INTERRUPT,
+                    Interrupt[AVGEEvent]([
+                            InputEvent(
+                                card.player,
+                                reorder_keys,
+                                lambda res : True,
+                                ActionTypes.ATK_1,
+                                card,
+                                CardSelectionQuery(
+                                    'Foresight: Reorder the top 2 cards of your opponent deck.',
+                                    top_cards,
+                                    top_cards,
+                                    False,
+                                    False,
+                                )
+                            )
+                        ]),
+                )
+
+            chosen_order = [card.env.cache.get(card, key, missing, True) for key in reorder_keys]
+            chosen_cards = [c for c in chosen_order if isinstance(c, AVGECard) and c in top_cards]
+            if len(chosen_cards) != 2 or chosen_cards[0] == chosen_cards[1]:
+                raise Exception('Foresight: invalid reorder selection for top 2 cards')
+        else:
+            bottom_card_probe = card.env.cache.get(card, AndreaCR._BOTTOM_CARD_KEY, missing, False)
+            if bottom_card_probe is missing:
+                return Response(
+                    ResponseType.INTERRUPT,
+                    Interrupt[AVGEEvent]([
+                            InputEvent(
+                                card.player,
+                                [AndreaCR._BOTTOM_CARD_KEY],
+                                lambda res : True,
+                                ActionTypes.ATK_1,
+                                card,
+                                CardSelectionQuery(
+                                    'Foresight: Choose one of the top 3 cards to send to the bottom of your opponent deck.',
+                                    top_cards,
+                                    top_cards,
+                                    False,
+                                    False,
+                                )
+                            )
+                        ]),
+                )
+
+            if not isinstance(bottom_card_probe, AVGECard) or bottom_card_probe not in top_cards:
+                raise Exception('Foresight: invalid bottom-card selection')
+
+            remaining_top_cards = [c for c in top_cards if c != bottom_card_probe]
+            reorder_keys = [AndreaCR._REORDER_BASE_KEY + str(i) for i in range(2)]
+            chosen_order_probe = [card.env.cache.get(card, key, missing, False) for key in reorder_keys]
+            if any(selection is missing for selection in chosen_order_probe):
+                return Response(
+                    ResponseType.INTERRUPT,
+                    Interrupt[AVGEEvent]([
+                            InputEvent(
+                                card.player,
+                                reorder_keys,
+                                lambda res : True,
+                                ActionTypes.ATK_1,
+                                card,
+                                CardSelectionQuery(
+                                    'Foresight: Reorder the remaining 2 cards.',
+                                    remaining_top_cards,
+                                    remaining_top_cards,
+                                    False,
+                                    False,
+                                )
+                            )
+                        ]),
+                )
+
+            bottom_card_value = card.env.cache.get(card, AndreaCR._BOTTOM_CARD_KEY, missing, True)
+            if not isinstance(bottom_card_value, AVGECard) or bottom_card_value not in top_cards:
+                raise Exception('Foresight: invalid bottom-card selection')
+            bottom_card = bottom_card_value
+
+            chosen_order = [card.env.cache.get(card, key, missing, True) for key in reorder_keys]
+            chosen_cards = [c for c in chosen_order if isinstance(c, AVGECard) and c in remaining_top_cards]
+            if len(chosen_cards) != 2 or chosen_cards[0] == chosen_cards[1]:
+                raise Exception('Foresight: invalid reorder selection for remaining cards')
 
         original_order = list(opponent_deck.get_order())
         top_ids = [c.unique_id for c in top_cards]
         chosen_ids = [c.unique_id for c in chosen_cards]
         remaining_ids = [cid for cid in original_order if cid not in top_ids]
-        new_order = chosen_ids + remaining_ids
+
+        if consider_count == 2:
+            new_order = chosen_ids + remaining_ids
+        else:
+            if not isinstance(bottom_card, AVGECard):
+                raise Exception('Foresight: missing bottom-card during reorder')
+            new_order = chosen_ids + remaining_ids + [bottom_card.unique_id]
 
         card.propose(
             AVGEPacket(

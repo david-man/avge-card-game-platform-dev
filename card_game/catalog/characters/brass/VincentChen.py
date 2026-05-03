@@ -64,12 +64,15 @@ class _VincentHealReactor(AVGEReactor):
                     AVGEAttributeModifier.ADDITIVE,
                     CardType.ALL,
                     ActionTypes.ATK_2,
-                    None,
+                    Notify("Cherry Flavored Valve Oil: Healed a card", all_players, default_timeout),
                     self.owner_card,
                 )], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, VincentChen))
             )
         self.invalidate()
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Vincent Chen: Cherry Flavored Valve Oil"
 
 
 class VincentChen(AVGECharacterCard):

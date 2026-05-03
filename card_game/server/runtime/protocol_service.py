@@ -8,6 +8,76 @@ from typing import cast
 from ..models.server_models import ClientSession, MultiplayerTransportState, PlayerSlot
 
 
+def _normalize_client_event_kind(raw_kind: object) -> str | None:
+    if not isinstance(raw_kind, str):
+        return None
+    normalized = raw_kind.strip().lower().replace('-', '_').replace(' ', '_')
+    if normalized in {'ack', 'input_result', 'notify_result', 'frontend_event'}:
+        return normalized
+    return None
+
+
+def _extract_client_event_envelope(
+    body: JsonObject,
+) -> tuple[
+    str | None,
+    str | None,
+    int | None,
+    JsonObject | None,
+    JsonObject | None,
+    str | None,
+    JsonObject,
+    JsonObject,
+]:
+    raw_client_event = body.get('client_event')
+    if not isinstance(raw_client_event, dict):
+        return (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            {},
+            {},
+        )
+
+    client_event = cast(JsonObject, raw_client_event)
+
+    normalized_kind = _normalize_client_event_kind(client_event.get('event_kind'))
+    event_kind = normalized_kind
+
+    command_raw = client_event.get('command')
+    command = command_raw.strip() if isinstance(command_raw, str) and command_raw.strip() else None
+
+    command_id_raw = client_event.get('command_id')
+    command_id = command_id_raw if isinstance(command_id_raw, int) and not isinstance(command_id_raw, bool) else None
+
+    event_name_raw = client_event.get('event_type')
+    event_name = event_name_raw.strip() if isinstance(event_name_raw, str) and event_name_raw.strip() else None
+
+    response_data = cast(JsonObject, client_event.get('response_data')) if isinstance(client_event.get('response_data'), dict) else {}
+    context = cast(JsonObject, client_event.get('context')) if isinstance(client_event.get('context'), dict) else {}
+
+    input_response: JsonObject | None = None
+    notify_response: JsonObject | None = None
+    if event_kind == 'input_result':
+        input_response = response_data
+    elif event_kind == 'notify_result':
+        notify_response = response_data
+
+    return (
+        event_kind,
+        command,
+        command_id,
+        cast(JsonObject | None, input_response),
+        cast(JsonObject | None, notify_response),
+        event_name,
+        response_data,
+        context,
+    )
+
+
 def process_protocol_packet(
     payload: JsonObject,
     client_slot: str | None,
@@ -53,7 +123,7 @@ def process_protocol_packet(
     bridge_requests_force_environment_sync: Callable[[Any], bool],
     enqueue_bridge_commands: Callable[[list[JsonObject] | list[str], str | None], None],
     force_environment_sync_for_connected_clients: Callable[[], None],
-    acknowledge_head_command: Callable[[str, str | None], tuple[bool, str | None]],
+    acknowledge_head_command: Callable[[str | None, str | None, int | None], tuple[bool, str | None]],
     handle_bridge_runtime_error: Callable[[Exception, str | None, ClientSession | None], tuple[JsonObject, int]],
     emit_ready_commands_to_connected_clients: Callable[[], None],
     emit_pending_peer_ack_status_to_connected_clients: Callable[[], None],
@@ -158,7 +228,6 @@ def process_protocol_packet(
             mark_player_join_seen_locked()
 
             both_connected = transport_state.both_players_connected()
-            _ = both_connected
 
             # Always prime newly connected clients with current state, even if
             # the opponent is still disconnected.
@@ -184,8 +253,8 @@ def process_protocol_packet(
             'packets': packets,
             'client_slot': session.slot,
             'reconnect_token': session.reconnect_token,
-            'both_players_connected': True,
-            'waiting_for_opponent': False,
+            'both_players_connected': both_connected,
+            'waiting_for_opponent': not both_connected,
             'waiting_for_init': room_stage_getter() == 'init',
         }, 200
 
@@ -331,12 +400,33 @@ def process_protocol_packet(
         log_protocol_send(packets, source_slot)
         return {'ok': True, 'packets': packets}, 200
 
-    if room_stage_getter() == 'init' and packet_type_raw == 'frontend_event':
+    (
+        client_event_kind,
+        command,
+        command_id,
+        input_response,
+        notify_response,
+        event_name,
+        response_data,
+        context,
+    ) = _extract_client_event_envelope(body)
+
+    raw_client_event = body.get('client_event')
+    if not isinstance(raw_client_event, dict):
+        return {'ok': False, 'error': 'client_event is required.'}, 400
+
+    if client_event_kind is None:
+        return {
+            'ok': False,
+            'error': 'client_event.event_kind is required and must be one of: ack, input_result, notify_result, frontend_event.',
+        }, 400
+
+    if room_stage_getter() == 'init' and client_event_kind == 'frontend_event':
         # During INIT we ignore gameplay frontend events, but winner-flow
         # packets must still be accepted so disconnect-forfeit can complete.
         # Note: update_frontend packets must pass through in INIT so query
         # responses (input/notify) are never dropped.
-        raw_event_type = body.get('event_type')
+        raw_event_type = event_name
         normalized_event_type = (
             str(raw_event_type).strip().lower().replace('-', '_').replace(' ', '_')
             if isinstance(raw_event_type, str)
@@ -351,10 +441,13 @@ def process_protocol_packet(
             log_protocol_send(packets, source_slot)
             return {'ok': True, 'packets': packets}, 200
 
-    if packet_type_raw == 'update_frontend':
-        command = body.get('command')
-        input_response = body.get('input_response')
-        notify_response = body.get('notify_response')
+    if client_event_kind in {'ack', 'input_result', 'notify_result'}:
+        has_command_id = isinstance(command_id, int) and not isinstance(command_id, bool)
+        if not has_command_id:
+            return {
+                'ok': False,
+                'error': 'client_event.command_id is required for ack/input_result/notify_result.',
+            }, 400
 
         blocked_pending_command = blocked_pending_command_for_slot(source_slot)
         if blocked_pending_command is not None and (
@@ -371,7 +464,7 @@ def process_protocol_packet(
             }, 200
 
         log_protocol_update(
-            isinstance(command, str) and bool(command.strip()),
+            has_command_id,
             isinstance(input_response, dict),
             isinstance(notify_response, dict),
             source_slot,
@@ -409,27 +502,25 @@ def process_protocol_packet(
             if force_sync:
                 force_environment_sync_for_connected_clients()
 
-        ack_completed = False
-        if isinstance(command, str) and command.strip():
-            ack_completed, acked_command = acknowledge_head_command(command, source_slot)
-            if ack_completed and isinstance(acked_command, str) and acked_command.strip():
-                try:
-                    bridge_result = frontend_game_bridge.handle_frontend_event(
-                        'terminal_log',
-                        {
-                            'line': 'ACK backend_update_processed',
-                            'command': acked_command,
-                        },
-                        {},
-                    )
-                except bridge_runtime_error_type as exc:
-                    return handle_bridge_runtime_error(exc, source_slot, session_for_client)
-                except Exception as exc:
-                    return handle_bridge_runtime_error(exc, source_slot, session_for_client)
+        ack_completed, acked_command = acknowledge_head_command(command, source_slot, command_id)
+        if ack_completed and isinstance(acked_command, str) and acked_command.strip():
+            try:
+                bridge_result = frontend_game_bridge.handle_frontend_event(
+                    'terminal_log',
+                    {
+                        'line': 'ACK backend_update_processed',
+                        'command': acked_command,
+                    },
+                    {},
+                )
+            except bridge_runtime_error_type as exc:
+                return handle_bridge_runtime_error(exc, source_slot, session_for_client)
+            except Exception as exc:
+                return handle_bridge_runtime_error(exc, source_slot, session_for_client)
 
-                enqueue_bridge_commands(extract_bridge_commands(bridge_result), source_slot)
-                if bridge_requests_force_environment_sync(bridge_result):
-                    force_environment_sync_for_connected_clients()
+            enqueue_bridge_commands(extract_bridge_commands(bridge_result), source_slot)
+            if bridge_requests_force_environment_sync(bridge_result):
+                force_environment_sync_for_connected_clients()
 
         packets.extend(commands_ready_for_slot(source_slot, is_response=True, session=session_for_client))
         emit_ready_commands_to_connected_clients()
@@ -439,10 +530,6 @@ def process_protocol_packet(
         log_protocol_send(packets, source_slot)
 
         return {'ok': True, 'packets': packets}, 200
-
-    event_name = body.get('event_type')
-    response_data = body.get('response_data', {})
-    context = body.get('context', {})
 
     if not isinstance(event_name, str) or not event_name.strip():
         return {'ok': False, 'error': 'frontend_event requires event_type.'}, 400

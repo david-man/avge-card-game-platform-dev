@@ -91,7 +91,7 @@ class _MatthewTurnBeginReactor(AVGEReactor):
                         owner.player.cardholders[Pile.HAND],
                         ActionTypes.PASSIVE,
                         owner,
-                        None,
+                        Notify("Pot of Greed: Drawing an extra card", all_players, default_timeout),
                     )
                 )
                 return packet
@@ -103,6 +103,9 @@ class _MatthewTurnBeginReactor(AVGEReactor):
             )
 
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Matthew Wang: Pot of Greed"
 
 
 class MatthewWang(AVGECharacterCard):

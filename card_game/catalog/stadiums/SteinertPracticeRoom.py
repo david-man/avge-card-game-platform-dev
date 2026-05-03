@@ -34,11 +34,11 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "SteinertPracticeRoom BenchCap"
+	def __str__(self):
+		return "Steinert Practice: Practice Prison"
 
 	def assess(self, args=None):
-		return Response(ResponseType.SKIP, Notify('SteinertPracticeRoom: cannot have more than 2 benched characters.', all_players, default_timeout))
+		return Response(ResponseType.SKIP, Notify('Steinert Practice Room: Practice Prison prevented this action!', all_players, default_timeout))
 
 
 class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
@@ -67,14 +67,14 @@ class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "SteinertPracticeRoom 15 Minute Walk"
+	def __str__(self):
+		return "Steinert Practice Room: 15 Minute Walk"
 
 	def modify(self, args=None):
 		assert isinstance(self.attached_event, PlayCharacterCard)
 		event : PlayCharacterCard = self.attached_event
 		event.energy_requirement += 1
-		return Response(ResponseType.ACCEPT, Data())
+		return Response(ResponseType.ACCEPT, Notify("Steinert Practice Room: 15 Minute Walk increased the energy cost", all_players, default_timeout))
 
 
 class SteinertPracticeRoom(AVGEStadiumCard):

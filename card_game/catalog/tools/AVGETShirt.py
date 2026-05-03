@@ -9,6 +9,9 @@ class AVGETShirt(AVGEToolCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
+	def __str__(self):
+		return "AVGE T-Shirt"
+
 	def deactivate_card(self):
 		from card_game.internal_events import AVGECardStatusChange
 		assert self.card_attached is not None

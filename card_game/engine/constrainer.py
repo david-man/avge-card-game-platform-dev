@@ -31,5 +31,5 @@ class Constraint(Generic[EV]):
         return (not self._invalidated) and (self.match(obj))
     def response_data_on_attach(self, attached_to : AbstractEventListener[EV] | Constraint[EV]) -> Data:
         raise NotImplementedError()
-    def package(self):
+    def __str__(self):
         raise NotImplementedError()

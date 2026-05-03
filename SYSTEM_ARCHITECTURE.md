@@ -765,7 +765,7 @@ class CannotAttackConstraint(AVGEConstraint):
     def make_announcement(self) -> bool:
         return True
 
-    def package(self):
+    def __str__(self):
         return f"{self.target_card} cannot attack ({self.turns_remaining} turns)"
 ```
 

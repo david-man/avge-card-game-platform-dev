@@ -38,6 +38,9 @@ class KanaImmenseAuraModifier(AVGEModifier):
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(-10)
         return Response(ResponseType.ACCEPT, Notify('Immense Aura: -10 damage from attack.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Kana Takizawa: Immense Aura Debuff"
 
 
 class KanaTakizawa(AVGECharacterCard):

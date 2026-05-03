@@ -40,8 +40,8 @@ class KikisHeadbandTransferModifier(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
-		return "KikisHeadband Switch Cost Modifier"
+	def __str__(self):
+		return "Kikis Headband Retreat Cost Modifier"
 
 	def modify(self, args=None):
 		from card_game.internal_events import TransferCard

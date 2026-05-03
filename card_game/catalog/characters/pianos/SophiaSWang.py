@@ -44,12 +44,18 @@ class SophiaNextAttackHalvedModifier(AVGEModifier):
         # rounded up halving: x - floor(x/2) == ceil(x/2)
         event.modify_magnitude(-math.floor(event.magnitude / 2))
         return Response(ResponseType.ACCEPT, Notify('Damper Pedal: Incoming damage halved.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Sophia S. Wang: Damper Pedal Debuff"
 
 
 class _SophiaEnergyReactor(AVGEReactor):
     def __init__(self, owner_card: AVGECharacterCard):
         super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SophiaSWang), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
+
+    def __str__(self):
+        return "Sophia S. Wang: The Original is Always Better"
 
     def event_match(self, event):
         if not isinstance(event, AVGEEnergyTransfer):
@@ -98,7 +104,7 @@ class _SophiaEnergyReactor(AVGEReactor):
                     discard,
                     ActionTypes.PASSIVE,
                     owner,
-                    None,
+                    Notify('The Original is Always Better: Discard the top of the deck', all_players, default_timeout),
                 )
             )
             return packet
@@ -108,7 +114,7 @@ class _SophiaEnergyReactor(AVGEReactor):
                 mill_top
             ], AVGEEngineID(owner, ActionTypes.PASSIVE, SophiaSWang))
         )
-        return Response(ResponseType.ACCEPT, Notify('The Original is Always Better: Opponent discards the top card of their deck.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class SophiaSWang(AVGECharacterCard):

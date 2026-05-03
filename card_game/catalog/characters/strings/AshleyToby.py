@@ -40,7 +40,10 @@ class _AshleyBothBenchesFullAttackModifier(AVGEModifier):
         event = self.attached_event
         assert isinstance(event, AVGECardHPChange)
         event.modify_magnitude(event.magnitude)
-        return Response(ResponseType.ACCEPT, Notify('Instagram Viral: Ashley Toby doubled her damage because both benches are full.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Notify('Instagram Viral: Ashley Toby doubled her damage!', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Ashley Toby: Instagram Viral Buff"
 
 
 class AshleyToby(AVGECharacterCard):

@@ -4,10 +4,11 @@ from typing import Any, Callable, cast
 from card_game.server.server_types import JsonObject, CommandPayload
 
 from ..models.server_models import ClientSession, MultiplayerTransportState, PendingCommandAck, PlayerSlot
+from ..protocol.command_codec import command_action, to_wire_command
 
 
 def enqueue_bridge_commands(
-    commands: list[str] | list[JsonObject],
+    commands: list[JsonObject],
     source_slot: str | None,
     *,
     next_command_id: int,
@@ -24,29 +25,34 @@ def enqueue_bridge_commands(
 ) -> tuple[int, bool, set[PlayerSlot]]:
     expanded_commands: list[JsonObject] = []
     for command in commands:
-        command_text: str | None = None
+        if not isinstance(command, dict):
+            continue
+
+        raw_command = command.get('command')
+        if not isinstance(raw_command, str):
+            continue
+
+        command_text = raw_command.strip()
         response_payload: JsonObject | None = None
-        if isinstance(command, str):
-            command_text = command.strip()
-        elif isinstance(command, dict):
-            raw_command = command.get('command')
-            if isinstance(raw_command, str):
-                command_text = raw_command.strip()
-            raw_payload = command.get('response_payload')
-            if isinstance(raw_payload, dict):
-                response_payload = raw_payload
+        raw_payload = command.get('response_payload')
+        if isinstance(raw_payload, dict):
+            response_payload = raw_payload
 
         if not isinstance(command_text, str) or not command_text:
             continue
 
+        wire_command = to_wire_command(command_text)
+        if not wire_command:
+            continue
+
         expanded_commands.append({
-            'command': command_text,
+            'command': wire_command,
             'response_payload': response_payload,
         })
 
     if any(
         isinstance(entry.get('command'), str)
-        and str(entry['command']).strip().lower().startswith('winner ')
+        and command_action(str(entry['command'])) == 'winner'
         for entry in expanded_commands
     ):
         winner_announced = True

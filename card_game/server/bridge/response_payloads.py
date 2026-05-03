@@ -15,6 +15,7 @@ from ...constants import (
     SoundEffect,
 )
 from ..logging import log_ack_trace_bridge
+from ..protocol.command_codec import command_action
 
 
 def animation_payload_from_response(
@@ -118,7 +119,13 @@ def response_payloads_for_commands(
 
     animation_payload = animation_payload_from_response_fn(response)
     if animation_payload is not None:
-        payloads[0] = {'animation': animation_payload}
+        target_index = 0
+        for idx, command in enumerate(commands):
+            action = command_action(command)
+            if action not in {'notify', 'reveal', 'sound'}:
+                target_index = idx
+                break
+        payloads[target_index] = {'animation': animation_payload}
     return payloads
 
 

@@ -6,9 +6,9 @@ from card_game.engine.engine_constants import EngineGroup
 from card_game.internal_events import AVGECardHPChange, InputEvent
 
 
-class SalomonDECIAttackBoostModifier(AVGEModifier):
+class RedRoomAmpDiff(AVGEModifier):
 	def __init__(self, owner_card: AVGEStadiumCard):
-		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, SalomonDECI), group=EngineGroup.EXTERNAL_MODIFIERS_2)
+		super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, RedRoom), group=EngineGroup.EXTERNAL_MODIFIERS_2)
 		self.owner_card = owner_card
 
 	def _is_supported_attack_event(self, event) -> bool:
@@ -25,7 +25,7 @@ class SalomonDECIAttackBoostModifier(AVGEModifier):
 		if(not isinstance(event.caller, AVGECharacterCard)):
 			return False
 		caller_type = event.caller.card_type
-		return caller_type in [CardType.GUITAR, CardType.PIANO, CardType.CHOIR, CardType.PERCUSSION]
+		return caller_type in [CardType.GUITAR, CardType.PIANO, CardType.CHOIR, CardType.PERCUSSION, CardType.WOODWIND, CardType.BRASS]
 
 	def event_match(self, event):
 		return self._is_supported_attack_event(event)
@@ -38,39 +38,24 @@ class SalomonDECIAttackBoostModifier(AVGEModifier):
 		event = self.attached_event
 		assert isinstance(event, AVGECardHPChange)
 		assert isinstance(event.caller, AVGECharacterCard)
-		roll = self.owner_card.env.cache.get(self.owner_card, SalomonDECI._D6_ROLL_KEY, None, one_look=True)
-		if(roll is None):
-			assert event.caller is not None
-			return Response(
-				ResponseType.INTERRUPT,
-				Interrupt[AVGEEvent]([InputEvent(
-					event.caller.player,
-					[SalomonDECI._D6_ROLL_KEY],
-					lambda r: True,
-					ActionTypes.PASSIVE,
-					self.owner_card,
-					D6Data('Salomon DECI: Roll a d6.')
-				)]),
-			)
 
-		if(int(roll) >= 3):
-			event.modify_magnitude(-30)
-			return Response(ResponseType.ACCEPT, Notify("Salomon DECI: Electric Acoustics took effect", all_players, default_timeout))
-		return Response(ResponseType.ACCEPT, Data())
+		if(event.caller.card_type in [CardType.WOODWIND, CardType.BRASS]):
+			event.modify_magnitude(-10)
+		else:
+			event.modify_magnitude(10)
+		return Response(ResponseType.ACCEPT, Notify("Red Room: Amp Diff", all_players, default_timeout))
 	
 	def __str__(self):
-		return "Salomon DECI: Electric Acoustics"
+		return "Red Room: Amp Diff"
 
 
-class SalomonDECI(AVGEStadiumCard):
-	_D6_ROLL_KEY = "salomondeci_runtime_d6_roll"
-
+class RedRoom(AVGEStadiumCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
 	def __str__(self):
-		return "Salomon DECI"
+		return "Red Room"
 
 	def play_card(self) -> Response:
-		self.add_listener(SalomonDECIAttackBoostModifier(self))
+		self.add_listener(RedRoomAmpDiff(self))
 		return Response(ResponseType.CORE, Data())

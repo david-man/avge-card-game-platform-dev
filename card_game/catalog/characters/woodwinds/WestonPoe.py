@@ -66,7 +66,10 @@ class _WestonRightBackAtYouReactor(AVGEReactor):
                 )
             ], AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, WestonPoe))
         )
-        return Response(ResponseType.ACCEPT, Notify('Right Back At You!: Reflected damage equal to HP lost.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Notify('Weston Poe: Right Back At You! Reflected damage equal to HP lost.', all_players, default_timeout))
+    
+    def __str__(self):
+        return "Weston Poe: Right Back At You!"
 
 
 class WestonPoe(AVGECharacterCard):

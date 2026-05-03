@@ -71,7 +71,7 @@ class FriedmanHallTurnBeginOverrideAssessor(AVGEAssessor):
 			Phase2(event.env, ActionTypes.ENV, event.env),
 		])
 		self.propose(AVGEPacket(packet, AVGEEngineID(self.owner_card, ActionTypes.NONCHAR, FriedmanHall)))
-		return Response(ResponseType.FAST_FORWARD, Data())
+		return Response(ResponseType.FAST_FORWARD, Notify('Friedman Hall: Democratic Process', all_players, default_timeout))
 
 
 class FriedmanHall(AVGEStadiumCard):

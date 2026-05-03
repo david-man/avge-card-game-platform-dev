@@ -44,7 +44,7 @@ class KatieTurnEndReactor(AVGEReactor):
                             AVGEAttributeModifier.ADDITIVE,
                             CardType.ALL,
                             ActionTypes.PASSIVE,
-                            None,
+                            Notify("Nausicaa's Undying Heartbeat: Healed +20", all_players, default_timeout),
                             owner,
                         )
                     )
@@ -52,6 +52,9 @@ class KatieTurnEndReactor(AVGEReactor):
 
         self.propose(AVGEPacket([generate_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)), 1)
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Katie Xiang: Nausicaa's Undying Heartbeat"
 
 
 class _KatieRubatoDelayedReactor(AVGEReactor):
@@ -93,7 +96,7 @@ class _KatieRubatoDelayedReactor(AVGEReactor):
                         AVGEAttributeModifier.SUBSTRACTIVE,
                         CardType.PIANO,
                         ActionTypes.PASSIVE,
-                        None,
+                        Notify("Rubato: 30 damage", all_players, default_timeout),
                         owner,
                     )
                 )
@@ -102,6 +105,9 @@ class _KatieRubatoDelayedReactor(AVGEReactor):
         owner.propose(AVGEPacket([generate_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, KatieXiang)), 1)
         self.invalidate()
         return Response(ResponseType.ACCEPT, Data())
+    
+    def __str__(self):
+        return "Katie Xiang: Rubato"
 
 
 class KatieXiang(AVGECharacterCard):

@@ -42,8 +42,8 @@ class FoldingStandNextAttackModifier(AVGEModifier):
     def make_announcement(self) -> bool:
         return True
 
-    def package(self):
-        return "FoldingStand Modifier"
+    def __str__(self):
+        return "Folding Stand Buff"
     
     def on_packet_completion(self):
         self.invalidate()

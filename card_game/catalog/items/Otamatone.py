@@ -38,7 +38,7 @@ class OtamatoneEnergy(AVGEModifier):
 	def make_announcement(self) -> bool:
 		return True
 
-	def package(self):
+	def __str__(self):
 		return "Otamatone Effect"
 
 	def modify(self, args=None):

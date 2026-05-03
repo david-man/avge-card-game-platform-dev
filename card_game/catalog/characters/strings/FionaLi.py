@@ -13,6 +13,9 @@ class _BenchMaidReactor(AVGEReactor):
 
     def update_status(self):
         return
+    
+    def __str__(self):
+        return "Fiona Li: Getting Dressed"
 
     def event_match(self, event):
         if not isinstance(event, TransferCard):

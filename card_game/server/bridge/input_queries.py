@@ -15,6 +15,7 @@ from ...constants import (
     OrderingQuery,
     StrSelectionQuery,
 )
+from ..protocol.command_codec import join_command
 
 
 def build_input_command(
@@ -29,46 +30,62 @@ def build_input_command(
     player_token = player_id_to_frontend(event.player_for.unique_id)
     message_source = 'input_required'
 
+    def _message_field(raw: object) -> str:
+        text = str(raw or '').strip()
+        return text if text else 'input_required'
+
     if isinstance(query_data, CardSelectionQuery):
         message_source = query_data.header_msg
         display_ids = csv_from_display_entries(list(query_data.display))
         highlight_ids = csv_from_display_entries(list(query_data.targets))
-        return (
-            f'input selection {player_token} {command_token(message_source)} '
-            f'[{display_ids}], [{highlight_ids}], {len(event.input_keys)} '
-            f'{str(query_data.allows_repeat).lower()} {str(query_data.allows_none).lower()}'
-        )
+        return join_command([
+            'input',
+            'selection',
+            player_token,
+            _message_field(message_source),
+            f'[{display_ids}]',
+            f'[{highlight_ids}]',
+            str(len(event.input_keys)),
+            str(query_data.allows_repeat).lower(),
+            str(query_data.allows_none).lower(),
+        ])
 
     if isinstance(query_data, StrSelectionQuery):
         message_source = query_data.header_msg
         display_ids = csv_from_display_entries(list(query_data.display))
         highlight_ids = csv_from_display_entries(list(query_data.targets))
-        return (
-            f'input selection {player_token} {command_token(message_source)} '
-            f'[{display_ids}], [{highlight_ids}], {len(event.input_keys)} '
-            f'{str(query_data.allows_repeat).lower()} {str(query_data.allows_none).lower()}'
-        )
+        return join_command([
+            'input',
+            'selection',
+            player_token,
+            _message_field(message_source),
+            f'[{display_ids}]',
+            f'[{highlight_ids}]',
+            str(len(event.input_keys)),
+            str(query_data.allows_repeat).lower(),
+            str(query_data.allows_none).lower(),
+        ])
 
     if isinstance(query_data, IntegerInputData):
         message_source = query_data.header_msg
-        return f'input numerical-entry {player_token} {command_token(message_source)}'
+        return join_command(['input', 'numerical-entry', player_token, _message_field(message_source)])
 
     if isinstance(query_data, CoinflipData):
         message_source = query_data.header_msg
         roll_count = max(1, len(event.input_keys))
         values = [random_int(0, 1) for _ in range(roll_count)]
         value_token = str(values[0]) if roll_count == 1 else f'[{",".join(str(value) for value in values)}]'
-        return f'input coin {player_token} {command_token(message_source)} {value_token}'
+        return join_command(['input', 'coin', player_token, _message_field(message_source), value_token])
 
     if isinstance(query_data, D6Data):
         message_source = query_data.header_msg
         roll_count = max(1, len(event.input_keys))
         values = [random_int(1, 6) for _ in range(roll_count)]
         value_token = str(values[0]) if roll_count == 1 else f'[{",".join(str(value) for value in values)}]'
-        return f'input d6 {player_token} {command_token(message_source)} {value_token}'
+        return join_command(['input', 'd6', player_token, _message_field(message_source), value_token])
 
     if isinstance(query_data, OrderingQuery):
-        return f'input numerical-entry {player_token} order_listeners'
+        return join_command(['input', 'numerical-entry', player_token, 'order_listeners'])
 
     return None
 
@@ -262,12 +279,20 @@ def build_ordering_listener_state(
     ordered_tokens: list[str] = []
 
     for idx, listener in enumerate(unordered):
-        package_fn = getattr(listener, 'package', None)
-        package_name = package_fn() if callable(package_fn) else type(listener).__name__
-        if not isinstance(package_name, str) or not package_name.strip():
-            package_name = type(listener).__name__
+        listener_name = str(listener).strip()
+        # Avoid unstable default object repr values in tokens.
+        if (
+            not listener_name
+            or (
+                listener_name.startswith('<')
+                and listener_name.endswith('>')
+                and ' at 0x' in listener_name
+            )
+        ):
+            listener_name = type(listener).__name__
 
-        token = f'l{idx}_{command_token(package_name)}'
+        # Preserve listener display spacing in ordering tokens.
+        token = f'l{idx}_{listener_name}'
         listener_by_token[token] = listener
         ordered_tokens.append(token)
 
@@ -290,10 +315,17 @@ def should_skip_duplicate_ordering_query(
 
 def build_ordering_query_command(*, player_token: str, ordered_tokens: list[str]) -> str:
     token_csv = ','.join(ordered_tokens)
-    return (
-        f'input selection {player_token} order_listeners '
-        f'[{token_csv}], [{token_csv}], {len(ordered_tokens)} false false'
-    )
+    return join_command([
+        'input',
+        'selection',
+        player_token,
+        'order_listeners',
+        f'[{token_csv}]',
+        f'[{token_csv}]',
+        str(len(ordered_tokens)),
+        'false',
+        'false',
+    ])
 
 
 def parse_ordered_selection_tokens(data: JsonObject) -> list[object] | None:

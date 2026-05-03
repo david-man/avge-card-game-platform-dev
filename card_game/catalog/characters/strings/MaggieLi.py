@@ -11,6 +11,9 @@ class _MaggieTurnBeginReactor(AVGEReactor):
         super().__init__(identifier=AVGEEngineID(owner_card, ActionTypes.PASSIVE, MaggieLi), group=EngineGroup.EXTERNAL_REACTORS)
         self.owner_card = owner_card
 
+    def __str__(self):
+        return "Maggie Li: Midday Nap"
+
     def event_match(self, event):
         from card_game.internal_events import PhasePickCard
 
@@ -66,7 +69,7 @@ class _MaggieTurnBeginReactor(AVGEReactor):
                     AVGEAttributeModifier.ADDITIVE,
                     CardType.STRING,
                     ActionTypes.PASSIVE,
-                    None,
+                    Notify("Midday Nap: Maggie Li healed 10 HP", all_players, default_timeout),
                     owner,
                 )
             )
@@ -76,7 +79,7 @@ class _MaggieTurnBeginReactor(AVGEReactor):
             AVGEPacket([heal_packet], AVGEEngineID(owner, ActionTypes.PASSIVE, MaggieLi)),
             1,
         )
-        return Response(ResponseType.ACCEPT, Notify('Midday Nap: Maggie Li healed 10 HP.', all_players, default_timeout))
+        return Response(ResponseType.ACCEPT, Data())
 
 
 class MaggieLi(AVGECharacterCard):
