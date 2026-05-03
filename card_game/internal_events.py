@@ -76,7 +76,7 @@ class AVGECardHPChange(AVGEEvent):
             if(self.is_crit):
                 animation = Animation([SoundEffect("heavy_punch.mp3"), ParticleExplosion(self.target_card, "crit.png")], all_players)
         if(self.core_notif is None):
-            return Response(ResponseType.CORE, Notify("HELLO", [PlayerID.P1], default_timeout), animation)
+            return Response(ResponseType.CORE, Data(), animation)
         return Response(ResponseType.CORE, self.core_notif, animation)
     
     def invert_core(self, args : dict | None = None):
