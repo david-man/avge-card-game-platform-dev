@@ -9,6 +9,7 @@ from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
 from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
 from card_game.catalog.stadiums.RileyHall import RileyHall
 from card_game.catalog.stadiums.MainHall import MainHall
+from card_game.catalog.stadiums.SalomonDECI import SalomonDECI
 
 class MikuOtamatoneEnergy(AVGEModifier):
 	def __init__(self, owner_card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard, round_played):
@@ -57,8 +58,8 @@ class MikuOtamatone(AVGEItemCard):
 		if(env.round_id == 0):
 			return Response(ResponseType.SKIP, Notify('Cannot play Miku Otamatone on the first turn.', [card.player.unique_id], default_timeout))
 
-		if(len(env.stadium_cardholder) == 0 or not isinstance(env.stadium_cardholder.peek(), (AlumnaeHall, FriedmanHall, RileyHall, MainHall))):
-			return Response(ResponseType.SKIP, Notify('Miku Otamatone can only be played in concert halls.', [card.player.unique_id], default_timeout))
+		if(len(env.stadium_cardholder) == 0 or not isinstance(env.stadium_cardholder.peek(), (AlumnaeHall, RileyHall, MainHall, SalomonDECI))):
+			return Response(ResponseType.SKIP, Notify('Miku Otamatone can only be played in performance halls.', [card.player.unique_id], default_timeout))
 
 		card.add_listener(MikuOtamatoneEnergy(card, card.env.round_id))
 		return self.generic_response(card)

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from card_game.avge_abstracts.AVGEPlayer import AVGEPlayer
     from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
 
-cards_per_deck = 30
+cards_per_deck = 20
 initial_hand_size = 5
 max_bench_size = 3
 initial_tokens = 100

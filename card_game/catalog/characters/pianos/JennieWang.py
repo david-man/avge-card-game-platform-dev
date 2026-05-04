@@ -54,14 +54,14 @@ class JennieWang(AVGECharacterCard):
 
     def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.catalog.stadiums.AlumnaeHall import AlumnaeHall
-        from card_game.catalog.stadiums.FriedmanHall import FriedmanHall
+        from card_game.catalog.stadiums.SalomonDECI import SalomonDECI
         from card_game.catalog.stadiums.RileyHall import RileyHall
         from card_game.catalog.stadiums.MainHall import MainHall
 
         dmg = 60
         if len(card.env.stadium_cardholder) > 0:
             stadium = card.env.stadium_cardholder.peek()
-            if isinstance(stadium, (AlumnaeHall, FriedmanHall, RileyHall, MainHall)):
+            if isinstance(stadium, (AlumnaeHall, SalomonDECI, RileyHall, MainHall)):
                 dmg = 80
 
         def generate_packet() -> PacketType:
