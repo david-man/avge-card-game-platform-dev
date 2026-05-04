@@ -17,8 +17,8 @@ class Bucket(AVGEToolCard):
         assert self.card_attached is not None
         assert self.original_type is not None
         
-        self.extend_event(
-            [
+        packet : PacketType = []
+        packet.extend([
                 AVGECardTypeChange(
                     self.card_attached,
                     self.original_type,
@@ -26,9 +26,9 @@ class Bucket(AVGEToolCard):
                     self,
                     None,
                 )
-            ]
-        )
+            ])
         super().deactivate_card()
+        return packet
 
     def play_card(self) -> Response:
         from card_game.internal_events import AVGECardTypeChange

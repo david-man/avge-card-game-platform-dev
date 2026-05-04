@@ -19,23 +19,28 @@ class MaidStatusDamageShieldModifier(AVGEModifier):
 			return False
 		return len(character.statuses_attached.get(StatusEffect.MAID, [])) > 0
 
-	def event_match(self, event):
+	def _eligible_damage_event(self, event):
 		from card_game.internal_events import AVGECardHPChange
 
 		if(not isinstance(event, AVGECardHPChange)):
-			return False
+			return None
 		if(event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE):
-			return False
+			return None
 		if(event.catalyst_action not in [ActionTypes.ATK_1, ActionTypes.ATK_2]):
-			return False
+			return None
 		if(event.magnitude > 10):
-			return False
-		if event.change_type == CardType.ALL:
-			return False
-		return self._has_maid(event.target_card)
+			return None
+		if(event.change_type == CardType.ALL):
+			return None
+		if(not self._has_maid(event.target_card)):
+			return None
+		return event
+
+	def event_match(self, event):
+		return self._eligible_damage_event(event) is not None
 
 	def event_effect(self) -> bool:
-		return True
+		return self._eligible_damage_event(self.attached_event) is not None
 
 	def update_status(self):
 		return
@@ -47,7 +52,7 @@ class MaidStatusDamageShieldModifier(AVGEModifier):
 		return "Maid Status Damage Shield"
 
 	def modify(self, args={}):
-		from card_game.internal_events import AVGECardHPChange
-		event = self.attached_event
-		assert(isinstance(event, AVGECardHPChange))
+		event = self._eligible_damage_event(self.attached_event)
+		if(event is None):
+			return Response(ResponseType.ACCEPT, Data())
 		return Response(ResponseType.FAST_FORWARD, Notify("Maid: This character is immune to all damage <= 10", all_players, default_timeout))

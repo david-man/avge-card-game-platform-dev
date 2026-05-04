@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from uuid import uuid4
 
 
@@ -53,7 +54,7 @@ class RoomWorker:
         self.player_session_ids = player_session_ids
         self.host = host
         self.port = port
-        self.transport_mode = transport_mode
+        self.transport_mode: RoomTransportMode = transport_mode
         self.p1_username = p1_username
         self.p2_username = p2_username
         self.p1_selected_cards = p1_selected_cards
@@ -63,10 +64,10 @@ class RoomWorker:
         self._stop_event = Event()
         self._lock = RLock()
         self._response_condition = Condition(self._lock)
-        self._monitor_thread = Thread(target=self._run, name=f"room-worker-{room_id}", daemon=True)
+        self._monitor_thread = Thread(target=self._run, name=f"room-worker-{p1_username}-{p2_username}-{datetime.now().isoformat()}", daemon=True)
         self._started_at = monotonic()
         self._process: subprocess.Popen[str] | None = None
-        self._log_path = str(Path(tempfile.gettempdir()) / f"avge-room-{room_id}.log")
+        self._log_path = str(Path(tempfile.gettempdir()) / f"avge-room-{p1_username}-{p2_username}-{datetime.now().isoformat()}.log")
         self._log_file: TextIO | None = None
         self._pending_responses: dict[str, dict[str, Any] | None] = {}
         self._finished = False

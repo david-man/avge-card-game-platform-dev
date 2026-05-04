@@ -361,15 +361,17 @@ class TransferCard(AVGEEvent):
 
             #tool, stadium discard
             if(self.pile_from.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard)):
-                self.card.deactivate_card()
+                temp = self.card.deactivate_card()
+                if(temp is not None):
+                    to_dos.extend(temp)
             if(self.pile_from.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard)):
-                self.card.deactivate_card()
-
+                temp = self.card.deactivate_card()
+                if(temp is not None):
+                    to_dos.extend(temp)
             #character setup for discard
             if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) 
             and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
-                
-                #replacement for active
+                #find the replacement for active
                 if(self.pile_from.pile_type == Pile.ACTIVE and self.temp_cache.get("CARD_REPLACED", None) is None):
                     if(len(self.card.player.cardholders[Pile.BENCH]) == 0):
                         e : AVGEEnvironment = self.card.env
@@ -489,7 +491,9 @@ class TransferCard(AVGEEvent):
                         self.card.env
                     ))
                     return packet
-                self.card.deactivate_card()
+                temp = self.card.deactivate_card()
+                if(temp is not None):
+                    to_dos.extend(temp)
                 to_dos.extend([packet_1, packet_2, packet_3, packet_4, packet_5])
             self.temp_cache[self._PRE_TRANSFER] = True
             if(len(to_dos) > 0):

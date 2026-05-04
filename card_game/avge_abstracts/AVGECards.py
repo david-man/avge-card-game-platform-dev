@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:  
     from .AVGEPlayer import AVGEPlayer
-    from .AVGEEvent import AVGEEvent, AVGEPacket, DeferredAVGEPacket
+    from .AVGEEvent import AVGEEvent, AVGEPacket, DeferredAVGEPacket, PacketType
     from .AVGEEnvironment import AVGEEnvironment
     from .AVGECardholder import AVGECardholder
     from .AVGEEventListeners import AVGEAbstractEventListener, AVGEPacketListener
@@ -50,7 +50,7 @@ class AVGECard():
         self.owned_packet_listeners.append(listener)
     def play_card(self, parent_event : AVGEEvent, args : dict | None = None) -> Response:
         raise NotImplementedError()
-    def deactivate_card(self):
+    def deactivate_card(self) -> PacketType | None:
         for listener in self.owned_listeners:
             listener.invalidate()#invalidate all owned listeners, since this card is no longer in play
         for constrainer in self.owned_constraints:

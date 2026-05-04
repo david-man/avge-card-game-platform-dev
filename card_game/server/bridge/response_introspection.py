@@ -37,6 +37,83 @@ def response_source_summary(source: Any) -> str:
     return source_type
 
 
+def _source_value_for_log(value: Any, depth: int = 0) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if depth >= 2:
+        source_id = getattr(value, 'unique_id', None)
+        string = str(value) if (value.__str__ is not object.__str__) else type(value).__str__
+        if source_id is not None:
+            return f'{string}(unique_id={source_id})'
+        return string
+
+    if isinstance(value, dict):
+        summarized: JsonObject = {}
+        for index, (key, nested_value) in enumerate(value.items()):
+            if index >= 16:
+                summarized['__truncated__'] = True
+                break
+            summarized[str(key)] = _source_value_for_log(nested_value, depth + 1)
+        return summarized
+
+    if isinstance(value, (list, tuple, set)):
+        sequence = list(value)
+        summarized_list = [_source_value_for_log(item, depth + 1) for item in sequence[:16]]
+        if len(sequence) > 16:
+            summarized_list.append('__truncated__')
+        return summarized_list
+
+    source_id = getattr(value, 'unique_id', None)
+    if source_id is not None:
+        return f'{type(value).__name__}(unique_id={source_id})'
+
+    package_fn = getattr(value, 'package', None)
+    if callable(package_fn):
+        try:
+            packaged = package_fn()
+            if isinstance(packaged, str) and packaged.strip():
+                return packaged.strip()
+        except Exception:
+            pass
+
+    return type(value).__name__
+
+
+def response_source_kwargs(source: Any) -> JsonObject:
+    if source is None:
+        return {}
+
+    event_kwargs = getattr(source, '_kwargs', None)
+    if isinstance(event_kwargs, dict):
+        return {
+            str(key): _source_value_for_log(value)
+            for key, value in event_kwargs.items()
+        }
+
+    fallback: JsonObject = {}
+    try:
+        source_vars = vars(source)
+    except Exception:
+        return fallback
+
+    excluded_keys = {
+        'engine',
+        'attached_event',
+        'event_listener_groups',
+        'groups_ordered',
+        'groups_constrained',
+        'core_args',
+    }
+    for key, value in source_vars.items():
+        if key in excluded_keys:
+            continue
+        if key.startswith('_'):
+            continue
+        fallback[str(key)] = _source_value_for_log(value)
+    return fallback
+
+
 def current_response_source(bridge: Any, response: Response) -> Any:
     source = getattr(response, 'source', None)
     if source is not None:
@@ -97,6 +174,7 @@ def log_engine_response_entry(
     source = current_response_source(bridge, response)
     source_type = type(source).__name__ if source is not None else 'None'
     data_keys = response_data_keys(response.data)
+    source_kwargs = response_source_kwargs(source) if source is not None else None
 
     # Skip noisy accept-without-payload steps; keep all meaningful responses.
     if response.response_type == ResponseType.ACCEPT and is_plain_data_payload(response.data):
@@ -110,4 +188,5 @@ def log_engine_response_entry(
         source=response_source_summary(source),
         data_keys=data_keys,
         has_input_args=input_args is not None,
+        source_kwargs=source_kwargs,
     )

@@ -93,8 +93,9 @@ def log_engine_response(
     source: str,
     data_keys: list[str],
     has_input_args: bool,
+    source_kwargs: JsonObject | None = None,
 ) -> None:
-    _log_with_payload('[ENGINE_RESPONSE]', {
+    payload: JsonObject = {
         'stage': stage,
         'step': step,
         'type': response_type,
@@ -102,7 +103,11 @@ def log_engine_response(
         'source': source,
         'data_keys': data_keys,
         'has_input_args': has_input_args,
-    })
+    }
+    if source_kwargs is not None:
+        payload['source_kwargs'] = source_kwargs
+
+    _log_with_payload('[ENGINE_RESPONSE]', payload)
 
 
 def log_ack_wait(queued_event: str, awaiting_command: str | None, queued_events: int) -> None:

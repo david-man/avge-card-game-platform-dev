@@ -15,19 +15,17 @@ class AVGETShirt(AVGEToolCard):
 	def deactivate_card(self):
 		from card_game.internal_events import AVGECardStatusChange
 		assert self.card_attached is not None
-		
-		self.extend_event([
-				AVGECardStatusChange(
+		super().deactivate_card()
+		packet : PacketType = []
+		packet.extend([AVGECardStatusChange(
 				StatusEffect.GOON,
 				StatusChangeType.ERASE,
 				self.card_attached,
 				ActionTypes.ENV,
 				self,
 				None,
-				)
-			]
-		)
-		super().deactivate_card()
+				)])
+		return packet
 	
 	def play_card(self) -> Response:
 		assert self.card_attached is not None

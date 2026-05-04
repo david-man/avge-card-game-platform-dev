@@ -13,7 +13,8 @@ class MusescoreSubscription(AVGEToolCard):
 		from card_game.internal_events import AVGECardStatusChange
 
 		assert self.card_attached is not None
-		self.extend_event([
+		packet : PacketType = []
+		packet.extend([
 				AVGECardStatusChange(
 				StatusEffect.ARRANGER,
 				StatusChangeType.ERASE,
@@ -25,6 +26,7 @@ class MusescoreSubscription(AVGEToolCard):
 			]
 		)
 		super().deactivate_card()
+		return packet
 
 	def play_card(self) -> Response:
 		from card_game.internal_events import AVGECardStatusChange

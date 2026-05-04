@@ -23,28 +23,35 @@ class ArrangerStatusReactor(AVGEReactor):
 			return False
 		return len(character.statuses_attached.get(StatusEffect.ARRANGER, [])) > 0
 
-	def event_match(self, event):
+	def _affected_character_from_event(self, event) -> AVGECharacterCard | None:
 		from card_game.avge_abstracts.AVGECardholder import AVGEToolCardholder
 		from card_game.internal_events import AVGECardHPChange, TransferCard
 
 		if(isinstance(event, AVGECardHPChange)):
 			if(event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE):
-				return False
-			return self._has_arranger(event.target_card)
+				return None
+			if(isinstance(event.target_card, AVGECharacterCard)):
+				return event.target_card
+			return None
 
 		if(isinstance(event, TransferCard)):
 			if(not isinstance(event.card, AVGEToolCard)):
-				return False
+				return None
 			if(event.pile_to.pile_type != Pile.DISCARD):
-				return False
+				return None
 			if(not isinstance(event.pile_from, AVGEToolCardholder)):
-				return False
-			return self._has_arranger(event.pile_from.parent_card)
+				return None
+			if(isinstance(event.pile_from.parent_card, AVGECharacterCard)):
+				return event.pile_from.parent_card
+			return None
 
-		return False
+		return None
+
+	def event_match(self, event):
+		return self._has_arranger(self._affected_character_from_event(event))
 
 	def event_effect(self) -> bool:
-		return True
+		return self._has_arranger(self._affected_character_from_event(self.attached_event))
 
 	def update_status(self):
 		return
@@ -56,16 +63,10 @@ class ArrangerStatusReactor(AVGEReactor):
 		return "Arranger Status Reactor"
 
 	def react(self, args={}):
-		from card_game.avge_abstracts.AVGECardholder import AVGEToolCardholder
-		from card_game.internal_events import AVGECardHPChange, InputEvent, TransferCard
+		from card_game.internal_events import InputEvent
 
 		event = self.attached_event
-		affected_character = None
-
-		if(isinstance(event, AVGECardHPChange)):
-			affected_character = event.target_card
-		elif(isinstance(event, TransferCard) and isinstance(event.pile_from, AVGEToolCardholder)):
-			affected_character = event.pile_from.parent_card
+		affected_character = self._affected_character_from_event(event)
 
 		if(not isinstance(affected_character, AVGECharacterCard)):
 			return Response(ResponseType.ACCEPT, Data())

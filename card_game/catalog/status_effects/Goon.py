@@ -12,7 +12,8 @@ class GoonStatusTransferModifier(AVGEModifier):
 			group=EngineGroup.EXTERNAL_MODIFIERS_1,
 		)
 		self.env = env
-	def event_match(self, event):
+
+	def _is_goon_transfer_event(self, event) -> bool:
 		from card_game.internal_events import TransferCard
 
 		return (
@@ -23,8 +24,12 @@ class GoonStatusTransferModifier(AVGEModifier):
 			and event.pile_to.pile_type == Pile.BENCH
 			and event.energy_requirement > 0
 		)
+
+	def event_match(self, event):
+		return self._is_goon_transfer_event(event)
+
 	def event_effect(self) -> bool:
-		return True
+		return self._is_goon_transfer_event(self.attached_event)
 
 	def update_status(self):
 		return

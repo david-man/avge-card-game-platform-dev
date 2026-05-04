@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from card_game.avge_abstracts.AVGEEnvironment import AVGEEnvironment
 
 cards_per_deck = 30
-initial_hand_size = 15
+initial_hand_size = 5
 max_bench_size = 3
 initial_tokens = 100
 kos_to_win = 3
