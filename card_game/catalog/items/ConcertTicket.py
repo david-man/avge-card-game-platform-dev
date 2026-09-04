@@ -17,7 +17,7 @@ class ConcertTicket(AVGEItemCard):
 
 		if(current_hand_size == 1):
 			return Response(
-				ResponseType.SKIP,
+				ResponseType.CANCEL,
 				Notify('ConcertTicket cannot be played as the only card in hand.', [card.player.unique_id], default_timeout)
 			)
 

@@ -65,7 +65,7 @@ def drain_engine(
             bridge._pending_packet_command_payloads = []
 
         should_buffer_response_commands = response.response_type not in {
-            ResponseType.SKIP,
+            ResponseType.CANCEL,
             ResponseType.REQUIRES_QUERY,
         }
 
@@ -86,7 +86,7 @@ def drain_engine(
                 if stop_after_command_batch:
                     break
 
-        if response.response_type == ResponseType.SKIP:
+        if response.response_type == ResponseType.CANCEL:
             # Packet rolled back; discard accumulated mid-packet state commands
             # and emit SKIP rollback/sync commands immediately.
             bridge._pending_packet_commands = []

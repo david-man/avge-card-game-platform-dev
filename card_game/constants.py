@@ -22,8 +22,6 @@ per_turn_atks = 1
 
 default_timeout = 5
 
-ACTIVE_FLAG = 'active_flag'
-
 @dataclass
 class Data():
     pass
@@ -84,12 +82,12 @@ class CoinflipData(Data):
 class D6Data(Data):
     header_msg : str
 class ResponseType(StrEnum):
-    SKIP = "SKIP"#something in the list went awry/was rejected, undo the whole packet
+    CANCEL = "CANCEL"#something in the list went awry/was rejected, cancel the whole packet and go back
     ACCEPT = 'ACCEPT'#accept and move to the next step
     REQUIRES_QUERY = "REQUIRES_QUERY"#requires query, try again
     INTERRUPT = "INTERRUPT"#packet interrupted: events at INTERRUPT_KEY need to be finished first before this packet can continue
     FAST_FORWARD = "FF"#fast forward the event to its closing. if used right after an INTERRUPT, you can "override" an event completely.
-    FINISHED = "FINISHED"#event has finished naturally
+    FINISHED_EVENT = "FINISHED_EVENT"#event has finished naturally
     FINISHED_PACKET = "FINISHED_PACKET"#packet has finished naturally
     GAME_END = "GAME_END"#game has ended because of a reason that isn't "no more events"
     CORE = "CORE"#core was run successfully

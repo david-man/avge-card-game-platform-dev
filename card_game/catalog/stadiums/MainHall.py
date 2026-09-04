@@ -68,7 +68,7 @@ class MainHallPlayLimitAssessor(AVGEAssessor):
 			self.invalidate()
 
 	def assess(self, args=None):
-		return Response(ResponseType.SKIP, Notify('Main Hall: Small Ensemble Limit prevented this action!', all_players, default_timeout))
+		return Response(ResponseType.CANCEL, Notify('Main Hall: Small Ensemble Limit prevented this action!', all_players, default_timeout))
 
 
 class MainHall(AVGEStadiumCard):
@@ -81,6 +81,6 @@ class MainHall(AVGEStadiumCard):
 	def play_card(self) -> Response:
 		owner_card = self
 		if(owner_card.env.round_id == 0):
-			return Response(ResponseType.SKIP, Notify('MainHall cannot be played on the first turn.', [owner_card.player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('MainHall cannot be played on the first turn.', [owner_card.player.unique_id], default_timeout))
 		owner_card.add_listener(MainHallPlayLimitAssessor(owner_card, owner_card.env.round_id + 1))
 		return Response(ResponseType.CORE, Data())

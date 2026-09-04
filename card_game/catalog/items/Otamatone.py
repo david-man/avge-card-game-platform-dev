@@ -55,7 +55,7 @@ class Otamatone(AVGEItemCard):
 	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 
 		if(card.env.round_id == 0):
-			return Response(ResponseType.SKIP, Notify('Cannot play Otamatone on the first turn.', [card.player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('Cannot play Otamatone on the first turn.', [card.player.unique_id], default_timeout))
 
 		card.add_listener(OtamatoneEnergy(card, card.env.round_id))
 		return self.generic_response(card)

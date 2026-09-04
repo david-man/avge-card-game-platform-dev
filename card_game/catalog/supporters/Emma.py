@@ -50,7 +50,7 @@ class EmmaNextTurnSwapLockAssessor(AVGEAssessor):
 
 	def assess(self, args=None):
 		return Response(
-			ResponseType.SKIP,
+			ResponseType.CANCEL,
 			Notify("Emma: this character cannot retreat this turn.", [self.opponent.unique_id], default_timeout),
 		)
 
@@ -70,7 +70,7 @@ class Emma(AVGESupporterCard):
 
 		if(len(opponent_bench) == 0):
 			return Response(
-				ResponseType.SKIP,
+				ResponseType.CANCEL,
 				Notify("Opponent has no benched character to switch with.", [card.player.unique_id], default_timeout),
 			)
 		selected_bench = card.env.cache.get(card, Emma._SELECTED_BENCH_KEY, None, True)

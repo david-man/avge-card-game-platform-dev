@@ -39,7 +39,7 @@ class EngineHistory(Generic[EV]):
             raise Exception("You cannot make a new chapter while the last one hasn't been fully formalized!")
         self._chapter += 1
         self.history[self._chapter] = []
-    def search(self, chapter : int, event_type : Type[EV], kwargs : dict[str, Any], index_to_start : int = 0, specific_state : HistoryState = HistoryState.FORMALIZED) -> Tuple[EV | None, int]:
+    def search(self, chapter : int, event_type : Type[EV], kwargs : dict[str, Any], index_to_start : int = 0, specific_state : HistoryState = HistoryState.FORMALIZED, attribute_search : bool = False) -> Tuple[EV | None, int]:
         #Searches for the earliest event in a chapter given a set of (not necessarily complete) kwargs. Second element is the index if found, -1 if not
         if(chapter not in self.history.keys()):
             return None, -1
@@ -51,9 +51,14 @@ class EngineHistory(Generic[EV]):
                     continue
                 matched = True
                 for kwarg_key, kwarg_val in kwargs.items():
-                    if(kwarg_key not in event._kwargs or event._kwargs[kwarg_key] != kwarg_val):
-                        matched = False
-                        break
+                    if(attribute_search):
+                        if(getattr(event, kwarg_key, None) != kwarg_val):
+                            matched = False
+                            break
+                    elif(not attribute_search):
+                        if(event._kwargs.get(kwarg_key, None) != kwarg_val):
+                            matched = False
+                            break
                 if(not matched):
                     continue
                 return event, i
@@ -134,16 +139,12 @@ class Engine(Generic[EV]):
         if(self.event_running is not None):
             self.packet_running.insert(0, [self.event_running])
         #put the requested events in front of the existing packet
-        self._queue.insert(packet, -100000)
+        self._queue.insert(packet, 100000)
         self.event_running = None
         self.packet_running = Packet([])
     def _propose(self, new_packet : Packet[EV], priority : int = 0):
         #proposes an addition in the standard fashion
         self._queue.propose(new_packet, priority)
-    
-    def _ff(self) -> None:#marks the current event to be FF'd on the next forward call
-        if(not self.event_running is None):
-            self.event_running._ff()
 
     def _extend(self, packet : list[EV | Gen]):
         #extends the current running PACKET with the given
@@ -178,11 +179,14 @@ class Engine(Generic[EV]):
         elif(self.event_running is None and len(self.packet_running) > 0):
             #prepares a fresh event from the current packet to run
             self.event_running = self.packet_running.get_next_event()
+            
             if(self.event_running is None):
+                #try again, in case the event was a generated event that generated nothing
                 return self.forward(args)
             else:
+                #close the queue in preparation for the series of assessors and modifiers 
+                self._queue.set_status(QueueStatus.CLOSED)
                 self.event_running.attach_to_engine(self)
-                
                 #attach all required external listeners
                 if(not self.event_running._external_listeners_attached):
                     for listener in self._external_listeners:
@@ -207,9 +211,9 @@ class Engine(Generic[EV]):
                 requested_addition : list[EV | Engine.Gen] = response.data.insertion #type: ignore
                 self.packet_running.insert(0, requested_addition)
                 self.event_running = None
-            elif(response.response_type == ResponseType.FINISHED or response.response_type == ResponseType.FAST_FORWARD):
+            elif(response.response_type == ResponseType.FINISHED_EVENT or response.response_type == ResponseType.FAST_FORWARD):
                 #if an event finished properly
-                #note: this does NOT necessarily mean the packet is complete. only on packet completion are changes truly committed
+                #note: this does NOT necessarily mean the packet is complete, but note that only on packet completion are changes truly committed
 
                 # Record this event as part of packet history before packet-level
                 # formalization, including the single-event packet case.
@@ -219,7 +223,7 @@ class Engine(Generic[EV]):
                     #if the entire packet is done and all packet listeners are checked
                     #actualize ALL proposed events that happened during the packet
                     self._queue.flush_buffer()
-                    #rebuffer the queue immediately
+                    #rebuffer the queue immediately in preparation for packet listeners
                     self._queue.set_status(QueueStatus.BUFFERED)
                     #probe all constraints to ensure that the only ones left are the ones still active
                     self._probe_constraints()
@@ -253,7 +257,7 @@ class Engine(Generic[EV]):
                     self._probe_listeners()
                     #set event running to None
                     self.event_running = None
-            elif(response.response_type == ResponseType.SKIP):
+            elif(response.response_type == ResponseType.CANCEL):
                 #if not finished properly
                 #revert to pre-packet event constrainers
                 for c in self._constraints:
@@ -281,12 +285,13 @@ class Engine(Generic[EV]):
                 if(self.event_running.core_ran):
                     #undo this event's core if it went through
                     self.event_running.invert_core(self.event_running.core_args)
-                
+                #buffer the queue in wait for packet listeners
+                self._queue.set_status(QueueStatus.BUFFERED)
                 #probe packet listeners 
                 self._probe_packet_listeners()
                 #packet listener responses
                 for listener in self._packet_reactors:
-                    if(listener._should_attach(self.packet_running, ResponseType.SKIP)):
+                    if(listener._should_attach(self.packet_running, ResponseType.CANCEL)):
                         self._queued_responses.append(listener.react(self.packet_running))
                 self._queue.flush_buffer()
                 #dispose of the packet and event completely
@@ -295,7 +300,5 @@ class Engine(Generic[EV]):
                 #reset the backups
                 self._constraints_backup = []
                 self._external_listeners_backup = []
-
-                
                     
             return response

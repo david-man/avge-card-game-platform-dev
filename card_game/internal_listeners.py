@@ -25,11 +25,11 @@ class AVGETokenTransferAssessment(AVGEAssessor):
         assert(isinstance(event, AVGEEnergyTransfer))
         assert(isinstance(event.token, EnergyToken))
         if(event.token not in event.source.energy):
-            return Response(ResponseType.SKIP, Data())
+            return Response(ResponseType.CANCEL, Data())
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
             if(isinstance(event.target, AVGECharacterCard) and isinstance(event.identifier.caller, AVGEPlayer)):
                 if(event.identifier.caller.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
-                    return Response(ResponseType.SKIP, Data())
+                    return Response(ResponseType.CANCEL, Data())
         return Response(ResponseType.ACCEPT, Data())
         
         
@@ -148,22 +148,22 @@ class AVGETransferValidityCheck(AVGEAssessor):
         if(not (event.card in event.pile_from)):#if this case happens, something wonk has happened
             return Response(ResponseType.FAST_FORWARD, Data())
         if(event.pile_to.pile_type in [Pile.BENCH, Pile.ACTIVE] and not isinstance(event.card, AVGECharacterCard)):
-            return Response(ResponseType.SKIP, Data())
+            return Response(ResponseType.CANCEL, Data())
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE and 
            event.pile_from.pile_type == Pile.HAND and 
            event.pile_to.pile_type == Pile.BENCH):#tried to add a card to the bench but bench is full / card isn't character
             bench = event.pile_to
             player_responsible = event.card.env.player_turn
             if(not isinstance(event.card, AVGECharacterCard) or len(bench) == max_bench_size):
-                return Response(ResponseType.SKIP, Notify("Can't add this card to the bench b/c the bench is full!", [player_responsible.unique_id], default_timeout))
+                return Response(ResponseType.CANCEL, Notify("Can't add this card to the bench b/c the bench is full!", [player_responsible.unique_id], default_timeout))
         if(event.catalyst_action == ActionTypes.PLAYER_CHOICE and 
            isinstance(event.card, AVGECharacterCard) and
            event.pile_from.pile_type == Pile.BENCH and 
            event.pile_to.pile_type == Pile.ACTIVE and
            event.card.player.attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
-           return Response(ResponseType.SKIP, Notify("Can't switch these cards, since you have no more swaps left this turn!", [event.card.player.unique_id], default_timeout))
+           return Response(ResponseType.CANCEL, Notify("Can't switch these cards, since you have no more swaps left this turn!", [event.card.player.unique_id], default_timeout))
         if(isinstance(event.card, AVGECharacterCard) and event.energy_requirement > len(event.card.energy)):
-            return Response(ResponseType.SKIP, Notify("Not enough energy to perform this transfer!", [event.card.player.unique_id], default_timeout))
+            return Response(ResponseType.CANCEL, Notify("Not enough energy to perform this transfer!", [event.card.player.unique_id], default_timeout))
         return Response(ResponseType.ACCEPT, Data())
 
 class AVGETransferEnergyRequirementReactor(AVGEReactor):
@@ -220,28 +220,28 @@ class AVGEPlayCharacterCardValidityCheck(AVGEAssessor):
                 players = [PlayerID.P1, PlayerID.P2]
                 if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
                     players = [event.card.env.player_turn.unique_id]
-                return Response(ResponseType.SKIP, Notify("Tried to use an attack that doesn't exist!", players, default_timeout))
+                return Response(ResponseType.CANCEL, Notify("Tried to use an attack that doesn't exist!", players, default_timeout))
         elif(event.card_action == ActionTypes.ATK_2):
             if(event.card.atk_2_name is None):
                 players = [PlayerID.P1, PlayerID.P2]
                 if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
                     players = [event.card.env.player_turn.unique_id]
-                return Response(ResponseType.SKIP, Notify("Tried to use an attack that doesn't exist!", players, default_timeout))
+                return Response(ResponseType.CANCEL, Notify("Tried to use an attack that doesn't exist!", players, default_timeout))
         elif(event.card_action == ActionTypes.ACTIVATE_ABILITY):
             if(not isinstance(event.caller, AVGECharacterCard) or event.card.active_name is None or not event.card.can_play_active()):
                 players = [PlayerID.P1, PlayerID.P2]
                 if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
                     players = [event.card.env.player_turn.unique_id]
-                return Response(ResponseType.SKIP, Notify("Tried to use an ability that can't be played now!", players, default_timeout))
+                return Response(ResponseType.CANCEL, Notify("Tried to use an ability that can't be played now!", players, default_timeout))
         elif(event.card_action == ActionTypes.PASSIVE):
             if(not event.card.has_passive):
-                return Response(ResponseType.SKIP, Data())
+                return Response(ResponseType.CANCEL, Data())
             
         if(event.energy_requirement > len(event.card.energy)):
             players = [PlayerID.P1, PlayerID.P2]
             if(event.catalyst_action == ActionTypes.PLAYER_CHOICE):
                 players = [event.card.env.player_turn.unique_id]
-            return Response(ResponseType.SKIP, Notify("Not enough energy to play this move!", players, default_timeout))
+            return Response(ResponseType.CANCEL, Notify("Not enough energy to play this move!", players, default_timeout))
         return Response(ResponseType.ACCEPT, Data())
     
 class AVGEPlayNonCharacterCardValidityCheck(AVGEAssessor):
@@ -264,5 +264,5 @@ class AVGEPlayNonCharacterCardValidityCheck(AVGEAssessor):
                 card : AVGESupporterCard = event.card
                 player : AVGEPlayer = card.player
                 if(player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] == 0):
-                    return Response(ResponseType.SKIP, Notify("No more supporter uses left this turn!", [player.unique_id], default_timeout))
+                    return Response(ResponseType.CANCEL, Notify("No more supporter uses left this turn!", [player.unique_id], default_timeout))
         return Response(ResponseType.ACCEPT, Data())

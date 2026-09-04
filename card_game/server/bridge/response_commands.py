@@ -45,7 +45,7 @@ def commands_from_response(bridge: Any, response: Response) -> list[str]:
         commands.extend(bridge._notification_commands_from_payload(response_data))
         return commands
 
-    if response.response_type == ResponseType.SKIP:
+    if response.response_type == ResponseType.CANCEL:
         commands.extend(bridge._notification_commands_from_payload(response_data))
         commands.append('resync')
         bridge._force_environment_sync_pending = True

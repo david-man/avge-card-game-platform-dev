@@ -25,7 +25,7 @@ class AntongChen(AVGECharacterCard):
             },
         )
         if pc_used_last_turn_idx != -1:
-            return Response(ResponseType.SKIP, Notify(f"{str(card)} tried to use Fingerstyle, but he couldn't!", all_players, default_timeout))
+            return Response(ResponseType.CANCEL, Notify(f"{str(card)} tried to use Fingerstyle, but he couldn't!", all_players, default_timeout))
 
         coin_keys = [AntongChen._ATK1_COIN_BASE + str(i) for i in range(5)]
         vals = [card.env.cache.get(card, key, None, True) for key in coin_keys]
@@ -45,7 +45,7 @@ class AntongChen(AVGECharacterCard):
             )
         heads = sum(int(v) for v in vals if v is not None)
         if heads <= 0:
-            return Response(ResponseType.SKIP, Notify(f"{str(card)} used Fingerstyle, but he rolled 0 heads...", all_players, default_timeout))
+            return Response(ResponseType.CANCEL, Notify(f"{str(card)} used Fingerstyle, but he rolled 0 heads...", all_players, default_timeout))
 
         dmg = 20 * heads
         def gen() -> PacketType:
@@ -62,7 +62,7 @@ class AntongChen(AVGECharacterCard):
             ]
         card.propose(AVGEPacket([gen], AVGEEngineID(card, ActionTypes.ATK_1, AntongChen)))
 
-        return Response(ResponseType.SKIP, Notify(f"{str(card)} used Fingerstyle and rolled {heads} heads!", all_players, default_timeout))
+        return Response(ResponseType.CANCEL, Notify(f"{str(card)} used Fingerstyle and rolled {heads} heads!", all_players, default_timeout))
 
     def atk_2(self, card: AVGECharacterCard, caller_action : ActionTypes) -> Response:
         from card_game.internal_events import AVGECardHPChange, AVGEEnergyTransfer, EmptyEvent

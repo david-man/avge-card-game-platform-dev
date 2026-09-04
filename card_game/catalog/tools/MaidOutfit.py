@@ -9,7 +9,7 @@ class MaidOutfit(AVGEToolCard):
 	def __init__(self, unique_id):
 		super().__init__(unique_id)
 
-	def deactivate_card(self):
+	def _deactivate_card(self):
 		from card_game.internal_events import AVGECardStatusChange
 
 		assert self.card_attached is not None
@@ -25,7 +25,7 @@ class MaidOutfit(AVGEToolCard):
 				)
 			]
 		)
-		super().deactivate_card()
+		super()._deactivate_card()
 		return packet
 
 	def play_card(self) -> Response:

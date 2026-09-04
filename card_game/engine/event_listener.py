@@ -78,7 +78,7 @@ class AbstractEventListener(Generic[EV]):
         return (not self._invalidated) and (self.event_match(event))
     def on_packet_completion(self):
         """
-        a function that gets called at the end if the attached event's overall pacekt is completed successfully
+        a function that gets called at the end if the attached event's overall packet is completed successfully
         particularly useful for 'one-use' event listeners
         """
         return

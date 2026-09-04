@@ -65,7 +65,7 @@ The system supports **atomic transactions** with rollback:
 def forward(self, args: Data = {}) -> Response:
     # ... event processing ...
     
-    if response.response_type == ResponseType.SKIP:
+    if response.response_type == ResponseType.CANCEL:
         # Rollback entire packet on failure
         for c in self._constraints:
             if c not in self._constraints_backup:

@@ -17,7 +17,7 @@ class RaffleTicket(AVGEItemCard):
 		hand = player.cardholders[Pile.HAND]
 
 		if(len(deck) == 0):
-			return Response(ResponseType.SKIP, Notify('RaffleTicket: No cards in deck to draw.', [player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('RaffleTicket: No cards in deck to draw.', [player.unique_id], default_timeout))
 		bottom_card = list(deck)[-1]
 
 		heal_target = None

@@ -74,7 +74,7 @@ class _MeyaAttackBlockAssessor(AVGEAssessor):
 
     def assess(self) -> Response:
         assert isinstance(self.attached_event, PlayCharacterCard) and isinstance(self.attached_event.card, AVGECharacterCard)
-        return Response(ResponseType.SKIP, Notify("Cannot attack this round due to Meya Gao's I See Your Soul!", [self.attached_event.card.player.unique_id], default_timeout))
+        return Response(ResponseType.CANCEL, Notify("Cannot attack this round due to Meya Gao's I See Your Soul!", [self.attached_event.card.player.unique_id], default_timeout))
 
 
 class _MeyaDamageReactor(AVGEReactor):

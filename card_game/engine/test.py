@@ -150,7 +150,7 @@ class SkipListener(TestAssessor):
         return True
 
     def assess(self, args={}):
-        return self.generate_response(ResponseType.SKIP, {"reason": "forced"})
+        return self.generate_response(ResponseType.CANCEL, {"reason": "forced"})
 
     def update_status(self):
         return
@@ -368,7 +368,7 @@ class PacketStatusProbeListener(AbstractPacketListener[Event]):
 
 class ExplicitSkipEvent(BaseEvent):
     def core(self, args={}):
-        return self.generate_core_response(ResponseType.SKIP)
+        return self.generate_core_response(ResponseType.CANCEL)
 
     def get_kwargs(self):
         return {}
@@ -671,7 +671,7 @@ class DownstreamBlockAssessor(TestAssessor):
     def assess(self, args={}):
         self.metrics["downstream_assessments"] += 1
         if self.cache.get(self.input_key) is not None:
-            return self.generate_response(ResponseType.SKIP, {"reason": "downstream-block"})
+            return self.generate_response(ResponseType.CANCEL, {"reason": "downstream-block"})
         return self.generate_response(ResponseType.ACCEPT)
 
     def update_status(self):
@@ -1483,7 +1483,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             cache.capture()
         elif response.response_type == ResponseType.FINISHED_PACKET:
             cache.release()
-        elif response.response_type == ResponseType.SKIP:
+        elif response.response_type == ResponseType.CANCEL:
             cache.rewind()
         return response
 
@@ -1513,7 +1513,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         eng = self.make_engine()
         state = MutableState()
         finished_listener = PacketStatusProbeListener({ResponseType.FINISHED_PACKET})
-        skip_listener = PacketStatusProbeListener({ResponseType.SKIP})
+        skip_listener = PacketStatusProbeListener({ResponseType.CANCEL})
         self.add_packet_listener(eng, finished_listener)
         self.add_packet_listener(eng, skip_listener)
 
@@ -1529,13 +1529,13 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertEqual(finished_listener.react_count, 1)
         self.assertEqual(skip_listener.react_count, 1)
         self.assertIn(ResponseType.FINISHED_PACKET, finished_listener.seen_statuses)
-        self.assertIn(ResponseType.SKIP, skip_listener.seen_statuses)
+        self.assertIn(ResponseType.CANCEL, skip_listener.seen_statuses)
 
     def test_packet_listener_can_propose_events_even_on_skip(self):
         eng = self.make_engine()
         state = MutableState()
         skip_listener = PacketStatusProbeListener(
-            {ResponseType.SKIP},
+            {ResponseType.CANCEL},
             response_type=ResponseType.ACCEPT,
             state=state,
             propose_delta=5,
@@ -1583,7 +1583,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         state = MutableState()
         skip_on_finish_listener = PacketStatusProbeListener(
             {ResponseType.FINISHED_PACKET},
-            response_type=ResponseType.SKIP,
+            response_type=ResponseType.CANCEL,
             invalidate_after_react=True,
         )
         self.add_packet_listener(eng, skip_on_finish_listener)
@@ -1594,7 +1594,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         final_response = None
         for _ in range(50):
             response = eng.forward({})
-            if response.response_type == ResponseType.SKIP:
+            if response.response_type == ResponseType.CANCEL:
                 saw_skip = True
             if response.response_type == ResponseType.NO_MORE_EVENTS:
                 final_response = response
@@ -1966,7 +1966,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
                     saw_requires_query = True
                     response = self.forward_with_cache(eng, cache, {"input_result": [99]})
 
-            if response.response_type == ResponseType.SKIP:
+            if response.response_type == ResponseType.CANCEL:
                 final_response = response
                 break
 
@@ -1974,7 +1974,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
         self.assertTrue(saw_requires_query)
         self.assertIsNotNone(final_response)
         final_response = cast(Response, final_response)
-        self.assertEqual(final_response.response_type, ResponseType.SKIP)
+        self.assertEqual(final_response.response_type, ResponseType.CANCEL)
 
         self.assertEqual(metrics["modifier2_update_requests"], 1)
         self.assertGreaterEqual(metrics["modifier2_passes"], 1)
@@ -2280,7 +2280,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             response = eng.forward({})
             if response.response_type == ResponseType.INTERRUPT:
                 saw_interrupt = True
-            elif response.response_type == ResponseType.SKIP:
+            elif response.response_type == ResponseType.CANCEL:
                 saw_skip = True
             elif response.response_type == ResponseType.NO_MORE_EVENTS:
                 break
@@ -2403,7 +2403,7 @@ class EngineEdgeCaseTests(unittest.TestCase):
             ResponseType.NO_MORE_EVENTS,
             ResponseType.FINISHED_PACKET,
             ResponseType.GAME_END,
-            ResponseType.SKIP,
+            ResponseType.CANCEL,
         }
 
         saw_interrupt = 0

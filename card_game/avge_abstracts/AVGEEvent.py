@@ -23,14 +23,6 @@ class AVGEEvent(Event):
         self.identifier = AVGEEngineID(caller, catalyst_action, None)
         self.temp_cache = {}
     def __str__(self):
-        package_fn = getattr(self, "package", None)
-        if(callable(package_fn)):
-            try:
-                description = package_fn()
-                if(isinstance(description, str) and description.strip() != ""):
-                    return description
-            except Exception:
-                pass
         return type(self).__name__
     
 class AVGEPacket(Packet[AEV]):

@@ -9,11 +9,11 @@ from .AVGEPlayer import AVGEPlayer
 from .AVGECards import *
 from .AVGEEvent import AVGEPacket, DeferredAVGEPacket
 from .AVGEEventListeners import AVGEPacketListener, AVGEAbstractEventListener
-from ..engine.engine import Engine
+from ..engine.engine import Engine, HistoryState
 if TYPE_CHECKING:
     from .AVGECardholder import AVGECardholder
     from . import PacketType
-    from card_game.internal_events import Phase2, AtkPhase, PlayCharacterCard, TransferCard
+    from card_game.internal_events import Phase2, AtkPhase, PhasePickCard
     
 
 class GamePhase(StrEnum):
@@ -138,7 +138,7 @@ class AVGEEnvironment():
                 break
             if(setup_response.response_type in [ResponseType.REQUIRES_QUERY]):
                 raise Exception(f"Unexpected interactive setup response: {setup_response.response_type}")
-            if(setup_response.response_type in [ResponseType.SKIP, ResponseType.GAME_END]):
+            if(setup_response.response_type in [ResponseType.CANCEL, ResponseType.GAME_END]):
                 raise Exception(f"Environment initialization failed: {setup_response.response_type} {setup_response.data}")
 
     def force_flush(self):
@@ -160,8 +160,8 @@ class AVGEEnvironment():
     def extend(self, p : list[AVGEEvent | DeferredAVGEPacket]):
         #opens engine in limited manner to cards and players
         self._engine._extend(p)
-    def check_history(self, round_num : int, event_type : type[AVGEEvent], kwargs : dict[str, Any], index_to_start : int = 0) -> tuple[AVGEEvent | None, int]:
-        return self._engine.event_history.search(round_num, event_type, kwargs, index_to_start)
+    def check_history(self, round_num : int, event_type : type[AVGEEvent], kwargs : dict[str, Any], index_to_start : int = 0, attribute_search : bool = False) -> tuple[AVGEEvent | None, int]:
+        return self._engine.event_history.search(round_num, event_type, kwargs, index_to_start, HistoryState.FORMALIZED, attribute_search)
     def extend_event(self, p : list[AVGEEvent | DeferredAVGEPacket]):
         #opens engine in limited manner to cards and players
         self._engine._extend_event(p)
@@ -184,126 +184,18 @@ class AVGEEnvironment():
         player.attach_to_env(self)
         self.players[player.unique_id] = player
 
-
-    def _format_card(self, c : AVGECard | None) -> str:
-        if(c is None):
-            return "None"
-        return f"{c.unique_id}<{c.__class__.__name__}>"
-
-    def _format_pile(self, player : AVGEPlayer, pile : Pile, preview_count : int = 5) -> str:
-        holder = player.cardholders[pile]
-        count = len(holder)
-        cards = list(holder.cards_by_id.values())
-        preview = ", ".join(self._format_card(c) for c in cards[:preview_count])
-        if(count > preview_count):
-            preview += f", ... (+{count - preview_count} more)"
-        if(preview == ""):
-            preview = "(empty)"
-        return f"{pile}: {count} | {preview}"
-
-    def _format_card_attributes(self, c : AVGECard) -> list[str]:
-        if(c is None):
-            return ["None"]
-        if(isinstance(c, AVGECharacterCard)):
-            details = [
-                f"hp: {c.hp}",
-                f"max_hp: {c.max_hp}",
-                f"card_type: {c.card_type}",
-                f"retreat_cost: {c.retreat_cost}",
-                f"energy: {len(c.energy)}",
-                f"tools: {len(c.tools_attached)}",
-            ]
-            if(c.atk_1_name is not None):
-                details.append(f"atk_1_cost: {c.atk_1_cost}")
-            if(c.atk_2_name is not None):
-                details.append(f"atk_2_cost: {c.atk_2_cost}")
-            statuses = []
-            for status_effect, attached_cards in c.statuses_attached.items():
-                if(len(attached_cards) > 0):
-                    statuses.append(f"{status_effect}({len(attached_cards)})")
-            details.append(f"statuses: {', '.join(statuses) if len(statuses) > 0 else 'none'}")
-            return details
-        return []
-
-    def __str__(self) -> str:
-        lines : list[str] = []
-        lines.append("=" * 72)
-        lines.append("AVGEEnvironment")
-        lines.append("-" * 72)
-        lines.append(f"PHASE: {self.game_phase}")
-        lines.append(f"TURN: {self.player_turn.unique_id if self.player_turn is not None else 'None'}")
-        lines.append(f"WINNER: {self.winner.unique_id if self.winner is not None else 'None'}")
-        lines.append("-" * 72)
-
-        stadium_count = len(self.stadium_cardholder)
-        stadium_active = self.stadium_cardholder.peek() if stadium_count > 0 else None
-        lines.append(f"STADIUM: {self._format_card(stadium_active)}")
-        lines.append("-" * 72)
-
-        for player_id, player in self.players.items():
-            lines.append(f"PLAYER {player_id}")
-            player_attr_line = ""
-            for attr, value in player.attributes.items():
-                player_attr_line += f"| {attr}: {value} |"
-            lines.append(player_attr_line if player_attr_line != "" else "(no player attributes)")
-            lines.append(f"TOKENS: {len(player.energy)}")
-
-            active_card = player.get_active_card() if len(player.cardholders[Pile.ACTIVE]) > 0 else None
-            if(active_card is not None):
-                lines.append(f"ACTIVE CARD: {self._format_card(active_card)}")
-                a = "details: "
-                for attr_line in self._format_card_attributes(active_card):
-                    a += f"| {attr_line} |"
-                lines.append(a)
-
-            bench_cards = list(player.cardholders[Pile.BENCH].cards_by_id.values())
-            lines.append("BENCH CARDS:")
-            if(len(bench_cards) == 0):
-                lines.append("(empty)")
-            else:
-                for idx, bench_card in enumerate(bench_cards, start=1):
-                    a = f"- [{idx}] {self._format_card(bench_card)} details: "
-                    for attr_line in self._format_card_attributes(bench_card):
-                        a += f"| {attr_line} |"
-                    lines.append(a)
-
-            lines.append("PILES:")
-            lines.append(f"- {self._format_pile(player, Pile.DECK)}")
-            lines.append(f"- {self._format_pile(player, Pile.HAND)}")
-            lines.append(f"- {self._format_pile(player, Pile.DISCARD)}")
-            lines.append("-" * 72)
-
-        lines.append(f"ENV TOKENS: {len(self.energy)}")
-
-        lines.append("=" * 72)
-        return "\n".join(lines)
-
     def get_active_card(self, player_id : PlayerID):
         return self.players[player_id].cardholders[Pile.ACTIVE].peek()
 
     def forward(self, args : dict | None = None) -> Response:
         if(args is None):
             args = {}
-        if(args.get(ACTIVE_FLAG, None) is not None):
-            from . import PacketType
-            card = args[ACTIVE_FLAG]
-            if(isinstance(card, AVGECharacterCard) and card.active_name is not None and
-               card.can_play_active()):
-                event_running = self._engine.event_running
-                if(isinstance(event_running, (Phase2, AtkPhase))):
-                    event_running._ff()
-                p : PacketType = [
-                    PlayCharacterCard(
-                        card,
-                        ActionTypes.ACTIVATE_ABILITY,
-                        ActionTypes.ENV,
-                        card,
-                        default_timeout
-                    )
-                ]
-                self.propose(AVGEPacket(p, AVGEEngineID(self, ActionTypes.ENV, None)), 10)#act as soon as this packet is done.
-                
+        event_type = type(self._engine.event_running)
         resp = self._engine.forward(args)
+        if(resp.response_type == ResponseType.CANCEL):
+            from card_game.internal_events import Phase2, AtkPhase, PhasePickCard, TurnEnd
+            if event_type in [Phase2, PhasePickCard, AtkPhase, TurnEnd]:
+                raise Exception(f"You cannot cancel a {event_type}!")
         if(resp.response_type == ResponseType.CORE and isinstance(resp.data, EndOfTurn)):
             self._pending_end_of_turn_chapter = True
         if(resp.response_type == ResponseType.GAME_END):
@@ -331,7 +223,7 @@ class AVGEEnvironment():
             #begins capturing changes
             self.cache.release()
             self.cache.capture()
-        elif(resp.response_type == ResponseType.SKIP):
+        elif(resp.response_type == ResponseType.CANCEL):
             #when response is failed, drop changes manually 
             self.cache.rewind()
             self._pending_end_of_turn_chapter = False

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from ..constants import *
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  
     from .AVGEPlayer import AVGEPlayer
@@ -50,15 +50,13 @@ class AVGECard():
         self.owned_packet_listeners.append(listener)
     def play_card(self, parent_event : AVGEEvent, args : dict | None = None) -> Response:
         raise NotImplementedError()
-    def deactivate_card(self) -> PacketType | None:
+    def _deactivate_card(self) -> PacketType | None:
         for listener in self.owned_listeners:
             listener.invalidate()#invalidate all owned listeners, since this card is no longer in play
         for constrainer in self.owned_constraints:
             constrainer.invalidate()#invalidates all owned constrainers, since this card has left play
         for listener in self.owned_packet_listeners:
             listener.invalidate()#invalidates all owned packet listeners, since this card has left play
-    def reactivate_card(self):
-        return#engine will revalidate all constrainers and listeners, so can do nothing. However, need to override if you override deactivate_card
     def propose(self, packet : AVGEPacket, priority : int = 0):
         assert self.env is not None
         self.env.propose(packet, priority)
@@ -159,7 +157,7 @@ class AVGESupporterCard(AVGECard):
             ))
 
 class AVGEItemCard(AVGECard):
-    def __init__(self, unique_id):
+    def __init__(self, unique_id: CardID):
         super().__init__(unique_id)
     def play_card(self, card : AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:#type: ignore
         raise NotImplementedError()

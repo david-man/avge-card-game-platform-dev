@@ -71,7 +71,6 @@ class Event():
         self._external_listeners_attached = False
         self._kwargs = kwargs
         self.fast_forward = False
-        self.skip_forward = False
         self.initiated = False
     def _initialize(self):
         if(not self.initiated):
@@ -147,19 +146,15 @@ class Event():
         self.engine._propose(p, priority)
     def _ff(self):#forces this event to fast forward on the next forward call
         self.fast_forward = True
-    def _skip(self):#forces this event to return a skip on the next call
-        self.skip_forward = True
     def forward(self, constraints : list[constrainer.Constraint], args : dict | None = None) ->Response:
         if(args is None):
             args = {}
         if(self.fast_forward):
             return Response(ResponseType.FAST_FORWARD, Data())
-        if(self.skip_forward):
-            return Response(ResponseType.SKIP, Data())
         if(self.group_on.value == engine_constants.MAX_GROUP
            and len(self.event_listener_groups[self.group_on]) == 0):
             #case 1: there's nothing left to run
-            return Response(ResponseType.FINISHED, Data())
+            return Response(ResponseType.FINISHED_EVENT, Data())
         elif(self.group_on == engine_constants.EngineGroup.CORE):
             #case 2: we're running the core function
             response = self.core_wrapper(args)
@@ -188,7 +183,7 @@ class Event():
             self.groups_constrained[self.group_on] = True
             #step 2: consider ordering if must be
             if(not self.groups_ordered[self.group_on]):
-                if(self.group_on in [engine_constants.EngineGroup.EXTERNAL_MODIFIERS_1, engine_constants.EngineGroup.EXTERNAL_MODIFIERS_2, engine_constants.EngineGroup.EXTERNAL_MODIFIERS_3, engine_constants.EngineGroup.EXTERNAL_REACTORS] 
+                if(self.group_on in engine_constants.NON_ARBITRARY_GROUPS
                      and len(self.event_listener_groups[self.group_on]) >= 2):
                     group_ordering = args.get('group_ordering')
                     if(group_ordering is not None):
@@ -221,7 +216,7 @@ class Event():
                 elif(response.response_type == ResponseType.INTERRUPT):
                     #if interrupt, when this event continues, it needs to run the listener again
                     self.event_listener_groups[self.group_on].insert(0, next_listener)
-                elif(response.response_type in [ResponseType.FINISHED, ResponseType.SKIP]):
+                elif(response.response_type in [ResponseType.FINISHED_EVENT, ResponseType.CANCEL]):
                     #if event is over with, detach all listeners 
                     self._detach_listeners()
                 return response

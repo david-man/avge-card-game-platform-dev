@@ -17,7 +17,7 @@ class Michelle(AVGESupporterCard):
 
 		if(card.env.round_id == 0):
 			return Response(
-				ResponseType.SKIP,
+				ResponseType.CANCEL,
 				Notify("Michelle cannot be played on the first turn.", [card.player.unique_id], default_timeout),
 			)
 

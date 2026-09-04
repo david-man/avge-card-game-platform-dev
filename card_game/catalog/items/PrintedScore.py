@@ -14,14 +14,14 @@ class PrintedScore(AVGEItemCard):
 	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		env = card.env
 		if(env.round_id == 0):
-			return Response(ResponseType.SKIP, Notify('Cannot play PrintedScore on the first turn.', [card.player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('Cannot play PrintedScore on the first turn.', [card.player.unique_id], default_timeout))
 
 		opponent = card.player.opponent
 		opponent_hand = opponent.cardholders[Pile.HAND]
 		opponent_discard = opponent.cardholders[Pile.DISCARD]
 
 		if(len(opponent_hand) == 0):
-			return Response(ResponseType.SKIP, Notify('PrintedScore: Opponent has no cards in hand.', [card.player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('PrintedScore: Opponent has no cards in hand.', [card.player.unique_id], default_timeout))
 		
 		
 		missing = object()

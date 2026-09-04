@@ -6,6 +6,7 @@ class QueueStatus(Enum):
     BUFFERED = 1
     OPEN = 2
 
+
 class EngineGroup(Enum):
     EXTERNAL_MODIFIERS_1 = 0#used if you want something to come before internal prechecks
     INTERNAL_1 = 1#all internal prechecks & the weaknesses are calculated in here
@@ -22,4 +23,5 @@ class EngineGroup(Enum):
     def succ(self):
         v = self.value + 1
         return EngineGroup(v)
+NON_ARBITRARY_GROUPS = [EngineGroup.EXTERNAL_MODIFIERS_1, EngineGroup.EXTERNAL_MODIFIERS_2, EngineGroup.EXTERNAL_MODIFIERS_3, EngineGroup.EXTERNAL_REACTORS] 
 MAX_GROUP = max(member.value for member in EngineGroup)

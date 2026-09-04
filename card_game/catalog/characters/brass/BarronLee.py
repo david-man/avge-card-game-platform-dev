@@ -33,7 +33,7 @@ class _BarronEnergyCapPostcheck(AVGEAssessor):
         if projected_amt > 3:
             if(self.attached_event.catalyst_action == ActionTypes.PLAYER_CHOICE):
                 return Response(
-                    ResponseType.SKIP,
+                    ResponseType.CANCEL,
                     Notify(
                         "Get Served prevents opposing characters from receiving more than 3 energy!",
                         [PlayerID.P1, PlayerID.P2],

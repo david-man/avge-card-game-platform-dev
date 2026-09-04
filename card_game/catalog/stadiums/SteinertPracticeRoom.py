@@ -38,7 +38,7 @@ class SteinertPracticeRoomBenchCapAssessor(AVGEAssessor):
 		return "Steinert Practice: Practice Prison"
 
 	def assess(self, args=None):
-		return Response(ResponseType.SKIP, Notify('Steinert Practice Room: Practice Prison prevented this action!', all_players, default_timeout))
+		return Response(ResponseType.CANCEL, Notify('Steinert Practice Room: Practice Prison prevented this action!', all_players, default_timeout))
 
 
 class SteinertPracticeRoomAttackExtraCostAssessor(AVGEModifier):

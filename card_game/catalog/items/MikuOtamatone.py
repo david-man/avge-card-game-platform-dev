@@ -56,10 +56,10 @@ class MikuOtamatone(AVGEItemCard):
 	def play_card(self, card: AVGEToolCard | AVGEItemCard | AVGESupporterCard | AVGEStadiumCard | AVGECharacterCard) -> Response:
 		env = card.env
 		if(env.round_id == 0):
-			return Response(ResponseType.SKIP, Notify('Cannot play Miku Otamatone on the first turn.', [card.player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('Cannot play Miku Otamatone on the first turn.', [card.player.unique_id], default_timeout))
 
 		if(len(env.stadium_cardholder) == 0 or not isinstance(env.stadium_cardholder.peek(), (AlumnaeHall, RileyHall, MainHall, SalomonDECI))):
-			return Response(ResponseType.SKIP, Notify('Miku Otamatone can only be played in performance halls.', [card.player.unique_id], default_timeout))
+			return Response(ResponseType.CANCEL, Notify('Miku Otamatone can only be played in performance halls.', [card.player.unique_id], default_timeout))
 
 		card.add_listener(MikuOtamatoneEnergy(card, card.env.round_id))
 		return self.generic_response(card)

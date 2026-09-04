@@ -33,7 +33,7 @@ class BAIEmailStadiumPlayLockAssessor(AVGEAssessor):
 		return "BAIEmail Stadium Lock Assessor"
 
 	def assess(self, args=None):
-		return Response(ResponseType.SKIP, Notify('BAIEmail: Stadium cards cannot be played right now.', all_players, default_timeout))
+		return Response(ResponseType.CANCEL, Notify('BAIEmail: Stadium cards cannot be played right now.', all_players, default_timeout))
 
 
 class BAIEmail(AVGEItemCard):

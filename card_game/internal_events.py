@@ -361,11 +361,11 @@ class TransferCard(AVGEEvent):
 
             #tool, stadium discard
             if(self.pile_from.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard)):
-                temp = self.card.deactivate_card()
+                temp = self.card._deactivate_card()
                 if(temp is not None):
                     to_dos.extend(temp)
             if(self.pile_from.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard)):
-                temp = self.card.deactivate_card()
+                temp = self.card._deactivate_card()
                 if(temp is not None):
                     to_dos.extend(temp)
             #character setup for discard
@@ -491,7 +491,7 @@ class TransferCard(AVGEEvent):
                         self.card.env
                     ))
                     return packet
-                temp = self.card.deactivate_card()
+                temp = self.card._deactivate_card()
                 if(temp is not None):
                     to_dos.extend(temp)
                 to_dos.extend([packet_1, packet_2, packet_3, packet_4, packet_5])
@@ -559,15 +559,6 @@ class TransferCard(AVGEEvent):
             self.card.card_attached = self._previous_card
 
         self.card.env.transfer_card(self.card, self.pile_to, self.pile_from, self.old_idx)
-
-        if(self.pile_to.pile_type == Pile.DISCARD):
-            if(self.pile_from.pile_type == Pile.TOOL and isinstance(self.card, AVGEToolCard)):
-                self.card.reactivate_card()
-            if(self.pile_from.pile_type == Pile.STADIUM and isinstance(self.card, AVGEStadiumCard)):
-                self.card.reactivate_card()
-
-        if(self.pile_from.pile_type in [Pile.ACTIVE, Pile.BENCH] and isinstance(self.card, AVGECharacterCard) and self.pile_to.pile_type not in [Pile.ACTIVE, Pile.BENCH]):
-            self.card.reactivate_card()
         
 
     def generate_internal_listeners(self):
@@ -692,12 +683,12 @@ class PhasePickCard(AVGEEvent):
                                       None)])
             self.propose(AVGEPacket([Phase2(self.env,
                                              ActionTypes.ENV,
-                                             self.env)], AVGEEngineID(self.env, ActionTypes.ENV, None)))
+                                             self.env)], AVGEEngineID(self.env, ActionTypes.ENV, None)), -1)
             return Response(ResponseType.CORE, Data())
         else:
             self.propose(AVGEPacket([Phase2(self.env,
                                              ActionTypes.ENV,
-                                             self.env)], AVGEEngineID(self.env, ActionTypes.ENV, None)))
+                                             self.env)], AVGEEngineID(self.env, ActionTypes.ENV, None)), -1)
             return Response(ResponseType.CORE, Data())
             # self.player.env.winner = self.player.opponent
             # return self.generate_core_response(ResponseType.GAME_END, {"winner": self.player.opponent, "reason": "no cards left to draw"})
