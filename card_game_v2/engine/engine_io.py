@@ -77,13 +77,9 @@ class IOManager(ABC):
             except IOException as e:
                 await self.retry(user, pending_io.io_obj, e)
 
-    async def report[T](self, io: IOType[T]) -> T:
-        '''Processes an IO object request and returns the result'''
+    async def _dispatch[T](self, user: User, io: IOType[T]) -> T:
+        '''Sends an IO object to a specific user and awaits their response'''
         future: asyncio.Future[T] = asyncio.get_running_loop().create_future()
-        if (isinstance(io, UserIOType)):
-            user = io.user_for
-        else:
-            user = self.resolve_users(io)
         if user in self.pending.keys():
             await self.pending[user].future_obj
         self.pending[user] = PendingIO(io, future)
@@ -92,3 +88,16 @@ class IOManager(ABC):
             return await future
         finally:
             self.pending.pop(user, None)
+
+    async def report[T](self, io: IOType[T]) -> T:
+        '''Processes an IO object request and returns the result'''
+        if (isinstance(io, UserIOType)):
+            user = io.user_for
+        else:
+            user = self.resolve_users(io)
+        return await self._dispatch(user, io)
+
+    async def broadcast(self, io: IOType[None]) -> None:
+        '''Specific broadcast request that blasts an IO object to all users'''
+        await asyncio.gather(*(self._dispatch(user, io) for user in User))
+

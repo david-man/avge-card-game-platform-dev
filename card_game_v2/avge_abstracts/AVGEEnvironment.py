@@ -10,8 +10,9 @@ from .AVGEPlayer import AVGEPlayer
 from .AVGEDeck import AVGEDeck, DeckType
 from ..constants import *
 from ..engine.global_cache import Cache
+from .AVGECard import AVGECharacterCard
 if TYPE_CHECKING:
-    from .AVGECard import AVGECard, AVGECharacterCard
+    from .AVGECard import AVGECard
     from ..core.AVGEIOManager import AVGEIO, IOType
     from .AVGEEventListener import *
     from ..engine.event import Event
@@ -62,13 +63,17 @@ class AVGEEnvironment:
     async def run(self):
         from ..core.EventCatalog import TurnEnd
         await self.engine.flush(lambda : self.search_history(TurnEnd)[0] is not None)
+
     # Cache API
 
     def cache_set(self, owner: AVGECard | AVGEPlayer | Self, key: str, new_value: Any):
+        '''Sets a key-value in the owner's cache'''
         self.cache.set(owner, key, new_value)
 
     def cache_delete(self, owner: AVGECard | AVGEPlayer | Self, key: str):
+        '''Deletes a key from the owner's associated cache key'''
         self.cache.remove(owner, key)
+    
     # Engine API
 
     def add_listener(self, listener: EventListener):
@@ -114,8 +119,12 @@ class AVGEEnvironment:
         return self.engine.search_history(event_type, kwargs, increment, index_to_start, specific_status, attribute_search)
 
     # IOManager API
+
     async def report[T](self, io_type : IOType[T]) -> T:
         return await self.io_manager.report(io_type)
+
+    async def broadcast(self, io_type : IOType[None]):
+        return await self.io_manager.broadcast(io_type)
 
     # Utils
     def get_player_active(self, user : User | AVGEPlayer) -> AVGECharacterCard:

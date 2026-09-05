@@ -11,7 +11,6 @@ from .record import HistoricalStatus
 if TYPE_CHECKING:
     from .engine import Engine
     from .listener import EventListener
-    from .constrainer import Constrainer
     from .engine_io import IOType
 
 type Generator = Callable[[], list[Event | Generator]]
@@ -71,36 +70,6 @@ class Event(ABC):
         assert self._parent_packet is not None
         self._parent_packet.append_event(event)
 
-    def push_packet(self, packet: 'Packet'):
-        '''Adds a packet to the front of the queue such that it runs right after the current one'''
-        assert self._parent_packet is not None
-        self._parent_packet.push_packet(packet)
-
-    def append_packet(self, packet: 'Packet'):
-        '''Adds a packet to the back of the queue such that it runs after all other packets currently in the queue'''
-        assert self._parent_packet is not None
-        self._parent_packet.append_packet(packet)
-
-    def add_listener(self, listener: EventListener):
-        '''Adds an event listener to the engine'''
-        assert self._parent_packet is not None
-        self._parent_packet.add_listener(listener)
-
-    def remove_listener(self, listener: EventListener):
-        '''Removes an event listener from the engine'''
-        assert self._parent_packet is not None
-        self._parent_packet.remove_listener(listener)
-
-    def add_constrainer(self, constrainer: Constrainer):
-        '''Adds a constrainer to the engine'''
-        assert self._parent_packet is not None
-        self._parent_packet.add_constrainer(constrainer)
-
-    def remove_constrainer(self, constrainer: Constrainer):
-        '''Removes a constrainer from the engine'''
-        assert self._parent_packet is not None
-        self._parent_packet.remove_constrainer(constrainer)
-
 
 class Change(Enum):
     REMOVE = 0
@@ -119,12 +88,9 @@ class _InterruptRegulateFail(Exception):
 class Packet:
     def __init__(self, id: ID, element: list[Event | Generator]):
         self.id = id
-        self.event_queue: deque[Event | Generator] = deque(element)
+        self._call_stack: list[deque[Event | Generator]] = [deque(element)]
         # stores events that have gone through properly
         self.event_log: list[Event] = []
-        # stores every event whose act() has actually run, in the true order it ran in -
-        # independent of interrupt() pausing/resuming other events around it - so rollback
-        # always unwinds state in the right order regardless of how deeply events were nested.
         self._rollback_log: list[Event] = []
         self.current_event: Event | None = None
         self._engine : Engine | None = None
@@ -219,7 +185,7 @@ class Packet:
     async def flush(self) -> ResponseStatus:
         assert self._engine is not None
         try:
-            response = await self._run_queue(self.event_queue)
+            response = await self._run_queue(self._call_stack[-1])
         except _InterruptRegulateFail as failure:
             response = failure.response
 
@@ -242,10 +208,13 @@ class Packet:
         assert self._engine is not None
         event_list: list[Event | Generator] = events if isinstance(events, list) else [events]  # type: ignore
 
+        interrupt_queue: deque[Event | Generator] = deque(event_list)
         paused_event = self.current_event
+        self._call_stack.append(interrupt_queue)
         try:
-            response = await self._run_queue(deque(event_list))
+            response = await self._run_queue(interrupt_queue)
         finally:
+            self._call_stack.pop()
             self.current_event = paused_event
 
         if (response == ResponseStatus.REGULATE_FAIL):
@@ -256,51 +225,27 @@ class Packet:
         return response
 
     def push_event(self, event: Event | Generator | list[Event | Generator]):
-        '''Adds a event or list of events to the front of the packet such that it runs right after the current one'''
+        '''Adds a event or list of events to the front of the currently executing queue
+        (the packet's main queue, or the innermost active interrupt's queue) such that
+        it runs right after the current one'''
+        queue = self._call_stack[-1]
         if (isinstance(event, list)):
             for e in reversed(event):  # type: ignore
-                self.event_queue.appendleft(e)
+                queue.appendleft(e)
         else:
-            self.event_queue.appendleft(event)
+            queue.appendleft(event)
 
     def append_event(self, event: Event | Generator | list[Event | Generator]):
-        '''Adds a event or list of events to the back of the packet such that it runs after everything else currently in the packet'''
+        '''Adds a event or list of events to the back of the currently executing queue
+        (the packet's main queue, or the innermost active interrupt's queue) such that
+        it runs after everything else in that queue'''
         assert self._engine is not None
+        queue = self._call_stack[-1]
         if (isinstance(event, list)):
             for e in reversed(event):  # type: ignore
-                self.event_queue.append(e)
+                queue.append(e)
         else:
-            self.event_queue.append(event)
-
-    def push_packet(self, packet: 'Packet'):
-        '''Adds a packet to the front of the queue such that it runs right after the current one'''
-        assert self._engine is not None
-        self._engine.push_packet(packet)
-
-    def append_packet(self, packet: 'Packet'):
-        '''Adds a packet to the back of the queue such that it runs after all other packets currently in the queue'''
-        assert self._engine is not None
-        self._engine.append_packet(packet)
-
-    def add_listener(self, listener: EventListener):
-        '''Adds an event listener to the engine'''
-        assert self._engine is not None
-        self._engine.add_listener(listener)
-
-    def remove_listener(self, listener: EventListener):
-        '''Removes an event listener from the engine'''
-        assert self._engine is not None
-        self._engine.remove_listener(listener)
-
-    def add_constrainer(self, constrainer: Constrainer):
-        '''Adds a constrainer to the engine'''
-        assert self._engine is not None
-        self._engine.add_constrainer(constrainer)
-
-    def remove_constrainer(self, constrainer: Constrainer):
-        '''Removes a constrainer from the engine'''
-        assert self._engine is not None
-        self._engine.remove_constrainer(constrainer)
+            queue.append(event)
 
     def set_engine(self, engine : Engine):
         self._engine = engine
