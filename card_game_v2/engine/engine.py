@@ -1,13 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 from enum import Enum
 
-from .record import History
+from .record import History, HistoricalStatus
 from ..constants import ResponseStatus
 if TYPE_CHECKING:
-    from .event import Packet
+    from .event import Event, Packet
     from .listener import EventListener, PacketReactor
     from .constrainer import Constrainer
     from .engine_io import IOManager
@@ -57,6 +57,16 @@ class Engine:
         '''Removes a packet listener from the engine'''
         self.packet_listeners.remove(packet_listener)
 
+    def search_history[EV: Event](self,
+                                   event_type: type[EV],
+                                   kwargs: dict[str, Any] | None = None,
+                                   increment: int = 0,
+                                   index_to_start: int = 0,
+                                   specific_status: HistoricalStatus = HistoricalStatus.IMMUTABLE,
+                                   attribute_search: bool = False) -> tuple[EV | None, int]:
+        '''Searches history for the earliest matching event. See History.search for details.'''
+        return self.history.search(event_type, kwargs, increment, index_to_start, specific_status, attribute_search)
+
     def add_constrainer(self, constrainer: Constrainer):
         '''Adds a constrainer to the engine'''
         # Step 1: Check that this constrainer isn't constrained by anything
@@ -97,7 +107,9 @@ class Engine:
 
     
 
-    async def flush(self):
+    async def flush(self, new_chapter_condition : Callable[[], bool]):
+        # bootstraps any preexisting proposed buffered changes; required for seeding starting packets
+        self._flush_buffer()
         while self._packet_queue and not self.terminate_flag:
             self.current_packet = self._packet_queue.popleft()
 
@@ -138,3 +150,6 @@ class Engine:
                 self.listeners = set([listener for listener in self.listeners if not listener.requires_cleanup])
                 self.constrainers = set([constrainer for constrainer in self.constrainers if not constrainer.requires_cleanup])
                 self.packet_listeners = set([listener for listener in self.packet_listeners if not listener.requires_cleanup])
+
+            if(new_chapter_condition()):
+                self.history.new_chapter()

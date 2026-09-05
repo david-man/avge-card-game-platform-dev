@@ -6,6 +6,8 @@ from ..engine.event import Event
 
 
 class AVGETokenTransferCheck(AVGEEventRegulator):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGEEnergyTransfer)
@@ -23,6 +25,8 @@ class AVGETokenTransferCheck(AVGEEventRegulator):
 
 
 class AVGEHPChangeCheck(AVGEEventRegulator):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGECardHPChangeEvent)
@@ -36,6 +40,8 @@ class AVGEHPChangeCheck(AVGEEventRegulator):
 
 
 class AVGEHPChangeReactor(AVGEEventReactor):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
     def match(self, event: Event) -> bool:
         return isinstance(event, AVGECardHPChangeEvent)
 
@@ -108,6 +114,8 @@ class AVGEHPChangeReactor(AVGEEventReactor):
 
 
 class AVGEWeaknessModifier(AVGEEventModifier):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGECardHPChangeEvent)
@@ -125,6 +133,8 @@ class AVGEWeaknessModifier(AVGEEventModifier):
 
 
 class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGEPlayerAttributeChange)
@@ -146,6 +156,8 @@ class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
 
 
 class AVGETransferValidityCheck(AVGEEventRegulator):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, TransferCard) and event.id.action_type == ActionTypes.PLAYER_CHOICE
@@ -166,6 +178,8 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
 
 
 class AVGERetreatCostReactor(AVGEEventReactor):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, TransferCard) and \
@@ -188,6 +202,8 @@ class AVGERetreatCostReactor(AVGEEventReactor):
 
 
 class AVGEPlayCharacterCardValidityCheck(AVGEEventRegulator):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, PlayCharacterCard)
@@ -219,6 +235,8 @@ class AVGEPlayCharacterCardValidityCheck(AVGEEventRegulator):
 
 
 class AVGEPlayNonCharacterCardValidityCheck(AVGEEventRegulator):
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard) and event.id.action_type == ActionTypes.PLAYER_CHOICE

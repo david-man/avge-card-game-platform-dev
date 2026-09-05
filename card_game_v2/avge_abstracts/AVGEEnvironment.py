@@ -1,5 +1,8 @@
 from __future__ import annotations
 from ..engine.engine import *
+from ..engine.listener import EventListener, PacketReactor
+from ..engine.constrainer import Constrainer
+from ..engine.record import HistoricalStatus
 from typing import TYPE_CHECKING, Any, Self
 from dataclasses import dataclass
 import random
@@ -10,6 +13,8 @@ from ..engine.global_cache import Cache
 if TYPE_CHECKING:
     from .AVGECard import AVGECard, AVGECharacterCard
     from ..core.AVGEIOManager import AVGEIO, IOType
+    from .AVGEEventListener import *
+    from ..engine.event import Event
 
 
 @dataclass
@@ -18,7 +23,7 @@ class EnergyToken:
 
 
 class AVGEEnvironment:
-    def __init__(self, io_manager: AVGEIO, decks: dict[User, list[type[AVGECard]]]):
+    def __init__(self, io_manager: AVGEIO, decks: dict[User, list[type[AVGECard]]], core_listeners : list[type[AVGEEventListener]]):
         self.io_manager: AVGEIO = io_manager
         io_manager.register_to_environment(self)
         self.energy_tokens: list[EnergyToken] = [EnergyToken(
@@ -32,7 +37,7 @@ class AVGEEnvironment:
         all_cards : list[AVGECard] = []
         for p in decks.keys():
             player = AVGEPlayer(p, {}, self)
-            player.card_piles = {deck : AVGEDeck(player, deck, []) for deck in DeckType}
+            player.card_piles = {deck : AVGEDeck(player, deck, []) for deck in DeckType if deck != DeckType.STADIUM}
             self.players[p] = player
             initial_deck : list[AVGECard] = [card(f"card_{num}", self, p, DeckType.DECK) for num, card in enumerate(decks[p], start=start_num)]
             player.card_piles[DeckType.DECK].cards_holding = initial_deck
@@ -42,16 +47,21 @@ class AVGEEnvironment:
         owners : list[AVGECard | AVGEPlayer | Self] = all_cards + list(self.players.values()) + [self]
         self.cache = Cache(owners)
         self.engine: Engine = Engine(io_manager, self.cache)
+        self.engine.listeners = set([listener(self) for listener in core_listeners]) # type: ignore
+        self.stadium_cardholder : AVGEDeck = AVGEDeck(None, DeckType.STADIUM, []) #type: ignore
 
         #sets up turn
         self.turn : User = random.sample([User.PLAYER_1, User.PLAYER_2], 1)[0]
+        self.round : int = 0
 
         #sets up a winner variable
         self.winner : User | None = None
         self.win_reason : WinReasons | None = None
 
+
     async def run(self):
-        await self.engine.flush()
+        from ..core.EventCatalog import TurnEnd
+        await self.engine.flush(lambda : self.search_history(TurnEnd)[0] is not None)
     # Cache API
 
     def cache_set(self, owner: AVGECard | AVGEPlayer | Self, key: str, new_value: Any):
@@ -92,6 +102,16 @@ class AVGEEnvironment:
     def append_packet(self, packet: Packet):
         '''Adds a packet to the back of the queue such that it runs after all other packets currently in the queue'''
         self.engine.append_packet(packet)
+
+    def search_history[EV: Event](self,
+                                   event_type: type[EV],
+                                   kwargs: dict[str, Any] | None = None,
+                                   increment: int = 0,
+                                   index_to_start: int = 0,
+                                   specific_status: HistoricalStatus = HistoricalStatus.IMMUTABLE,
+                                   attribute_search: bool = False) -> tuple[EV | None, int]:
+        '''Searches history for the earliest matching event. See History.search for details.'''
+        return self.engine.search_history(event_type, kwargs, increment, index_to_start, specific_status, attribute_search)
 
     # IOManager API
     async def report[T](self, io_type : IOType[T]) -> T:

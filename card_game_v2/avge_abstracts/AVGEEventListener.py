@@ -27,6 +27,7 @@ class AVGEEventReactor(AVGEEventListener, EventReactor):
 
 
 class AVGEPacketReactor(PacketReactor):
-    def __init__(self, id: AVGEEngineID):
+    def __init__(self, id: AVGEEngineID, env : AVGEEnvironment):
         super().__init__(id)
         self.id = id
+        self.env=env

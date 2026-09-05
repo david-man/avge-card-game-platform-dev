@@ -156,6 +156,7 @@ class Packet:
                 for listener in ordering:
                     if (isinstance(listener, EventRegulator)):
                         resp = await listener.respond(event)
+                        assert resp in [ResponseStatus.REGULATE_FAIL,  ResponseStatus.REGULATE_PASS, ResponseStatus.REGULATE_IGNORE]
                         if (resp != ResponseStatus.REGULATE_PASS):
                             #early breakout if no pass
                             return resp
@@ -165,6 +166,8 @@ class Packet:
                         resp = await listener.react(event)
                         if(resp == ResponseStatus.REACTOR_SKIP):
                             return resp
+                        else:
+                            assert resp is None
         #  If you've gotten here, return Success
         return ResponseStatus.SUCCESS
 
@@ -201,15 +204,15 @@ class Packet:
                 if (response == ResponseStatus.REGULATE_FAIL):
                     return response
 
-                elif (response == ResponseStatus.REGULATE_PASS or response == ResponseStatus.REACTOR_SKIP):
+                elif (response == ResponseStatus.REGULATE_IGNORE):
+                    #don't add to logs or history if response is ignore, since we, in effect, have purely skipped the event
+                    continue
+
+                else:
                     assert self.current_event is not None
                     self.event_log.append(self.current_event)
                     self._engine.history.add_record(
                         HistoricalStatus.PENDING, self.current_event)
-
-                else:
-                    #on regulate_ignore, don't add to logs or history, but keep moving on
-                    continue
 
         return ResponseStatus.SUCCESS
 

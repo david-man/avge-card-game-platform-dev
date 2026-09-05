@@ -23,7 +23,7 @@ class AVGECard(ABC):
 
     @abstractmethod
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event : TransferCard):
-        '''A function that helps manage how listeners, constrainers, and packet listeners are created and destroyed. All cards must at least acknowledge this function'''
+        '''A function that helps manage how a card's extensions (listeners, for example) evolve as the card moves around the board. This is called right before the card is actually moved on the board. All cards must at least acknowledge this function.'''
         pass
 
     def cache_set(self, key: str, new_value: Any):

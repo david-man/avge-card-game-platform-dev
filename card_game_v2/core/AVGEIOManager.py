@@ -121,6 +121,7 @@ class CoinflipData(UserIOType[int]):  # heads = 1, tails = 0
 
 class AVGEIO(IOManager):
     def __init__(self):
+        super().__init__()
         self.env: AVGEEnvironment | None = None
 
     def register_to_environment(self, env: AVGEEnvironment):

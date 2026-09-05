@@ -3,7 +3,7 @@ from ..avge_abstracts.AVGECard import *
 from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ..avge_abstracts.AVGEPlayer import AVGEPlayer
 from collections.abc import Callable
-from ..engine.event import Event, Generator
+from ..engine.event import Event, Generator, Packet
 from ..engine.engine_io import IOType
 from ..constants import *
 from ..avge_abstracts.AVGEID import AVGEEngineID
@@ -365,20 +365,12 @@ class TransferCard(Event):
         assert not callable(self.card)
         assert not callable(self.deck_to)
         assert not callable(self.deck_from)
-        transfer_card(self.card, self.deck_from, self.deck_to)
-        if isinstance(self.deck_to, AVGEToolHolder):
-            assert isinstance(self.card, AVGEToolCard)
-            self.card.parent_card = self.deck_to.parent_card
-        elif isinstance(self.deck_from, AVGEToolHolder):
-            assert isinstance(self.card, AVGEToolCard)
-            self.card.parent_card = None
-        self.card.deck_type = self.deck_to.deck_type
 
-        # Special Case 1: Character Discard
+        # Special Case 1: Default Character Discard handling. This does NOT deal with garbage collection
         if (self.deck_to.deck_type == DeckType.DISCARD and self.deck_from.deck_type in [DeckType.BENCH, DeckType.ACTIVE_CARD] and isinstance(self.card, AVGECharacterCard)):
             await self._on_character_discard(self.card)
 
-        # Special Case 2: Tool/Stadium attach
+        # Special Case 2: Tool/Stadium attach. 
         if (self.deck_to.deck_type in [DeckType.OFFHAND, DeckType.STADIUM]):
             assert isinstance(self.card, (AVGEToolCard, AVGEStadiumCard))
             self.push_event(PlayNonCharacterCard(
@@ -388,7 +380,17 @@ class TransferCard(Event):
                 self.env
             ))
 
+        # All other cases, including GC
         await self.card.on_transfer(self.deck_from, self.deck_to, self)
+        # Assuming everything else succeeded, actualize the transfer
+        transfer_card(self.card, self.deck_from, self.deck_to)
+        if isinstance(self.deck_to, AVGEToolHolder):
+            assert isinstance(self.card, AVGEToolCard)
+            self.card.parent_card = self.deck_to.parent_card
+        elif isinstance(self.deck_from, AVGEToolHolder):
+            assert isinstance(self.card, AVGEToolCard)
+            self.card.parent_card = None
+        self.card.deck_type = self.deck_to.deck_type
 
     def rollback(self):
         assert not callable(self.card)
@@ -655,8 +657,11 @@ class Phase2(Event):
                         self.env, ActionTypes.ENV, None),
                     [
                         AtkPhase(
-                            AVGEEngineID(
-                                self.env, ActionTypes.ENV, None),
+                            AVGEEngineID(self.env, ActionTypes.ENV, None),
+                            self.env
+                        ) if self.env.round > 0 else
+                        TurnEnd(
+                            AVGEEngineID(self.env, ActionTypes.ENV, None),
                             self.env
                         )
                     ]
@@ -775,10 +780,10 @@ class TurnEnd(Event):
                     self.env
                 )
             ]))
+        self.env.round += 1
 
     def rollback(self):
-        assert self._last_turn is not None
-        self.env.turn = self._last_turn
+        raise Exception("A Turn End event should never be rolled back")
 
 
 class GameEnd(Event):
