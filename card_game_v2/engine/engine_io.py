@@ -2,10 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import asyncio
-from ..constants import User, ID
+from ..constants import User
 from typing import Any
-from .listener import EventListener
-from .record import History, HistoricalStatus
+from .listener import EventListener, IOListener
 
 
 @dataclass
@@ -24,6 +23,13 @@ class ListenerReorderIO(IOType[list[EventListener]], ABC):
     listeners: list[EventListener]
 
     def check_user_io(self, user_input: list[EventListener]):
+        return len(user_input) == len(self.listeners) and all([listener in self.listeners for listener in user_input])
+
+@dataclass
+class IOListenerReorderIO[T](IOType[list[IOListener]], ABC):
+    listeners : list[IOListener]
+    io_obj : IOType[T]
+    def check_user_io(self, user_input: list[IOListener]):
         return len(user_input) == len(self.listeners) and all([listener in self.listeners for listener in user_input])
 
 
@@ -62,17 +68,13 @@ class IOManager(ABC):
         """Convert frontend data into T based on a pending IO. Raises an exception on incorrect data"""
         pass
 
-    async def receive[T](self, user: User, data: Any, history: History | None = None, historical_id: ID | None = None) -> None:
-        '''Receives some data and, if formatted correctly, puts it into the future object and automatically places it inside the corresponding historical object as a PENDING transaction IF a history and historical id are provided'''
-        from .event import IOEvent  # deferred: event.py imports ListenerReorderIO from this module, so this import must stay out of module scope to avoid a circular import
+    async def receive[T](self, user: User, data: Any) -> None:
+        '''Receives some data and, if formatted correctly, puts it into the future object'''
         pending_io = self.pending.get(user, None)
         if pending_io is not None and not pending_io.future_obj.done():
             try:
                 deserialized_data = self.deserialize(pending_io.io_obj, data)
                 if (deserialized_data is not None):
-                    if (history is not None and historical_id is not None):
-                        history.add_record(HistoricalStatus.PENDING,
-                                           IOEvent(historical_id, pending_io.io_obj, deserialized_data))
                     pending_io.future_obj.set_result(deserialized_data)
             except IOException as e:
                 await self.retry(user, pending_io.io_obj, e)

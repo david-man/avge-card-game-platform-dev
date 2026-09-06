@@ -80,25 +80,17 @@ class AVGEEnvironment:
         '''Adds an event listener to the engine'''
         self.engine.add_listener(listener)
 
-    def remove_listener(self, listener: EventListener):
-        '''Removes an event listener from the engine'''
-        self.engine.remove_listener(listener)
-
     def add_packet_listener(self, listener: PacketReactor):
         '''Adds an event listener to the engine'''
         self.engine.add_packet_listener(listener)
-
-    def remove_packet_listener(self, listener: PacketReactor):
-        '''Removes an event listener from the engine'''
-        self.engine.remove_packet_listener(listener)
 
     def add_constrainer(self, constrainer: Constrainer):
         '''Adds a constrainer to the engine'''
         self.engine.add_constrainer(constrainer)
 
-    def remove_constrainer(self, constrainer: Constrainer):
-        '''Removes a constrainer from the engine'''
-        self.engine.remove_constrainer(constrainer)
+    def add_io_listener(self, io_listener : IOListener):
+        '''Adds an IO Listener to the engine'''
+        self.engine.add_io_listener(io_listener)
 
     def push_packet(self, packet: Packet):
         '''Adds a packet to the front of the queue such that it runs right after the current one'''
@@ -120,11 +112,11 @@ class AVGEEnvironment:
 
     # IOManager API
 
-    async def report[T](self, io_type : IOType[T]) -> T:
-        return await self.io_manager.report(io_type)
+    async def report[T](self, io_type : IOType[T], io_id : AVGEEngineID) -> T:
+        return await self.engine.report(io_type, io_id)
 
     async def broadcast(self, io_type : IOType[None]):
-        return await self.io_manager.broadcast(io_type)
+        return await self.engine.broadcast(io_type)
 
     # Utils
     def get_player_active(self, user : User | AVGEPlayer) -> AVGECharacterCard:

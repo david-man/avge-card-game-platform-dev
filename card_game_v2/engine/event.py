@@ -95,6 +95,9 @@ class Packet:
         self.current_event: Event | None = None
         self._engine : Engine | None = None
 
+        self._requested_event_pushes : list[Event | Generator] = []
+        self._requested_event_appends : list[Event | Generator] = []
+
     def _rollback_all(self):
         for event in reversed(self._rollback_log):
             event.rollback()
@@ -110,7 +113,7 @@ class Packet:
             else:
                 # Step 1: Gather the required listeners for the required group
                 ordering: list[EventListener] = [
-                    listener for listener in self._engine.listeners if listener.engine_group == group and listener.match(event)
+                    listener for listener in self._engine.listeners if not listener.requires_cleanup and listener.engine_group == group and listener.match(event)
                 ]
                 # Step 2: Cull listeners based on constrainers
                 ordering = [listener for listener in ordering if not any(
@@ -158,6 +161,8 @@ class Packet:
                         queue.appendleft(e)
             self.current_event = next_event
 
+            self._requested_event_appends = []
+            self._requested_event_pushes = []
             # fully resolve the keyword arguments for current event and then run it
             if self.current_event is not None:
                 self.current_event._resolve_kwargs()  # type: ignore
@@ -179,7 +184,11 @@ class Packet:
                     self.event_log.append(self.current_event)
                     self._engine.history.add_record(
                         HistoricalStatus.PENDING, self.current_event)
-
+                    queue = self._call_stack[-1]
+                    for e in reversed(self._requested_event_pushes):  # type: ignore
+                        queue.appendleft(e)
+                    for e in (self._requested_event_appends):  # type: ignore
+                        queue.append(e)
         return ResponseStatus.SUCCESS
 
     async def flush(self) -> ResponseStatus:
@@ -210,12 +219,18 @@ class Packet:
 
         interrupt_queue: deque[Event | Generator] = deque(event_list)
         paused_event = self.current_event
+        paused_requested_event_pushes = self._requested_event_pushes
+        paused_requested_event_appends = self._requested_event_appends
+        self._requested_event_pushes = []
+        self._requested_event_appends = []
         self._call_stack.append(interrupt_queue)
         try:
             response = await self._run_queue(interrupt_queue)
         finally:
             self._call_stack.pop()
             self.current_event = paused_event
+            self._requested_event_appends = paused_requested_event_appends
+            self._requested_event_pushes = paused_requested_event_pushes
 
         if (response == ResponseStatus.REGULATE_FAIL):
             # can't roll back here: the paused event above us may itself still need unwinding,
@@ -228,24 +243,13 @@ class Packet:
         '''Adds a event or list of events to the front of the currently executing queue
         (the packet's main queue, or the innermost active interrupt's queue) such that
         it runs right after the current one'''
-        queue = self._call_stack[-1]
-        if (isinstance(event, list)):
-            for e in reversed(event):  # type: ignore
-                queue.appendleft(e)
-        else:
-            queue.appendleft(event)
+        self._requested_event_pushes.append(event) if not isinstance(event, list) else self._requested_event_pushes.extend(event) # type: ignore
 
     def append_event(self, event: Event | Generator | list[Event | Generator]):
         '''Adds a event or list of events to the back of the currently executing queue
         (the packet's main queue, or the innermost active interrupt's queue) such that
         it runs after everything else in that queue'''
-        assert self._engine is not None
-        queue = self._call_stack[-1]
-        if (isinstance(event, list)):
-            for e in reversed(event):  # type: ignore
-                queue.append(e)
-        else:
-            queue.append(event)
+        self._requested_event_appends.append(event) if not isinstance(event, list) else self._requested_event_appends.extend(event) # type: ignore
 
     def set_engine(self, engine : Engine):
         self._engine = engine

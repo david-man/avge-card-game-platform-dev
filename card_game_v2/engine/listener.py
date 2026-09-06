@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from ..constants import *
 if TYPE_CHECKING:
     from .event import Event, ResponseStatus, Packet
+    from .engine_io import IOType
 
 
 class EventListener(ABC):
@@ -57,4 +58,20 @@ class PacketReactor(ABC):
     @abstractmethod
     async def react(self, packet: Packet) -> None:
         '''Reacts to a given packet'''
+        pass
+
+class IOListener(ABC):
+    '''A listener that's designed to be able to modify a response (or not) from an IO'''
+    def __init__(self, id: ID):
+        self.id = id
+        self.requires_cleanup = False
+    def cleanup(self):
+        self.requires_cleanup = True
+    @abstractmethod
+    def match[T](self, io_obj: IOType[T]) -> bool:
+        '''Resolves whether the listener matches an event '''
+        pass
+    @abstractmethod
+    async def modify[T](self, io_obj : IOType[T], response : T) -> T:
+        '''Resolves how the listener modifies the response'''
         pass

@@ -28,6 +28,8 @@ class AVGEDeck:
         return self.cards_holding[idx]
     def __setitem__(self, idx : int, value : AVGECard):
         self.cards_holding[idx] = value
+    def get_top(self):
+        return self[0]
 
 @dataclass
 class AVGEToolHolder(AVGEDeck):
@@ -36,3 +38,4 @@ class AVGEToolHolder(AVGEDeck):
 def transfer_card(card: AVGECard, deck_from: AVGEDeck, deck_to: AVGEDeck):
     deck_from.cards_holding.remove(card)
     deck_to.cards_holding.append(card)
+

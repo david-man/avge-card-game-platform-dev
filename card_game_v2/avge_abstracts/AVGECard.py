@@ -38,26 +38,17 @@ class AVGECard(ABC):
         '''Adds an event listener to the engine'''
         self.env.add_listener(listener)
 
-    def remove_listener(self, listener: AVGEEventListener):
-        '''Removes an event listener from the engine'''
-        self.env.remove_listener(listener)
-
     def add_packet_listener(self, listener: AVGEPacketReactor):
         '''Adds an event listener to the engine'''
         self.env.add_packet_listener(listener)
-
-    def remove_packet_listener(self, listener: AVGEPacketReactor):
-        '''Removes an event listener from the engine'''
-        self.env.remove_packet_listener(listener)
 
     def add_constrainer(self, constrainer: AVGEConstrainer):
         '''Adds a constrainer to the engine'''
         self.env.add_constrainer(constrainer)
 
-    def remove_constrainer(self, constrainer: AVGEConstrainer):
-        '''Removes a constrainer from the engine'''
-        self.env.remove_constrainer(constrainer)
-
+    def add_io_listener(self, listener : AVGEIOListener):
+        '''Adds an io listener to the engine'''
+        self.env.add_io_listener(listener)
 
 class CardType(StrEnum):
     ALL = "ALL"  # treat this as a sort of "true" element that has no resistance and can be used for all energy
@@ -87,8 +78,14 @@ class Attack(ABC):
     cost : int
 
     @abstractmethod
-    async def __call__(self, card : AVGECharacterCard, caller_action: ActionTypes):
+    async def __call__(self, calling_card : AVGECharacterCard, caller_action: ActionTypes):
         pass
+
+    def resolve_caller(self, caller_action : ActionTypes):
+        if(caller_action in [ActionTypes.ENV, ActionTypes.PLAYER_CHOICE]):
+            return self.atk_type
+        else:
+            return caller_action
 
 @dataclass
 class Ability(ABC):
@@ -101,8 +98,15 @@ class Ability(ABC):
         pass
 
     @abstractmethod
-    def can_play(self, card : AVGECharacterCard):
+    def can_play(self, card : AVGECharacterCard) -> bool:
+        '''Whether this ability can be played. Passives should always set this to true, even though, as of now, it's not being checked for passives'''
         pass
+
+    def resolve_caller(self, caller_action : ActionTypes):
+        if(caller_action in [ActionTypes.ENV, ActionTypes.PLAYER_CHOICE]):
+            return self.ability_type
+        else:
+            return caller_action
 
 
 class AVGECharacterCard(AVGECard, ABC):

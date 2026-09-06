@@ -7,7 +7,7 @@ from ..engine.event import Event
 
 class AVGETokenTransferCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGEEnergyTransfer)
@@ -17,7 +17,7 @@ class AVGETokenTransferCheck(AVGEEventRegulator):
         assert not callable(event.token_from)
         if (len(event.token_from.energy_tokens) == 0):
             return ResponseStatus.REGULATE_FAIL
-        if (event.id.action_type == ActionTypes.PLAYER_CHOICE):
+        if (event.id.calling_action == ActionTypes.PLAYER_CHOICE):
             if (isinstance(event.token_to, AVGECharacterCard)):
                 if (self.env.players[event.token_to.owner].attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
                     return ResponseStatus.REGULATE_FAIL
@@ -26,7 +26,7 @@ class AVGETokenTransferCheck(AVGEEventRegulator):
 
 class AVGEHPChangeCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGECardHPChangeEvent)
@@ -34,25 +34,25 @@ class AVGEHPChangeCheck(AVGEEventRegulator):
     async def respond(self, event: Event) -> ResponseStatus:
         assert isinstance(event, AVGECardHPChangeEvent)
         assert not callable(event.target_card)
-        if (event.target_card.deck_type not in [DeckType.BENCH, DeckType.ACTIVE_CARD] and event.id.action_type != ActionTypes.ENV):
+        if (event.target_card.deck_type not in [DeckType.BENCH, DeckType.ACTIVE_CARD] and event.id.calling_action != ActionTypes.ENV):
             return ResponseStatus.REGULATE_IGNORE
         return ResponseStatus.REGULATE_PASS
 
 
 class AVGEHPChangeReactor(AVGEEventReactor):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
     def match(self, event: Event) -> bool:
         return isinstance(event, AVGECardHPChangeEvent)
 
     async def react(self, event: Event):
         assert isinstance(event, AVGECardHPChangeEvent)
         assert not callable(event.target_card)
-        if (event.target_card.hp <= 0 and event.id.action_type != ActionTypes.ENV):
+        if (event.target_card.hp <= 0 and event.id.calling_action != ActionTypes.ENV):
             player = self.env.players[event.target_card.owner]
             opponent = self.env.get_opponent(event.target_card.owner)
             ko_increment = AVGEPlayerAttributeChange(
-                AVGEEngineID(self.env, ActionTypes.ENV, None),
+                AVGEEngineID(None, ActionTypes.ENV, None),
                 opponent,
                 AVGEPlayerAttribute.KO_COUNT,
                 AVGEAttributeModifier.ADDITIVE,
@@ -60,7 +60,7 @@ class AVGEHPChangeReactor(AVGEEventReactor):
                 self.env
             )
             transfer_card_out = TransferCard(
-                AVGEEngineID(self.env, ActionTypes.ENV, None),
+                AVGEEngineID(None, ActionTypes.ENV, None),
                 event.target_card,
                 player.card_piles[DeckType.DISCARD],
                 player.card_piles[event.target_card.deck_type],
@@ -72,7 +72,7 @@ class AVGEHPChangeReactor(AVGEEventReactor):
                 if (event.target_card.deck_type == DeckType.ACTIVE_CARD):
                     if (len(player.card_piles[DeckType.BENCH]) == 0):
                         event.push_event([ko_increment, GameEnd(
-                            AVGEEngineID(self.env, ActionTypes.ENV, None),
+                            AVGEEngineID(None, ActionTypes.ENV, None),
                             opponent.id,
                             WinReasons.KO_NO_DECK,
                             self.env
@@ -87,11 +87,11 @@ class AVGEHPChangeReactor(AVGEEventReactor):
                             [card for card in player.card_piles[DeckType.BENCH]],
                             False,
                             False
-                        ))
+                        ), AVGEEngineID(None, ActionTypes.ENV, None))
                         new_card = resp[0]
                         assert isinstance(new_card, AVGECharacterCard)
                         transfer_card_in = TransferCard(
-                            AVGEEngineID(self.env, ActionTypes.ENV, None),
+                            AVGEEngineID(None, ActionTypes.ENV, None),
                             event.target_card,
                             player.card_piles[new_card.deck_type],
                             player.card_piles[DeckType.ACTIVE_CARD],
@@ -115,7 +115,7 @@ class AVGEHPChangeReactor(AVGEEventReactor):
 
 class AVGEWeaknessModifier(AVGEEventModifier):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGECardHPChangeEvent)
@@ -124,9 +124,8 @@ class AVGEWeaknessModifier(AVGEEventModifier):
         assert isinstance(event, AVGECardHPChangeEvent)
         assert not callable(event.target_card)
         assert not callable(event.magnitude)
-        if (type_weaknesses[event.target_card.card_type] == event.change_type and isinstance(event.id.caller, AVGECharacterCard) and event.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE):
-            res = await self.env.report(CoinflipData(event.id.caller.owner,
-                                                     "Critical! Flip a coin and get heads to double the damage!"))
+        if (type_weaknesses[event.target_card.card_type] == event.change_type and isinstance(event.id.calling_card, AVGECharacterCard) and event.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE):
+            res = await self.env.report(CoinflipData(event.id.calling_card.owner,"Critical! Flip a coin and get heads to double the damage!"), AVGEEngineID(None, ActionTypes.ENV, None))
             if (res == 1):
                 event.modify_magnitude(event.magnitude)
                 event.is_crit = True
@@ -134,7 +133,7 @@ class AVGEWeaknessModifier(AVGEEventModifier):
 
 class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGEPlayerAttributeChange)
@@ -146,7 +145,7 @@ class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
             if (event.player.attributes[AVGEPlayerAttribute.KO_COUNT] == 3):
                 event.push_event(
                     GameEnd(
-                        AVGEEngineID(self.env, ActionTypes.ENV, None),
+                        AVGEEngineID(None, ActionTypes.ENV, None),
                         event.player.id,
                         WinReasons.ALL_KOS,
                         self.env
@@ -157,10 +156,10 @@ class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
 
 class AVGETransferValidityCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
-        return isinstance(event, TransferCard) and event.id.action_type == ActionTypes.PLAYER_CHOICE
+        return isinstance(event, TransferCard) and event.id.calling_action == ActionTypes.PLAYER_CHOICE
 
     async def respond(self, event: Event) -> ResponseStatus:
         assert isinstance(event, TransferCard)
@@ -179,13 +178,13 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
 
 class AVGERetreatCostReactor(AVGEEventReactor):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, TransferCard) and \
             not callable(event.deck_from) and \
                 not callable(event.deck_to) and \
-                    event.id.action_type == ActionTypes.PLAYER_CHOICE and \
+                    event.id.calling_action == ActionTypes.PLAYER_CHOICE and \
                         isinstance(event.card, AVGECharacterCard) and \
                             event.deck_to.deck_type == DeckType.BENCH and \
                                 event.deck_from.deck_type == DeckType.ACTIVE_CARD
@@ -194,7 +193,7 @@ class AVGERetreatCostReactor(AVGEEventReactor):
         assert isinstance(event, TransferCard)
         assert isinstance(event.card, AVGECharacterCard)
         event.push_event([AVGEEnergyTransfer(
-            AVGEEngineID(self.env, ActionTypes.ENV, None),
+            AVGEEngineID(None, ActionTypes.ENV, None),
             event.card,
             self.env,
             self.env
@@ -203,7 +202,7 @@ class AVGERetreatCostReactor(AVGEEventReactor):
 
 class AVGEPlayCharacterCardValidityCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, PlayCharacterCard)
@@ -236,10 +235,10 @@ class AVGEPlayCharacterCardValidityCheck(AVGEEventRegulator):
 
 class AVGEPlayNonCharacterCardValidityCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(env, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
-        return isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard) and event.id.action_type == ActionTypes.PLAYER_CHOICE
+        return isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard) and event.id.calling_action == ActionTypes.PLAYER_CHOICE
 
     async def respond(self, event: Event) -> ResponseStatus:
         assert isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard)

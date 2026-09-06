@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from ..engine.engine_io import *
 from ..engine.engine import *
 from ..constants import *
@@ -46,6 +46,12 @@ class Phase2PlayCard:
 
 
 # IO Types
+@dataclass
+class BroadcastIO(IOType[None]):
+    message: str
+    timeout: int | None
+
+
 @dataclass
 class Phase2IO(UserIOType[Phase2EnergyAttach | Phase2CardMovement | Phase2ActivateAbility | Phase2PlayCard | Phase2Finish]):
     pass
@@ -128,9 +134,14 @@ class AVGEIO(IOManager):
         self.env = env
 
     def resolve_users[T](self, io: IOType[T]) -> User:
-        assert isinstance(io, ListenerReorderIO)
         assert self.env is not None
-        return self.env.turn
+        if isinstance(io, IOListenerReorderIO):
+            reorder_io = cast(IOListenerReorderIO[Any], io)
+            assert isinstance(reorder_io.io_obj, UserIOType)
+            return reorder_io.io_obj.user_for
+        if isinstance(io, ListenerReorderIO):
+            return self.env.turn
+        raise Exception("All non-base IO types should be built off the UserIOType")
 
     async def send[T](self, user: User, io: IOType[T]):
         """Send a packet to the appropriate user. Returns the user it sent to"""

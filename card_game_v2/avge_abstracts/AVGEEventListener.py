@@ -31,3 +31,9 @@ class AVGEPacketReactor(PacketReactor):
         super().__init__(id)
         self.id = id
         self.env=env
+
+class AVGEIOListener(IOListener):
+    def __init__(self, id: AVGEEngineID, env : AVGEEnvironment):
+        super().__init__(id)
+        self.id = id
+        self.env = env

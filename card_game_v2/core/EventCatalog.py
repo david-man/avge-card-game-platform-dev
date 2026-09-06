@@ -4,7 +4,6 @@ from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ..avge_abstracts.AVGEPlayer import AVGEPlayer
 from collections.abc import Callable
 from ..engine.event import Event, Generator, Packet
-from ..engine.engine_io import IOType
 from ..constants import *
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..avge_abstracts.AVGEDeck import *
@@ -17,16 +16,16 @@ class Broadcast(Event):
     def __init__(self,
                  id: AVGEEngineID,
                  env: AVGEEnvironment,
-                 io_obj: IOType[None]):
+                 broadcast : BroadcastIO):
         super().__init__(id=id,
-                         io_obj=io_obj,
+                         broadcast=broadcast,
                          env=env)
         self.id: AVGEEngineID = id
-        self.io_obj = io_obj
+        self.broadcast = broadcast
         self.env = env
 
     async def act(self):
-        await self.env.io_manager.broadcast(self.io_obj)
+        await self.env.io_manager.broadcast(self.broadcast)
 
     def rollback(self) -> None:
         return
@@ -316,8 +315,16 @@ class TransferCard(Event):
         self.deck_to = deck_to
         self.env = env
 
+    async def _on_character_entry(self, card : AVGECharacterCard):
+        _id = AVGEEngineID(card, ActionTypes.PASSIVE, type(card))
+        if(ActionTypes.PASSIVE in card.abilities):
+            events : list[Event | Generator] = [PlayCharacterCard(
+                _id, card, ActionTypes.PASSIVE, 0, self.env
+            )]
+            self.env.push_packet(Packet(_id, events))
+
     async def _on_character_discard(self, card: AVGECharacterCard):
-        _id = AVGEEngineID(self.env, ActionTypes.ENV, None)
+        _id = AVGEEngineID(None, ActionTypes.ENV, None)
         events: list[Event | Generator] = []
         # 1. reset HP
         events.append(AVGECardHPChangeEvent(
@@ -370,7 +377,11 @@ class TransferCard(Event):
         if (self.deck_to.deck_type == DeckType.DISCARD and self.deck_from.deck_type in [DeckType.BENCH, DeckType.ACTIVE_CARD] and isinstance(self.card, AVGECharacterCard)):
             await self._on_character_discard(self.card)
 
-        # Special Case 2: Tool/Stadium attach. 
+        # Special Case 2: Default character passive activation handling
+        if (self.deck_from.deck_type not in [DeckType.BENCH, DeckType.ACTIVE_CARD] and self.deck_to.deck_type in [DeckType.BENCH, DeckType.ACTIVE_CARD] and isinstance(self.card, AVGECharacterCard)):
+            await self._on_character_entry(self.card)
+
+        # Special Case 3: Tool/Stadium attach handling
         if (self.deck_to.deck_type in [DeckType.OFFHAND, DeckType.STADIUM]):
             assert isinstance(self.card, (AVGEToolCard, AVGEStadiumCard))
             self.push_event(PlayNonCharacterCard(
@@ -452,10 +463,10 @@ class PlayCharacterCard(Event):
         assert not callable(self.action)
         assert not callable(self.target_card)
         acting_card = self.target_card if not isinstance(
-            self.id.caller, AVGECharacterCard) else self.id.caller
+            self.id.calling_card, AVGECharacterCard) else self.id.calling_card
         match self.action:
             case ActionTypes.ATK_1 | ActionTypes.ATK_2:
-                await self.target_card.attacks[self.action](acting_card, self.id.action_type)
+                await self.target_card.attacks[self.action](acting_card, self.action)
             case ActionTypes.ACTIVATE_ABILITY | ActionTypes.PASSIVE:
                 await self.target_card.abilities[self.action](self.target_card)
             case _:
@@ -481,7 +492,7 @@ class PlayNonCharacterCard(Event):
         assert not callable(self.action)
         assert not callable(self.target_card)
         acting_card = self.target_card if not isinstance(
-            self.id.caller, AVGECard) else self.id.caller
+            self.id.calling_card, AVGECard) else self.id.calling_card
         match self.target_card:
             case AVGEStadiumCard():
                 await self.target_card.play_card()
@@ -508,20 +519,20 @@ class PhasePickCard(Event):
         player: AVGEPlayer = self.env.get_current_player()
         if (len(player.card_piles[DeckType.DECK]) > 0):
             self.env.append_packet(Packet(
-                AVGEEngineID(self.env, ActionTypes.ENV, None),
+                AVGEEngineID(None, ActionTypes.ENV, None),
                 [TransferCard(
-                    AVGEEngineID(self.env, ActionTypes.ENV, None),
+                    AVGEEngineID(None, ActionTypes.ENV, None),
                     player.card_piles[DeckType.DECK][0],
                     player.card_piles[DeckType.DECK],
                     player.card_piles[DeckType.HAND],
                     self.env)]))
             self.env.append_packet(Packet(
                 AVGEEngineID(
-                    self.env, ActionTypes.ENV, None),
+                    None, ActionTypes.ENV, None),
                 [
                     Phase2(
                         AVGEEngineID(
-                            self.env, ActionTypes.ENV, None),
+                            None, ActionTypes.ENV, None),
                         self.env
                     )
                 ]
@@ -539,14 +550,14 @@ class Phase2(Event):
 
     async def act(self):
         io_obj = Phase2IO(self.env.turn)
-        res = await self.env.io_manager.report(io_obj)
+        res = await self.env.report(io_obj, self.id)
         return_to_phase_2 = Packet(
             AVGEEngineID(
-                self.env, ActionTypes.ENV, None),
+                None, ActionTypes.ENV, None),
             [
                 Phase2(
                     AVGEEngineID(
-                        self.env, ActionTypes.ENV, None),
+                        None, ActionTypes.ENV, None),
                     self.env
                 )
             ]
@@ -555,13 +566,13 @@ class Phase2(Event):
             case Phase2PlayCard():
                 match res.card:
                     case AVGEItemCard():
-                        self.env.append_packet(Packet(
+                        self.env.push_packet(Packet(
                             AVGEEngineID(
-                                self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                None, ActionTypes.PLAYER_CHOICE, None),
                             [
                                 PlayNonCharacterCard(
                                     AVGEEngineID(
-                                        self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                        None, ActionTypes.PLAYER_CHOICE, None),
                                     res.card,
                                     ActionTypes.PLAYER_CHOICE,
                                     self.env
@@ -570,13 +581,13 @@ class Phase2(Event):
                         ))
                         self.env.append_packet(return_to_phase_2)
                     case AVGESupporterCard():
-                        self.env.append_packet(Packet(
+                        self.env.push_packet(Packet(
                             AVGEEngineID(
-                                self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                None, ActionTypes.PLAYER_CHOICE, None),
                             [
                                 AVGEPlayerAttributeChange(
                                     AVGEEngineID(
-                                        self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                        None, ActionTypes.PLAYER_CHOICE, None),
                                     self.env.get_current_player(),
                                     AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN,
                                     AVGEAttributeModifier.SUBSTRACTIVE,
@@ -584,7 +595,7 @@ class Phase2(Event):
                                     self.env
                                 ), PlayNonCharacterCard(
                                     AVGEEngineID(
-                                        self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                        None, ActionTypes.PLAYER_CHOICE, None),
                                     res.card,
                                     ActionTypes.PLAYER_CHOICE,
                                     self.env
@@ -593,13 +604,13 @@ class Phase2(Event):
                         ))
                         self.env.append_packet(return_to_phase_2)
             case Phase2ActivateAbility():
-                self.env.append_packet(Packet(
+                self.env.push_packet(Packet(
                     AVGEEngineID(
-                        self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                        None, ActionTypes.PLAYER_CHOICE, None),
                     [
                         PlayCharacterCard(
                             AVGEEngineID(
-                                self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                None, ActionTypes.PLAYER_CHOICE, None),
                             res.card,
                             ActionTypes.ACTIVATE_ABILITY,
                             0,
@@ -612,7 +623,7 @@ class Phase2(Event):
                 events: list[Event | Generator] = [
                     TransferCard(
                         AVGEEngineID(
-                            self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                            None, ActionTypes.PLAYER_CHOICE, None),
                         res.card,
                         res.deck_from,
                         res.deck_to,
@@ -623,27 +634,27 @@ class Phase2(Event):
                     # implements the swap
                     events.append(TransferCard(
                         AVGEEngineID(
-                            self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                            None, ActionTypes.PLAYER_CHOICE, None),
                         self.env.get_current_player(
                         ).card_piles[DeckType.ACTIVE_CARD][0],
                         res.deck_to,
                         res.deck_from,
                         self.env
                     ))
-                self.env.append_packet(Packet(
+                self.env.push_packet(Packet(
                     AVGEEngineID(
-                        self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                        None, ActionTypes.PLAYER_CHOICE, None),
                     events
                 ))
                 self.env.append_packet(return_to_phase_2)
             case Phase2EnergyAttach():
-                self.env.append_packet(Packet(
+                self.env.push_packet(Packet(
                     AVGEEngineID(
-                        self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                        None, ActionTypes.PLAYER_CHOICE, None),
                     [
                         AVGEEnergyTransfer(
                             AVGEEngineID(
-                                self.env.get_current_player(), ActionTypes.PLAYER_CHOICE, None),
+                                None, ActionTypes.PLAYER_CHOICE, None),
                             res.token_from,
                             res.token_to,
                             self.env
@@ -652,16 +663,16 @@ class Phase2(Event):
                 ))
                 self.env.append_packet(return_to_phase_2)
             case Phase2Finish():
-                self.env.append_packet(Packet(
+                self.env.push_packet(Packet(
                     AVGEEngineID(
-                        self.env, ActionTypes.ENV, None),
+                        None, ActionTypes.ENV, None),
                     [
                         AtkPhase(
-                            AVGEEngineID(self.env, ActionTypes.ENV, None),
+                            AVGEEngineID(None, ActionTypes.ENV, None),
                             self.env
                         ) if self.env.round > 0 else
                         TurnEnd(
-                            AVGEEngineID(self.env, ActionTypes.ENV, None),
+                            AVGEEngineID(None, ActionTypes.ENV, None),
                             self.env
                         )
                     ]
@@ -680,10 +691,10 @@ class AtkPhase(Event):
         self.env = env
 
     async def act(self):
-        res = await (self.env.io_manager.report(AtkPhaseIO(self.env.turn)))
+        res = await (self.env.report(AtkPhaseIO(self.env.turn), self.id))
         assert (res == ActionTypes.ATK_1 or res ==
                 ActionTypes.ATK_2 or res == ActionTypes.SKIP)
-        _id = AVGEEngineID(self.env.get_current_player(),
+        _id = AVGEEngineID(None,
                            ActionTypes.PLAYER_CHOICE,
                            None)
 
@@ -691,12 +702,12 @@ class AtkPhase(Event):
             if (self.env.get_current_player().attributes[AVGEPlayerAttribute.ATTACKS_LEFT] != 0):
                 return [
                     AtkPhase(AVGEEngineID(
-                        self.env, ActionTypes.ENV, None), self.env)
+                        None, ActionTypes.ENV, None), self.env)
                 ]
             else:
                 return [
                     TurnEnd(AVGEEngineID(
-                        self.env, ActionTypes.ENV, None
+                        None, ActionTypes.ENV, None
                     ), self.env)
                 ]
         base_packet: list[Event | Generator] = [AVGEPlayerAttributeChange(
@@ -718,10 +729,10 @@ class AtkPhase(Event):
                     self.env
                 ),
             ]
-        base_packet += [_attack_switch]
         self.env.push_packet(Packet(
             _id,
             base_packet))
+        self.env.append_packet(Packet(_id, [_attack_switch]))
 
     def rollback(self):
         return
@@ -737,7 +748,7 @@ class TurnEnd(Event):
     async def act(self):
         self._last_turn = self.env.turn
         self.env.turn = self.env.turn.next
-        _id = AVGEEngineID(self.env,
+        _id = AVGEEngineID(None,
                            ActionTypes.ENV,
                            None)
         self.env.push_packet(Packet(
@@ -797,7 +808,7 @@ class GameEnd(Event):
     async def act(self):
         self.env.winner = self.winner
         self.env.win_reason = self.reason
-        await asyncio.gather(self.env.report(GameEndIO(User.PLAYER_1)), self.env.report(GameEndIO(User.PLAYER_2)))
+        await asyncio.gather(self.env.report(GameEndIO(User.PLAYER_1), AVGEEngineID(None, ActionTypes.ENV, None)), self.env.report(GameEndIO(User.PLAYER_2), AVGEEngineID(None, ActionTypes.ENV, None)))
         self.env.engine.terminate_flag = True
 
     def rollback(self):
