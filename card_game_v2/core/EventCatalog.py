@@ -201,6 +201,12 @@ class AVGECardStatusChange(Event):
         self.env = env
         self.giver = giver
 
+    @property
+    def made_modification(self) -> bool:
+        '''Whether act() actually added/removed the status (False for a no-op, e.g.
+        adding a status the target already has from this giver).'''
+        return self._made_modification
+
     async def act(self) -> None:
         '''Defines what the event does'''
         assert not callable(self.target)
@@ -437,6 +443,7 @@ class ReorderDeck(Event):
         assert not callable(self.reordering)
         assert len(self.reordering) == len(self.deck) and all(
             [r in self.deck.cards_holding for r in self.reordering])
+        self._old_order = list(self.deck.cards_holding)
         self.deck.cards_holding = self.reordering
 
     def rollback(self):
@@ -518,14 +525,22 @@ class PhasePickCard(Event):
     async def act(self):
         player: AVGEPlayer = self.env.get_current_player()
         if (len(player.card_piles[DeckType.DECK]) > 0):
+            deck = player.card_piles[DeckType.DECK]
+            hand = player.card_piles[DeckType.HAND]
+
+            def draw_top_card() -> list[Event | Generator]:
+                if len(deck) == 0:
+                    return []
+                return [TransferCard(
+                    AVGEEngineID(None, ActionTypes.ENV, None),
+                    deck.get_top(),
+                    deck,
+                    hand,
+                    self.env)]
+
             self.env.append_packet(Packet(
                 AVGEEngineID(None, ActionTypes.ENV, None),
-                [TransferCard(
-                    AVGEEngineID(None, ActionTypes.ENV, None),
-                    player.card_piles[DeckType.DECK][0],
-                    player.card_piles[DeckType.DECK],
-                    player.card_piles[DeckType.HAND],
-                    self.env)]))
+                [draw_top_card]))
             self.env.append_packet(Packet(
                 AVGEEngineID(
                     None, ActionTypes.ENV, None),
@@ -566,6 +581,7 @@ class Phase2(Event):
             case Phase2PlayCard():
                 match res.card:
                     case AVGEItemCard():
+                        player = self.env.get_current_player()
                         self.env.push_packet(Packet(
                             AVGEEngineID(
                                 None, ActionTypes.PLAYER_CHOICE, None),
@@ -576,11 +592,20 @@ class Phase2(Event):
                                     res.card,
                                     ActionTypes.PLAYER_CHOICE,
                                     self.env
+                                ),
+                                TransferCard(
+                                    AVGEEngineID(
+                                        None, ActionTypes.PLAYER_CHOICE, None),
+                                    res.card,
+                                    player.card_piles[DeckType.HAND],
+                                    player.card_piles[DeckType.DISCARD],
+                                    self.env
                                 )
                             ]
                         ))
                         self.env.append_packet(return_to_phase_2)
                     case AVGESupporterCard():
+                        player = self.env.get_current_player()
                         self.env.push_packet(Packet(
                             AVGEEngineID(
                                 None, ActionTypes.PLAYER_CHOICE, None),
@@ -588,7 +613,7 @@ class Phase2(Event):
                                 AVGEPlayerAttributeChange(
                                     AVGEEngineID(
                                         None, ActionTypes.PLAYER_CHOICE, None),
-                                    self.env.get_current_player(),
+                                    player,
                                     AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN,
                                     AVGEAttributeModifier.SUBSTRACTIVE,
                                     1,
@@ -598,6 +623,14 @@ class Phase2(Event):
                                         None, ActionTypes.PLAYER_CHOICE, None),
                                     res.card,
                                     ActionTypes.PLAYER_CHOICE,
+                                    self.env
+                                ),
+                                TransferCard(
+                                    AVGEEngineID(
+                                        None, ActionTypes.PLAYER_CHOICE, None),
+                                    res.card,
+                                    player.card_piles[DeckType.HAND],
+                                    player.card_piles[DeckType.DISCARD],
                                     self.env
                                 )
                             ]

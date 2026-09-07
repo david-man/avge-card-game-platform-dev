@@ -48,7 +48,7 @@ class AVGEEnvironment:
         owners : list[AVGECard | AVGEPlayer | Self] = all_cards + list(self.players.values()) + [self]
         self.cache = Cache(owners)
         self.engine: Engine = Engine(io_manager, self.cache)
-        self.engine.listeners = set([listener(self) for listener in core_listeners]) # type: ignore
+        self.engine.listeners = [listener(self) for listener in core_listeners] # type: ignore
         self.stadium_cardholder : AVGEDeck = AVGEDeck(None, DeckType.STADIUM, []) #type: ignore
 
         #sets up turn

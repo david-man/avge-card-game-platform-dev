@@ -7,4 +7,5 @@ if TYPE_CHECKING:
 
 class AVGEConstrainer(Constrainer):
     def __init__(self, id: AVGEEngineID):
+        super().__init__(id)
         self.id = id

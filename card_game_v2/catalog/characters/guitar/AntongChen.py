@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGEID import AVGEEngineID
+from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
+from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
+from ....engine.event import Event, Generator, Packet
+from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard
+from ....core.AVGEIOManager import CoinflipData, BroadcastIO
+
+if TYPE_CHECKING:
+    from ....avge_abstracts.AVGEID import CardID
+    from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
+    from ....constants import User
+
+
+class AntongChen(AVGECharacterCard):
+    '''Fingerstyle (atk_1) is blocked if Power Chord (atk_2) was used on this
+    character's own previous turn - tracked with a plain instance field
+    (`_last_atk2_round`, set when atk_2 resolves, checked against `env.round - 2`,
+    since with 2 players trading turns 1-for-1, "my previous turn" is always exactly 2
+    rounds back), rather than replicating v1's `check_history` search.'''
+
+    def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
+        super().__init__(cardID, env, owner, deck_in)
+        self._last_atk2_round: int | None = None
+
+    def base_hp(self) -> int:
+        return 100
+
+    def base_max_hp(self) -> int:
+        return 100
+
+    def base_card_type(self) -> CardType:
+        return CardType.GUITAR
+
+    def base_retreat_cost(self) -> int:
+        return 2
+
+    def base_attacks(self) -> dict[ActionTypes, Attack]:
+        return {ActionTypes.ATK_1: self._Fingerstyle(), ActionTypes.ATK_2: self._PowerChord()}
+
+    def base_abilities(self) -> dict[ActionTypes, Ability]:
+        return {}
+
+    async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
+        return
+
+    class _Fingerstyle(Attack):
+        def __init__(self):
+            super().__init__(
+                name="Fingerstyle",
+                description="Cannot be used the turn after Power Chord. Flip 5 coins, deal 20 damage per head.",
+                atk_type=ActionTypes.ATK_1,
+                cost=2,
+            )
+
+        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+            assert isinstance(card, AntongChen)
+            env = card.env
+            if card._last_atk2_round == env.round - 2:
+                await env.broadcast(BroadcastIO("Fingerstyle couldn't be used the turn after Power Chord!", default_timeout))
+                return
+
+            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AntongChen)
+            heads = 0
+            for _ in range(5):
+                result = await env.report(CoinflipData(card.owner, "Fingerstyle: Flip a coin!"), _id)
+                heads += result
+
+            if heads <= 0:
+                await env.broadcast(BroadcastIO("Fingerstyle rolled 0 heads...", default_timeout))
+                return
+
+            opponent = env.get_opponent(card.owner)
+            target = env.get_player_active(opponent)
+            env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
+                _id, target, 20 * heads, AVGEAttributeModifier.SUBSTRACTIVE, CardType.GUITAR, env,
+            )]))
+
+    class _PowerChord(Attack):
+        def __init__(self):
+            super().__init__(
+                name="Power Chord",
+                description="Deal 90 damage to the opposing active. Discard up to 2 of your own energy.",
+                atk_type=ActionTypes.ATK_2,
+                cost=3,
+            )
+
+        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+            assert isinstance(card, AntongChen)
+            env = card.env
+            opponent = env.get_opponent(card.owner)
+            target = env.get_player_active(opponent)
+            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AntongChen)
+
+            events: list[Event | Generator] = [
+                AVGECardHPChangeEvent(_id, target, 90, AVGEAttributeModifier.SUBSTRACTIVE, CardType.GUITAR, env),
+                AVGEEnergyTransfer(_id, card, env, env),
+                AVGEEnergyTransfer(_id, card, env, env),
+            ]
+            env.push_packet(Packet(_id, events))
+            card._last_atk2_round = env.round

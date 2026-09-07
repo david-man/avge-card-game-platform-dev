@@ -62,8 +62,8 @@ class AVGEHPChangeReactor(AVGEEventReactor):
             transfer_card_out = TransferCard(
                 AVGEEngineID(None, ActionTypes.ENV, None),
                 event.target_card,
-                player.card_piles[DeckType.DISCARD],
                 player.card_piles[event.target_card.deck_type],
+                player.card_piles[DeckType.DISCARD],
                 self.env
             )
 
@@ -92,7 +92,7 @@ class AVGEHPChangeReactor(AVGEEventReactor):
                         assert isinstance(new_card, AVGECharacterCard)
                         transfer_card_in = TransferCard(
                             AVGEEngineID(None, ActionTypes.ENV, None),
-                            event.target_card,
+                            new_card,
                             player.card_piles[new_card.deck_type],
                             player.card_piles[DeckType.ACTIVE_CARD],
                             self.env
