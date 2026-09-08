@@ -10,3 +10,8 @@ from .IrisYang import *
 from .JessicaJung import *
 from .JuliaCeccarelli import *
 from .MaggieLi import *
+from .MasonYu import *
+from .MichaelTu import *
+from .MichelleKim import *
+from .SophiaYWang import *
+from .YuelinHu import *

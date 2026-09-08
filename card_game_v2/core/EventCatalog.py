@@ -610,19 +610,20 @@ class Phase2(Event):
                             AVGEEngineID(
                                 None, ActionTypes.PLAYER_CHOICE, None),
                             [
-                                AVGEPlayerAttributeChange(
-                                    AVGEEngineID(
-                                        None, ActionTypes.PLAYER_CHOICE, None),
-                                    player,
-                                    AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN,
-                                    AVGEAttributeModifier.SUBSTRACTIVE,
-                                    1,
-                                    self.env
-                                ), PlayNonCharacterCard(
+                                PlayNonCharacterCard(
                                     AVGEEngineID(
                                         None, ActionTypes.PLAYER_CHOICE, None),
                                     res.card,
                                     ActionTypes.PLAYER_CHOICE,
+                                    self.env
+                                ),
+                                AVGEPlayerAttributeChange(
+                                    AVGEEngineID(
+                                        None, ActionTypes.PLAYER_CHOICE, None),
+                                    player,
+                                    AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN,
+                                    AVGEAttributeModifier.SUBSTRACTIVE,
+                                    1,
                                     self.env
                                 ),
                                 TransferCard(

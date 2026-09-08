@@ -1,0 +1,6 @@
+{
+  "include": ["card_game_v2"],
+  "exclude": ["**/__pycache__", "**/node_modules", "**/.*", "card_game_v2/testing"],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.13"
+}

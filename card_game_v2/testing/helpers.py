@@ -9,10 +9,13 @@ from __future__ import annotations
 from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEEnvironment import EnergyToken
 from ..avge_abstracts.AVGECard import AVGECharacterCard, CardType, AVGEStadiumCard, AVGESupporterCard, AVGECard, Attack
-from ..constants import User, ActionTypes, StatusEffect, AVGEStatusModifier
+from ..constants import User, ActionTypes, StatusEffect, AVGEStatusModifier, AVGEPlayerAttribute, AVGEAttributeModifier
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..engine.event import Packet
-from ..core.EventCatalog import TransferCard, PlayCharacterCard, AVGECardStatusChange, PhasePickCard, PlayNonCharacterCard
+from ..core.EventCatalog import (
+    TransferCard, PlayCharacterCard, AVGECardStatusChange, PhasePickCard, PlayNonCharacterCard,
+    AVGEPlayerAttributeChange,
+)
 from ..core.AVGEIOManager import (
     AVGEIO, CardSelectionQuery, StringSelectionQuery, Notification, BroadcastIO, CoinflipData,
     Phase2IO, Phase2Finish, AtkPhaseIO, D6Input, IntInput,
@@ -260,6 +263,39 @@ async def play_item(env, player, item):
     pkt = Packet(_id, [
         PlayNonCharacterCard(_id, item, ActionTypes.PLAYER_CHOICE, env),
         TransferCard(_id, item, player.card_piles[DeckType.HAND], player.card_piles[DeckType.DISCARD], env),
+    ])
+    env.push_packet(pkt)
+    await env.engine.flush(lambda: False)
+
+
+async def play_stadium(env, player, stadium):
+    '''Plays a stadium from hand into the single global stadium slot
+    (`env.stadium_cardholder`) - `TransferCard`'s own "Special Case 3" fires the
+    resulting `PlayNonCharacterCard` automatically, unlike items which need it added
+    explicitly (see `play_item`). Caller is responsible for discarding any
+    previously-active stadium first (no automatic replacement happens at the engine
+    level - each stadium/tool that replaces one explicitly does so itself, e.g.
+    BAIEmail).'''
+    _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
+    pkt = Packet(_id, [TransferCard(_id, stadium, player.card_piles[DeckType.HAND], env.stadium_cardholder, env)])
+    env.push_packet(pkt)
+    await env.engine.flush(lambda: False)
+
+
+async def play_supporter(env, player, supporter):
+    '''Plays a supporter card from hand, mirroring `Phase2.act()`'s real dispatch:
+    decrement `SUPPORTER_USES_REMAINING_IN_TURN` (bumped to 1 first, since a fresh
+    `AVGEPlayer` defaults it to 0 - same gotcha as `ENERGY_ADD_REMAINING_IN_TURN`),
+    resolve the supporter's effect, then discard it.'''
+    player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] = 1
+    _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
+    pkt = Packet(_id, [
+        PlayNonCharacterCard(_id, supporter, ActionTypes.PLAYER_CHOICE, env),
+        AVGEPlayerAttributeChange(
+            _id, player, AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN,
+            AVGEAttributeModifier.SUBSTRACTIVE, 1, env,
+        ),
+        TransferCard(_id, supporter, player.card_piles[DeckType.HAND], player.card_piles[DeckType.DISCARD], env),
     ])
     env.push_packet(pkt)
     await env.engine.flush(lambda: False)
