@@ -5,6 +5,15 @@ from ..constants import ResponseStatus
 from ..engine.event import Event
 
 
+def _reject(event: Event, reason: str) -> ResponseStatus:
+    '''Regulator helper: records a human-readable reason on the packet - relayed to clients
+    alongside the state resync once REGULATE_FAIL propagates up to on_packet_failed, see
+    Packet.rejection_reason in engine/event.py - and returns REGULATE_FAIL.'''
+    assert event._parent_packet is not None  # type: ignore
+    event._parent_packet.rejection_reason = reason  # type: ignore
+    return ResponseStatus.REGULATE_FAIL
+
+
 class AVGETokenTransferCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
         super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
@@ -16,11 +25,11 @@ class AVGETokenTransferCheck(AVGEEventRegulator):
         assert isinstance(event, AVGEEnergyTransfer)
         assert not callable(event.token_from)
         if (len(event.token_from.energy_tokens) == 0):
-            return ResponseStatus.REGULATE_FAIL
+            return _reject(event, "No energy left on that card to move.")
         if (event.id.calling_action == ActionTypes.PLAYER_CHOICE):
             if (isinstance(event.token_to, AVGECharacterCard)):
                 if (self.env.players[event.token_to.owner].attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
-                    return ResponseStatus.REGULATE_FAIL
+                    return _reject(event, "You've already attached energy this turn.")
         return ResponseStatus.REGULATE_PASS
 
 
@@ -167,11 +176,11 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
         assert not callable(event.card)
         assert not callable(event.deck_to)
         if (event.deck_from.deck_type == DeckType.HAND and event.deck_to.deck_type == DeckType.DECK and len(event.deck_to) == MAX_BENCH_SIZE):
-            return ResponseStatus.REGULATE_FAIL
+            return _reject(event, "Your bench is already full.")
         elif (event.deck_from.deck_type == DeckType.BENCH and event.deck_to.deck_type == DeckType.ACTIVE_CARD and self.env.players[event.card.owner].attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
-            return ResponseStatus.REGULATE_FAIL
+            return _reject(event, "You've already swapped your active character this turn.")
         elif (isinstance(event.card, AVGECharacterCard) and event.deck_from.deck_type == DeckType.BENCH and event.deck_to.deck_type == DeckType.ACTIVE_CARD and len(self.env.get_player_active(event.card.owner).energy_tokens) < event.card.retreat_cost):
-            return ResponseStatus.REGULATE_FAIL
+            return _reject(event, "Your active character doesn't have enough energy attached to retreat.")
         else:
             return ResponseStatus.REGULATE_PASS
 
@@ -212,21 +221,21 @@ class AVGEPlayCharacterCardValidityCheck(AVGEEventRegulator):
         assert not callable(event.target_card)
         assert not callable(event.cost)
         if(event.cost > len(event.target_card.energy_tokens)):
-            return ResponseStatus.REGULATE_FAIL
+            return _reject(event, "Not enough energy attached to use that.")
         match event.action:
             case ActionTypes.ATK_1:
                 if(event.target_card.attacks.get(ActionTypes.ATK_1) is None):
-                    return ResponseStatus.REGULATE_FAIL
+                    return _reject(event, "That character doesn't have this attack.")
             case ActionTypes.ATK_2:
                 if(event.target_card.attacks.get(ActionTypes.ATK_2) is None):
-                    return ResponseStatus.REGULATE_FAIL
+                    return _reject(event, "That character doesn't have this attack.")
             case ActionTypes.PASSIVE:
                 if(event.target_card.abilities.get(ActionTypes.PASSIVE) is None):
-                    return ResponseStatus.REGULATE_FAIL
+                    return _reject(event, "That character doesn't have this ability.")
             case ActionTypes.ACTIVATE_ABILITY:
                 if(event.target_card.abilities.get(ActionTypes.ACTIVATE_ABILITY, None) is None
                    or not event.target_card.abilities[ActionTypes.ACTIVATE_ABILITY].can_play(event.target_card)):
-                    return ResponseStatus.REGULATE_FAIL
+                    return _reject(event, "That ability can't be used right now.")
             case _:
                 raise Exception("No clue how you got here...")
         return ResponseStatus.REGULATE_PASS
@@ -243,5 +252,5 @@ class AVGEPlayNonCharacterCardValidityCheck(AVGEEventRegulator):
     async def respond(self, event: Event) -> ResponseStatus:
         assert isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard)
         if(self.env.players[event.target_card.owner].attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] == 0):
-            return ResponseStatus.REGULATE_FAIL
+            return _reject(event, "You've already played a supporter card this turn.")
         return ResponseStatus.REGULATE_PASS

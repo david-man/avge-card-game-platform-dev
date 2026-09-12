@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from collections import deque
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from .record import History, HistoricalStatus
 from ..constants import ResponseStatus, ID
@@ -36,6 +36,9 @@ class Engine:
         self.global_cache = global_cache
 
         self.terminate_flag : bool = False #When terminate_flag is set, the game engine will finish the current event before terminating.
+
+        self.on_event_committed: Callable[[Event], Awaitable[None]] | None = None
+        self.on_packet_failed: Callable[[Packet], Awaitable[None]] | None = None
 
     def add_listener(self, listener: EventListener):
         '''Adds an event listener to the engine'''
@@ -127,6 +130,8 @@ class Engine:
 
             ## Watch response. If fail, unwind cache, reset the proposed packet additions, and flush history. If game end, immediately stop. Otherwise, set everything in stone
             if (response == ResponseStatus.REGULATE_FAIL):
+                if self.on_packet_failed is not None:
+                    await self.on_packet_failed(self.current_packet)
                 self.listeners = self.current_listeners
                 for listener in self.listeners:
                     listener.requires_cleanup = False

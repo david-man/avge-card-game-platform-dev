@@ -106,3 +106,5 @@ class AVGEPlayerAttribute(StrEnum):
 class WinReasons(StrEnum):
     ALL_KOS = "ALL_KOS"
     KO_NO_DECK = "KO_NO_DECK"
+    CONCEDE = "CONCEDE"
+    DISCONNECT_TIMEOUT = "DISCONNECT_TIMEOUT"

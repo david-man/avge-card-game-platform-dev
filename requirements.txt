@@ -3,3 +3,6 @@ Flask-SocketIO>=5.3,<6.0
 gevent>=24.2.1
 gevent-websocket
 pytest>=8.0,<9.0
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+httpx>=0.27,<1.0

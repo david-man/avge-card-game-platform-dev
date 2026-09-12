@@ -94,6 +94,12 @@ class Packet:
         self._rollback_log: list[Event] = []
         self.current_event: Event | None = None
         self._engine : Engine | None = None
+        self.rejection_reason: str | None = None
+        '''Set by a regulator (via `event._parent_packet.rejection_reason = "..."`, using the
+        back-reference every Event already carries) right before it returns REGULATE_FAIL, so
+        server/game_setup.py's on_packet_failed hook - which fires after this packet's own
+        rollback has already run - can relay a human-readable reason to clients alongside the
+        corrected state. None if the regulator that failed didn't set one.'''
 
         self._requested_event_pushes : list[Event | Generator] = []
         self._requested_event_appends : list[Event | Generator] = []
@@ -184,6 +190,8 @@ class Packet:
                     self.event_log.append(self.current_event)
                     self._engine.history.add_record(
                         HistoricalStatus.PENDING, self.current_event)
+                    if self._engine.on_event_committed is not None:
+                        await self._engine.on_event_committed(self.current_event)
                     queue = self._call_stack[-1]
                     for e in reversed(self._requested_event_pushes):  # type: ignore
                         queue.appendleft(e)

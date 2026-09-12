@@ -30,6 +30,8 @@ ENV/
 *.pid
 *.sqlite3
 *.db
+card_game_v2/server/logs/
+card_game_v2/server/data/
 
 # Secrets / local environment files
 .env
