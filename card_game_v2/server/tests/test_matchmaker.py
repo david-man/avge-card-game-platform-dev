@@ -1,8 +1,14 @@
 import unittest
 
+from ...avge_abstracts.AVGECard import AVGECard
 from ...avge_abstracts.AVGEDeck import DeckType
-from ...constants import User
+from ...constants import CARDS_PER_DECK, User
+from ...testing.helpers import Attacker, Dummy
 from ..matchmaker import Matchmaker
+
+
+def _deck(card_class: type[AVGECard] = Dummy) -> list[type[AVGECard]]:
+    return [card_class] * CARDS_PER_DECK
 
 
 class FakeTransport:
@@ -28,8 +34,8 @@ class MatchmakerTests(unittest.IsolatedAsyncioTestCase):
                 session.task.cancel()
             session._cancel_all_timers()
 
-    async def _join(self, account_id: str):
-        session, user = await self.mm.join(account_id)
+    async def _join(self, account_id: str, deck: list[type[AVGECard]] | None = None):
+        session, user = await self.mm.join(account_id, deck if deck is not None else _deck())
         self._spawned_sessions.append(session)
         return session, user
 
@@ -95,6 +101,38 @@ class MatchmakerTests(unittest.IsolatedAsyncioTestCase):
         session.attach(user_a, t1)
         await session.force_end(winner=user_a, reason="concede")
         self.assertIsNone(self.mm.find_active_game("acct-1"))
+
+    async def test_each_players_own_deck_survives_pairing_with_no_crossover(self):
+        # Regression guard for a seat/deck mixup: pair two players with deliberately different
+        # decks and confirm each one's active/hand/deck ends up built only from their OWN classes,
+        # never the opponent's.
+        session_a, user_a = await self._join("acct-1", deck=_deck(Dummy))
+        session_b, user_b = await self._join("acct-2", deck=_deck(Attacker))
+        self.assertIs(session_a, session_b)
+        session = session_a
+
+        def _all_cards(user):
+            player = session.env.players[user]
+            cards = list(player.card_piles[DeckType.HAND].cards_holding)
+            cards += player.card_piles[DeckType.ACTIVE_CARD].cards_holding
+            cards += player.card_piles[DeckType.DECK].cards_holding
+            return cards
+
+        self.assertTrue(all(isinstance(c, Dummy) for c in _all_cards(user_a)))
+        self.assertTrue(all(isinstance(c, Attacker) for c in _all_cards(user_b)))
+
+    async def test_a_duplicate_join_for_the_same_account_never_creates_a_stray_session(self):
+        # Regression test for the reorder in join(): the account gets registered in
+        # _active_game_by_account BEFORE prepare() is awaited now, not after - so a second join()
+        # call for the same account (even one that could in principle land mid-prepare()) always
+        # finds the same session via find_active_game() rather than racing to create a third one.
+        session_a, user_a = await self._join("acct-1")
+        session_b, user_b = await self._join("acct-2")
+        # A duplicate join for acct-1 (already paired) must return the existing session/seat.
+        session_c, user_c = await self._join("acct-1")
+        self.assertIs(session_c, session_a)
+        self.assertEqual(user_c, user_a)
+        self.assertEqual(len(self.mm.sessions), 1)
 
 
 class ClaimReleaseTests(unittest.IsolatedAsyncioTestCase):

@@ -5,8 +5,9 @@ from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGECard import AVGECharacterCard
 from ...constants import User
+from ...constants import CARDS_PER_DECK as CONSTANTS_CARDS_PER_DECK
 from ...testing.helpers import TestIO, core_listeners
-from ..decks import build_preset_decks, CARDS_PER_DECK
+from ..decks import build_preset_decks, build_game_deck, CARDS_PER_DECK
 
 
 class BuildPresetDecksTests(unittest.TestCase):
@@ -41,6 +42,31 @@ class BuildPresetDecksTests(unittest.TestCase):
         p2 = env.players[User.PLAYER_2]
         self.assertEqual(len(p1.card_piles[DeckType.DECK]), CARDS_PER_DECK)
         self.assertEqual(len(p2.card_piles[DeckType.DECK]), CARDS_PER_DECK)
+
+
+class CardsPerDeckReExportTests(unittest.TestCase):
+    def test_decks_module_re_exports_the_constants_module_value(self):
+        # Guards against decks.py silently regaining its own independent copy of this constant -
+        # see constants.py's own CARDS_PER_DECK, the actual single source of truth now.
+        self.assertIs(CARDS_PER_DECK, CONSTANTS_CARDS_PER_DECK)
+
+
+class BuildGameDeckTests(unittest.TestCase):
+    def test_resolves_names_to_the_right_classes_and_length(self):
+        names = ["AshleyToby"] * 3 + ["Camera"] * 2
+        resolved = build_game_deck(names)
+        self.assertEqual(len(resolved), len(names))
+        self.assertEqual(collections.Counter(c.__name__ for c in resolved), collections.Counter(names))
+
+    def test_order_varies_across_calls(self):
+        names = ["AshleyToby", "EmilyWang", "CathyRong", "Camera", "Angel"] * 4
+        a = build_game_deck(names)
+        b = build_game_deck(names)
+        self.assertNotEqual(a, b)
+
+    def test_raises_on_an_unknown_card_name(self):
+        with self.assertRaises(KeyError):
+            build_game_deck(["NotARealCard"])
 
 
 if __name__ == "__main__":

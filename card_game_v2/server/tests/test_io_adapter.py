@@ -11,7 +11,7 @@ from ...core.AVGEIOManager import (
     StringSelectionQuery, IntInput, D6Input, CoinflipData, Phase2Finish, Phase2ActivateAbility,
     Phase2CardMovement, Phase2EnergyAttach, Phase2PlayCard, TurnEndUpdate, ActionRejectedUpdate,
 )
-from ...testing.helpers import Dummy, core_listeners, put_into_play, bench
+from ...testing.helpers import Dummy, DummyStadium, core_listeners, put_into_play, bench
 from .. import protocol
 from .. import serialization
 from ..io_adapter import NetworkIO
@@ -179,6 +179,18 @@ class DecisionRoundtripTests(NetworkIOTestBase):
         assert isinstance(result, Phase2ActivateAbility)
         self.assertIs(result.card, self.active)
 
+    async def test_phase2_activate_ability_rejects_card_not_in_play(self):
+        # Regression test: only ownership was checked here - a card sitting in hand/discard/deck
+        # could have its ability activated if the specific character's own can_play() happened
+        # not to check deck_type itself (energy_attach's equivalent endpoint check already existed
+        # for this - see _resolve_energy_endpoint).
+        hand_card = Dummy("d_hand", self.env, User.PLAYER_1, DeckType.HAND)
+        self.p1.card_piles[DeckType.HAND].cards_holding.append(hand_card)
+        with self.assertRaises(IOException):
+            self.io.deserialize(Phase2IO(User.PLAYER_1), {
+                "kind": "activate_ability", "card_id": hand_card.cardID,
+            })
+
     async def test_phase2_energy_attach_from_env(self):
         result = await self._roundtrip(
             Phase2IO(User.PLAYER_1),
@@ -206,16 +218,56 @@ class DecisionRoundtripTests(NetworkIOTestBase):
         # Regression test: the wire encoding for the STADIUM deck has owner=None (it has no
         # owning player - see io_adapter._wire_deck_ref) and _resolve_deck_field used to try
         # User[str(None)] before ever checking deck_type, rejecting every stadium reference.
+        stadium = DummyStadium("stad1", self.env, User.PLAYER_1, DeckType.HAND)
+        self.p1.card_piles[DeckType.HAND].cards_holding.append(stadium)
         result = await self._roundtrip(
             Phase2IO(User.PLAYER_1),
             {
-                "kind": "card_movement", "card_id": self.benched.cardID,
-                "deck_from": {"owner": User.PLAYER_1.name, "deck_type": "BENCH"},
+                "kind": "card_movement", "card_id": stadium.cardID,
+                "deck_from": {"owner": User.PLAYER_1.name, "deck_type": "HAND"},
                 "deck_to": {"owner": None, "deck_type": "STADIUM"},
             },
         )
         assert isinstance(result, Phase2CardMovement)
         self.assertIs(result.deck_to, self.env.stadium_cardholder)
+
+    async def test_phase2_card_movement_rejects_wrong_type_to_stadium(self):
+        # Regression test: TransferCard.act() asserts isinstance(card, (AVGEToolCard,
+        # AVGEStadiumCard)) for a STADIUM/OFFHAND destination - without a check here, naming a
+        # character card as deck_to=STADIUM used to sail through every other check (it's the
+        # player's own card, going to a real deck) and crash the engine on that assert.
+        with self.assertRaises(IOException):
+            self.io.deserialize(Phase2IO(User.PLAYER_1), {
+                "kind": "card_movement", "card_id": self.benched.cardID,
+                "deck_from": {"owner": User.PLAYER_1.name, "deck_type": "BENCH"},
+                "deck_to": {"owner": None, "deck_type": "STADIUM"},
+            })
+
+    async def test_phase2_card_movement_rejects_wrong_type_to_offhand(self):
+        with self.assertRaises(IOException):
+            self.io.deserialize(Phase2IO(User.PLAYER_1), {
+                "kind": "card_movement", "card_id": self.benched.cardID,
+                "deck_from": {"owner": User.PLAYER_1.name, "deck_type": "BENCH"},
+                "deck_to": {
+                    "owner": User.PLAYER_1.name, "deck_type": "OFFHAND",
+                    "parent_card_id": self.active.cardID,
+                },
+            })
+
+    async def test_phase2_card_movement_rejects_direct_active_to_bench(self):
+        # Regression test: retreating must always be initiated as BENCH -> ACTIVE_CARD (the
+        # engine auto-appends the outgoing active card's own swap-back transfer for that
+        # direction - see EventCatalog.py's Phase2CardMovement case). A raw ACTIVE_CARD -> BENCH
+        # request has no such pairing and used to sail through unrejected, either permanently
+        # emptying the active slot (if the retreat-cost energy transfer happened to succeed) or
+        # rolling back only after already broadcasting a phantom CardMovedUpdate to both clients.
+        io_obj = Phase2IO(User.PLAYER_1)
+        with self.assertRaises(IOException):
+            self.io.deserialize(io_obj, {
+                "kind": "card_movement", "card_id": self.active.cardID,
+                "deck_from": {"owner": User.PLAYER_1.name, "deck_type": "ACTIVE_CARD"},
+                "deck_to": {"owner": User.PLAYER_1.name, "deck_type": "BENCH"},
+            })
 
     async def test_atk_phase_skip(self):
         result = await self._roundtrip(AtkPhaseIO(User.PLAYER_1), {"action": "SKIP"})

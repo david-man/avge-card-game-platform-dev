@@ -76,8 +76,8 @@ class EugeniaAmpofo(AVGECharacterCard):
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, EugeniaAmpofo)
             env = card.env
-            if env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             if card.deck_type != DeckType.ACTIVE_CARD:
                 return False
             player = env.players[card.owner]

@@ -7,7 +7,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO, default_timeout
+from ...core.AVGEIOManager import CardSelectionQuery, Notification, default_timeout
 from ...engine.event import Event, Generator, Packet
 
 
@@ -24,15 +24,15 @@ class IceSkates(AVGEItemCard):
         bench = player.card_piles[DeckType.BENCH]
         active = env.get_player_active(self.owner)
 
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, IceSkates)
         bench_targets = [c for c in bench.cards_holding if isinstance(c, AVGECharacterCard)]
         if not bench_targets:
-            await env.broadcast(BroadcastIO(
+            await env.report(Notification(
+                self.owner,
                 "Ice Skates was used, but there are no benched characters to switch with...",
                 default_timeout,
-            ))
+            ), _id)
             return
-
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, IceSkates)
         picked = await env.report(CardSelectionQuery(
             self.owner,
             "Ice Skates: Choose one benched character to switch with your active.",

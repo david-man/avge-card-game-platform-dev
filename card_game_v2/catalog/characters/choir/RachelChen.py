@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, ReorderDeck
-from ....core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, BroadcastIO, Notification
 from ....catalog.items.ConcertProgram import ConcertProgram
 from ....catalog.items.ConcertRoster import ConcertRoster
 from ....catalog.items.ConcertTicket import ConcertTicket
@@ -62,8 +62,8 @@ class RachelChen(AVGECharacterCard):
 
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, RachelChen)
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             if card._active_last_used_round == card.env.round:
                 return False
             discard = card.env.players[card.owner].card_piles[DeckType.DISCARD]
@@ -132,7 +132,9 @@ class RachelChen(AVGECharacterCard):
             choir_count = sum(1 for c in own_chars if c.card_type == CardType.CHOIR)
 
             if choir_count <= 0:
-                await env.broadcast(BroadcastIO("SATB, but it did nothing...", default_timeout))
+                await env.report(Notification(
+                    card.owner, "SATB, but it did nothing...", default_timeout,
+                ), _id)
                 return
 
             opposing_chars: list[AVGECharacterCard] = [

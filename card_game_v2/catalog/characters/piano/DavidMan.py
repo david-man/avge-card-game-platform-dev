@@ -56,8 +56,9 @@ class DavidMan(AVGECharacterCard):
 
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, DavidMan)
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2) - can_play() only needs to
+            # gate this card's own real rules now, not re-check who owns it.
             player = card.env.players[card.owner]
             if len(player.card_piles[DeckType.DISCARD]) == 0:
                 return False

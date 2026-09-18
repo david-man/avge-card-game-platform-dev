@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import AVGEEnergyTransfer, TransferCard, ReorderDeck
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
@@ -36,14 +36,14 @@ class DressRehearsalRoster(AVGEItemCard):
         ] + [
             c for c in player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
         ]
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, DressRehearsalRoster)
         total_energy = sum(len(c.energy_tokens) for c in in_play)
         if total_energy < 2:
-            await env.broadcast(BroadcastIO(
+            await env.report(Notification(
+                self.owner,
                 "Not enough total energy in play for Dress Rehearsal Roster...", default_timeout,
-            ))
+            ), _id)
             return
-
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, DressRehearsalRoster)
         selected = await env.report(CardSelectionQuery(
             self.owner,
             "Dress Rehearsal Roster: Choose 2 (not necessarily distinct) characters to discard energy from.",

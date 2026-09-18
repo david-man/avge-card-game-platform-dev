@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, PhasePickCard, TransferCard
-from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -109,11 +109,12 @@ class MaggieLi(AVGECharacterCard):
             ] + [
                 c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            if not targets:
-                await env.broadcast(BroadcastIO("Snap Pizz failed: no opposing characters are in play.", default_timeout))
-                return
-
             _id = AVGEEngineID(card, self.resolve_caller(caller_action), MaggieLi)
+            if not targets:
+                await env.report(Notification(
+                    card.owner, "Snap Pizz failed: no opposing characters are in play.", default_timeout,
+                ), _id)
+                return
             picked = await env.report(CardSelectionQuery(
                 card.owner,
                 "Snap Pizz: Choose one opposing character to remove up to 2 energy from.",

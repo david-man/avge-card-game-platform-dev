@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, EngineGroup, AVGEAttributeModifier, StatusEffect, User, default_timeout
 from ...core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard
-from ...core.AVGEIOManager import BroadcastIO
+from ...core.AVGEIOManager import BroadcastIO, Notification
 from ...engine.event import Event, Generator, Packet
 
 if TYPE_CHECKING:
@@ -27,13 +27,14 @@ class BUOStand(AVGEItemCard):
     async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
         env = self.env
         active = env.get_player_active(self.owner)
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, BUOStand)
         if len(active.energy_tokens) == 0:
-            await env.broadcast(BroadcastIO("BUOStand: No energy on active character :(", default_timeout))
+            await env.report(Notification(
+                self.owner, "BUOStand: No energy on active character :(", default_timeout,
+            ), _id)
             return
 
         self.add_listener(BUOStand._FirstAttackDamageBuff(self.owner, env))
-
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, BUOStand)
         events: list[Event | Generator] = [AVGEEnergyTransfer(_id, active, env, env)]
         env.push_packet(Packet(_id, events))
 

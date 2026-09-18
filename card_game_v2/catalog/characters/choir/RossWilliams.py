@@ -11,7 +11,7 @@ from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import (
     AVGECardHPChangeEvent, AVGEPlayerAttributeChange, PlayCharacterCard, AtkPhase, TurnEnd, TransferCard,
 )
-from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -176,14 +176,18 @@ class RossWilliams(AVGECharacterCard):
                 caller_action), RossWilliams)
 
             if player_has and opp_has:
-                await env.broadcast(BroadcastIO("Ross Attack, but it did nothing...", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Ross Attack, but it did nothing...", default_timeout,
+                ), _id)
                 return
 
             if player_has:
                 discard = player.card_piles[DeckType.DISCARD]
                 hand = player.card_piles[DeckType.HAND]
                 if len(discard) == 0:
-                    await env.broadcast(BroadcastIO("Ross Attack, but there were no cards in discard.", default_timeout))
+                    await env.report(Notification(
+                        card.owner, "Ross Attack, but there were no cards in discard.", default_timeout,
+                    ), _id)
                     return
                 discard_cards = [c for c in discard]
                 choice = await env.report(CardSelectionQuery(
@@ -227,4 +231,6 @@ class RossWilliams(AVGECharacterCard):
                 await env.broadcast(BroadcastIO("Ross Attack!", default_timeout))
                 return
 
-            await env.broadcast(BroadcastIO("Ross Attack, but it did nothing...", default_timeout))
+            await env.report(Notification(
+                card.owner, "Ross Attack, but it did nothing...", default_timeout,
+            ), _id)

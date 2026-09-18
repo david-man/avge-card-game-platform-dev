@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, ReorderDeck
-from ....core.AVGEIOManager import CardSelectionQuery, RevealCards, D6Input, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, RevealCards, D6Input, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -63,9 +63,10 @@ class KathySun(AVGECharacterCard):
 
             choose_count = min(2, len(opponent_hand))
             if choose_count == 0:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     f"{card} tried to use Analysis Paralysis, but it did nothing...", default_timeout,
-                ))
+                ), _id)
                 return
 
             await env.report(RevealCards(card.owner, list(opponent_hand.cards_holding)), _id)

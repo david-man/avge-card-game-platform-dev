@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard
-from ....core.AVGEIOManager import CoinflipData, BroadcastIO
+from ....core.AVGEIOManager import CoinflipData, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -60,18 +60,22 @@ class AntongChen(AVGECharacterCard):
         async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
             assert isinstance(card, AntongChen)
             env = card.env
+            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AntongChen)
             if card._last_atk2_round == env.round - 2:
-                await env.broadcast(BroadcastIO("Fingerstyle couldn't be used the turn after Power Chord!", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Fingerstyle couldn't be used the turn after Power Chord!", default_timeout,
+                ), _id)
                 return
 
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AntongChen)
             heads = 0
             for _ in range(5):
                 result = await env.report(CoinflipData(card.owner, "Fingerstyle: Flip a coin!"), _id)
                 heads += result
 
             if heads <= 0:
-                await env.broadcast(BroadcastIO("Fingerstyle rolled 0 heads...", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Fingerstyle rolled 0 heads...", default_timeout,
+                ), _id)
                 return
 
             opponent = env.get_opponent(card.owner)

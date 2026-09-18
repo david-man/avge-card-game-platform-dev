@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ....core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, Notification
 from ....catalog.items.ConcertProgram import ConcertProgram
 from ....catalog.items.ConcertRoster import ConcertRoster
 from ....catalog.items.ConcertTicket import ConcertTicket
@@ -103,9 +103,10 @@ class SarahChen(AVGECharacterCard):
             ), _id)
 
             if not discarded:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     f"{card} used Artist Alley, but it didn't do anything...", default_timeout,
-                ))
+                ), _id)
                 return
 
             possible_targets: list[AVGECharacterCard] = [

@@ -54,8 +54,8 @@ class HappyRuthJara(AVGECharacterCard):
             )
 
         def can_play(self, card: AVGECharacterCard) -> bool:
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             if card.deck_type != DeckType.BENCH:
                 return False
             if len(card.tools_attached) > 0:

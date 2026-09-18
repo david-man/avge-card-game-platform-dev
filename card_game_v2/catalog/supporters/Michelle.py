@@ -5,7 +5,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
@@ -23,7 +23,9 @@ class Michelle(AVGESupporterCard):
     async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
         env = self.env
         if env.round == 0:
-            await env.broadcast(BroadcastIO("Michelle cannot be played on the first turn.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Michelle cannot be played on the first turn.", default_timeout,
+            ), AVGEEngineID(self, ActionTypes.NONCHAR, Michelle))
             return
 
         opponent = env.get_opponent(self.owner)

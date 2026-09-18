@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, ReorderDeck, PlayCharacterCard
-from ....core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -102,9 +102,10 @@ class RachaelYuan(AVGECharacterCard):
 
             bench_candidates = [c for c in opponent_bench.cards_holding if isinstance(c, AVGECharacterCard)]
             if len(bench_candidates) < 2:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     f"{card} used E2 Reaction, but it didn't do anything...", default_timeout,
-                ))
+                ), _id)
                 return
 
             picked = await env.report(CardSelectionQuery(

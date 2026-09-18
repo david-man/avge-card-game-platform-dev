@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, StatusEffect, AVGEStatusModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardStatusChange, AVGEEnergyTransfer, TransferCard, PlayCharacterCard
-from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -59,9 +59,10 @@ class MasonYu(AVGECharacterCard):
             ]
             _id = AVGEEngineID(card, self.resolve_caller(caller_action), MasonYu)
             if not bench:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     "Arrangement failed: no benched characters on your side.", default_timeout,
-                ))
+                ), _id)
                 return
 
             picked = await env.report(CardSelectionQuery(
@@ -102,9 +103,10 @@ class MasonYu(AVGECharacterCard):
             _id = AVGEEngineID(card, self.resolve_caller(caller_action), MasonYu)
 
             if len(card.energy_tokens) == 0:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     "We Play God didn't play: Mason Yu has no energy to discard.", default_timeout,
-                ))
+                ), _id)
                 return
 
             player = env.players[card.owner]

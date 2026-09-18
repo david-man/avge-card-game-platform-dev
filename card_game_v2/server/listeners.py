@@ -4,7 +4,7 @@ from ..avge_abstracts.AVGEEventListener import AVGEEventListener
 from ..core.CoreListeners import (
     AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
     AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck, AVGERetreatCostReactor,
-    AVGEPlayCharacterCardValidityCheck, AVGEPlayNonCharacterCardValidityCheck,
+    AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck, AVGEPlayNonCharacterCardValidityCheck,
 )
 from ..catalog.status_effects.Goon import (
     AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
@@ -24,7 +24,8 @@ def default_core_listeners() -> list[type[AVGEEventListener]]:
     return [
         AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
         AVGEMaidDamageShieldModifier, AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
-        AVGERetreatCostReactor, AVGEPlayCharacterCardValidityCheck, AVGEPlayNonCharacterCardValidityCheck,
+        AVGERetreatCostReactor, AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck,
+        AVGEPlayNonCharacterCardValidityCheck,
         AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
         AVGEArrangerStatusReactor,
     ]

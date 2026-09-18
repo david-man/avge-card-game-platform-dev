@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...constants import ActionTypes, EngineGroup, ResponseStatus, default_timeout
 from ...core.EventCatalog import TransferCard, PlayCharacterCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO, Notification
 from ...engine.event import Event, Generator, Packet
 
 if TYPE_CHECKING:
@@ -91,7 +91,13 @@ class _BenchCapRegulator(AVGEEventRegulator):
         return len(event.deck_to.cards_holding) >= 2
 
     async def respond(self, event: Event) -> ResponseStatus:
-        await self.env.broadcast(BroadcastIO("Steinert Practice Room: Practice Prison prevented this action!", default_timeout))
+        assert isinstance(event, TransferCard)
+        assert not callable(event.card)
+        assert isinstance(event.id, AVGEEngineID)
+        await self.env.report(Notification(
+            event.card.owner,
+            "Steinert Practice Room: Practice Prison prevented this action!", default_timeout,
+        ), event.id)
         return ResponseStatus.REGULATE_FAIL
 
 

@@ -9,7 +9,9 @@ from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, User, WinReasons
 from ...core.EventCatalog import PlayCharacterCard
 from ...engine.event import Packet
+from ...testing.helpers import Attacker, Dummy
 from .. import config as server_config
+from ..decks import CARDS_PER_DECK
 from ..session import GameSession
 
 
@@ -50,6 +52,67 @@ class StartTests(SessionTestBase):
             self.assertIsNotNone(self.session.task)
             assert self.session.task is not None
             self.assertFalse(self.session.task.done())
+        finally:
+            self.session.task.cancel()  # type: ignore[union-attr]
+            try:
+                await self.session.task
+            except asyncio.CancelledError:
+                pass
+
+
+class ConfigureDecksTests(SessionTestBase):
+    async def test_a_bare_session_already_has_a_fully_built_placeholder_env(self):
+        # The invariant configure_decks()'s whole design rests on: GameSession.__init__ must
+        # never leave self.env as None, since force_end()/_abandon() (and dozens of tests) act on
+        # a session without ever calling prepare()/configure_decks() first.
+        for user in User:
+            self.assertEqual(
+                len(self.session.env.players[user].card_piles[DeckType.DECK]), CARDS_PER_DECK,
+            )
+
+    async def test_configure_decks_replaces_env_and_repoints_io(self):
+        placeholder_env = self.session.env
+        self.session.seats[User.PLAYER_1].deck = [Dummy] * 20
+        self.session.seats[User.PLAYER_2].deck = [Attacker] * 20
+
+        self.session.configure_decks()
+
+        self.assertIsNot(self.session.env, placeholder_env)
+        self.assertIs(self.session.io.env, self.session.env)
+        p1_deck = self.session.env.players[User.PLAYER_1].card_piles[DeckType.DECK].cards_holding
+        p2_deck = self.session.env.players[User.PLAYER_2].card_piles[DeckType.DECK].cards_holding
+        self.assertTrue(all(isinstance(c, Dummy) for c in p1_deck))
+        self.assertTrue(all(isinstance(c, Attacker) for c in p2_deck))
+
+    async def test_prepare_after_configure_decks_deals_from_the_custom_decks_not_the_preset_pool(self):
+        self.session.seats[User.PLAYER_1].deck = [Dummy] * 20
+        self.session.seats[User.PLAYER_2].deck = [Attacker] * 20
+        self.session.configure_decks()
+
+        await self.session.prepare()
+
+        active_p1 = self.session.env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding
+        active_p2 = self.session.env.players[User.PLAYER_2].card_piles[DeckType.ACTIVE_CARD].cards_holding
+        self.assertEqual(len(active_p1), 1)
+        self.assertEqual(len(active_p2), 1)
+        self.assertIsInstance(active_p1[0], Dummy)
+        self.assertIsInstance(active_p2[0], Attacker)
+
+    async def test_configure_decks_asserts_if_a_seat_has_no_deck_set(self):
+        # Only PLAYER_1's deck is set - PLAYER_2's stays None, matching the real ordering bug this
+        # guards against (calling configure_decks() before Matchmaker.join() has resolved both
+        # accounts' decks).
+        self.session.seats[User.PLAYER_1].deck = [Dummy] * 20
+        with self.assertRaises(AssertionError):
+            self.session.configure_decks()
+
+    async def test_configure_decks_refuses_once_the_session_is_running(self):
+        for seat in self.session.seats.values():
+            seat.deck = [Dummy] * 20
+        await self.session.start()
+        try:
+            with self.assertRaises(AssertionError):
+                self.session.configure_decks()
         finally:
             self.session.task.cancel()  # type: ignore[union-attr]
             try:
@@ -103,6 +166,19 @@ class ConnectionStateTests(SessionTestBase):
         self.assertEqual(self.t1.sent, [])
         self.assertEqual(self.t2.sent, [])
 
+    async def test_lone_waiting_occupant_detaching_does_not_abandon_the_session(self):
+        # Regression guard: a session with only one seat ever attached (the matchmaker's waiting
+        # slot, before a second player has paired in - see Matchmaker.join()) must NOT be treated
+        # as "both players abandoned a match" when that lone occupant disconnects. Otherwise a
+        # vanished lone waiter would kill the session outright, and a genuinely new second player
+        # could never pair into it and get the usual reconnect-grace treatment for the first
+        # player (see test_begin_running_arms_a_grace_timer_for_a_seat_already_disconnected_before_start).
+        self.session.attach(User.PLAYER_1, self.t1)
+        self.session.detach(User.PLAYER_1, self.t1)
+        await asyncio.sleep(0)
+        self.assertFalse(self.session.finished)
+        self.assertIsNone(self.session.seats[User.PLAYER_1].disconnect_task)
+
     async def test_reconnect_within_grace_cancels_the_timer(self):
         server_config.RECONNECT_GRACE_SECONDS = 5.0
         self.session.attach(User.PLAYER_1, self.t1)
@@ -147,28 +223,25 @@ class ConnectionStateTests(SessionTestBase):
             server_config.RECONNECT_GRACE_SECONDS = 30.0
 
     async def test_both_disconnected_abandons_with_no_winner(self):
-        server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 0.01
-        try:
-            self.session.attach(User.PLAYER_1, self.t1)
-            self.session.attach(User.PLAYER_2, self.t2)
-            self.session.detach(User.PLAYER_1, self.t1)
-            self.session.detach(User.PLAYER_2, self.t2)
-            await asyncio.sleep(0.05)
-            self.assertTrue(self.session.finished)
-            self.assertIsNone(self.session.env.winner)
-            self.assertEqual(self.finished_ids, ["game-1"])
-        finally:
-            server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 30.0
+        self.session.attach(User.PLAYER_1, self.t1)
+        self.session.attach(User.PLAYER_2, self.t2)
+        self.session.detach(User.PLAYER_1, self.t1)
+        self.session.detach(User.PLAYER_2, self.t2)
+        await asyncio.sleep(0.05)  # let the fire-and-forget abandon task run to completion
+        self.assertTrue(self.session.finished)
+        self.assertIsNone(self.session.env.winner)
+        self.assertEqual(self.finished_ids, ["game-1"])
 
-    async def test_sequential_disconnects_with_equal_grace_durations_abandons_not_forfeits(self):
-        # Regression test: RECONNECT_GRACE_SECONDS and BOTH_DISCONNECTED_GRACE_SECONDS are equal by
-        # default (config.py). When both seats disconnect sequentially (the realistic case, unlike
-        # the simultaneous double-detach in the test above), the first seat's own _disconnect_grace
-        # timer - started earlier, with the same duration - used to always win the race and force a
-        # win for the SECOND disconnector via force_end, even though they were equally absent by
-        # the time the timer fired. This must resolve as an abandonment instead.
-        server_config.RECONNECT_GRACE_SECONDS = 0.02
-        server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 0.02
+    async def test_sequential_disconnects_abandons_immediately_not_after_grace(self):
+        # Regression test: when both seats disconnect sequentially (the realistic case, unlike the
+        # simultaneous double-detach in the test above), the first seat's own _disconnect_grace
+        # timer - started earlier - used to always win the race and force a win for the SECOND
+        # disconnector once it elapsed, even though they were equally absent by then. Both-
+        # disconnected abandonment is now triggered immediately from detach() the moment the second
+        # player disconnects (which also cancels the first seat's still-pending _disconnect_grace
+        # task via _cancel_all_timers()), so this must resolve as an abandonment well before
+        # RECONNECT_GRACE_SECONDS could ever elapse.
+        server_config.RECONNECT_GRACE_SECONDS = 5.0
         try:
             self.session.attach(User.PLAYER_1, self.t1)
             self.session.attach(User.PLAYER_2, self.t2)
@@ -176,12 +249,11 @@ class ConnectionStateTests(SessionTestBase):
             await asyncio.sleep(0.005)  # a realistic gap, not a simultaneous double-detach
             self.session.detach(User.PLAYER_2, self.t2)
 
-            await asyncio.sleep(0.06)
+            await asyncio.sleep(0.05)  # let the fire-and-forget abandon task run to completion
             self.assertTrue(self.session.finished)
             self.assertIsNone(self.session.env.winner)
         finally:
             server_config.RECONNECT_GRACE_SECONDS = 30.0
-            server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 30.0
 
     async def test_begin_running_arms_a_grace_timer_for_a_seat_already_disconnected_before_start(self):
         # Reproduces the "ghost opponent" bug: a seat that vanished before the game ever started
@@ -209,18 +281,36 @@ class ConnectionStateTests(SessionTestBase):
         finally:
             server_config.RECONNECT_GRACE_SECONDS = 30.0
 
-    async def test_someone_returning_cancels_the_both_disconnected_timer(self):
-        server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 0.02
-        try:
-            self.session.attach(User.PLAYER_1, self.t1)
-            self.session.attach(User.PLAYER_2, self.t2)
-            self.session.detach(User.PLAYER_1, self.t1)
-            self.session.detach(User.PLAYER_2, self.t2)
-            self.session.attach(User.PLAYER_1, self.t1)
-            await asyncio.sleep(0.05)
-            self.assertFalse(self.session.finished)
-        finally:
-            server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 30.0
+    async def test_begin_running_abandons_immediately_if_both_seats_already_disconnected(self):
+        # Narrow, defensive-only scenario: both seats already show as not connected by the time
+        # begin_running() runs, without having gone through detach()'s own immediate-abandon path
+        # (which would already have handled it) - e.g. a transport failure flips `connected`
+        # without the usual detach() call. There's no opponent left to notify or wait out a grace
+        # period for, so this must abandon immediately rather than leaking the session with no
+        # cleanup path.
+        self.session.attach(User.PLAYER_1, self.t1)
+        self.session.attach(User.PLAYER_2, self.t2)
+        await self.session.prepare()
+        self.session.seats[User.PLAYER_1].connected = False
+        self.session.seats[User.PLAYER_2].connected = False
+
+        self.session.begin_running()
+        await asyncio.sleep(0.05)  # let the fire-and-forget abandon task run to completion
+        self.assertTrue(self.session.finished)
+        self.assertIsNone(self.session.env.winner)
+
+    async def test_reconnecting_before_the_abandon_task_runs_prevents_abandonment(self):
+        # detach() schedules _abandon() via asyncio.create_task() rather than running it inline,
+        # leaving a real (if brief) scheduling gap before it actually executes. _abandon() itself
+        # re-checks connection state when it runs (not just self.finished) specifically to cover a
+        # reconnect landing in that gap - this exercises exactly that path.
+        self.session.attach(User.PLAYER_1, self.t1)
+        self.session.attach(User.PLAYER_2, self.t2)
+        self.session.detach(User.PLAYER_1, self.t1)
+        self.session.detach(User.PLAYER_2, self.t2)  # schedules an _abandon() task
+        self.session.attach(User.PLAYER_1, self.t1)  # reconnects before that task gets to run
+        await asyncio.sleep(0)  # let the scheduled task actually run now
+        self.assertFalse(self.session.finished)
 
 
 class ForceEndTests(SessionTestBase):
@@ -370,16 +460,12 @@ class LifecycleLogTests(SessionTestBase):
         self.assertEqual(entries, [{"ts": entries[0]["ts"], "kind": "forced_end", "winner": "PLAYER_1", "reason": "concede"}])
 
     async def test_abandon_is_logged(self):
-        server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 0.01
-        try:
-            self.session.attach(User.PLAYER_1, self.t1)
-            self.session.attach(User.PLAYER_2, self.t2)
-            self.session.detach(User.PLAYER_1, self.t1)
-            self.session.detach(User.PLAYER_2, self.t2)
-            await asyncio.sleep(0.05)
-            self.assertIn("abandoned", self._kinds())
-        finally:
-            server_config.BOTH_DISCONNECTED_GRACE_SECONDS = 30.0
+        self.session.attach(User.PLAYER_1, self.t1)
+        self.session.attach(User.PLAYER_2, self.t2)
+        self.session.detach(User.PLAYER_1, self.t1)
+        self.session.detach(User.PLAYER_2, self.t2)
+        await asyncio.sleep(0.05)  # let the fire-and-forget abandon task run to completion
+        self.assertIn("abandoned", self._kinds())
 
 
 class PacketRejectionLoggingTests(SessionTestBase):

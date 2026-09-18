@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, ReorderDeck
-from ....core.AVGEIOManager import CardSelectionQuery, RevealCards, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, RevealCards, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -78,7 +78,9 @@ class ChristmasKim(AVGECharacterCard):
 
             n = min(5, len(deck))
             if n == 0:
-                await env.broadcast(BroadcastIO("Surprise Delivery, but there were no cards in deck.", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Surprise Delivery, but there were no cards in deck.", default_timeout,
+                ), _id)
                 return
 
             top_cards = list(deck.cards_holding[:n])

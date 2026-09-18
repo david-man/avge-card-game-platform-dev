@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any, Callable, Literal, Protocol
 
+from ..avge_abstracts.AVGECard import AVGECard
 from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..constants import ActionTypes, User, WinReasons
@@ -51,6 +52,15 @@ class PlayerSeat:
         self.websocket: Transport | None = None
         self.connected = False
         self.disconnect_task: asyncio.Task[None] | None = None
+        # Distinct from `connected`: stays True forever once attach() has been called at least
+        # once, even after a later detach(). Lets detach() tell "a real opponent was here and is
+        # now also gone" (a match both players abandoned) apart from "no opponent has ever been
+        # paired into this seat yet" (the matchmaker's lone waiting occupant) - see detach().
+        self.ever_attached = False
+        # The account's own selected/resolved deck (server/decks.py's build_game_deck output),
+        # set by Matchmaker.join() once that account's deck is known. None until then - see
+        # GameSession.configure_decks(), which requires both seats' decks to be set first.
+        self.deck: list[type[AVGECard]] | None = None
 
 
 class GameSession:
@@ -64,11 +74,36 @@ class GameSession:
         self._on_finished = on_finished
         self.seats: dict[User, PlayerSeat] = {user: PlayerSeat(user) for user in User}
         self.io = NetworkIO(self._send_to_user, self._on_transport_failure)
+        # A throwaway placeholder, not a real game's deck - AVGEEnvironment.__init__ is a heavy
+        # constructor that needs both players' full card lists simultaneously, but Matchmaker.
+        # join() only learns the second player's chosen deck well after this session already
+        # exists (PLAYER_1's own join constructs it, before any opponent exists to pair with).
+        # configure_decks() below replaces this outright with a real one once both seats' decks
+        # are known - kept here, rather than leaving self.env unset until then, purely so the many
+        # tests (and code paths like force_end()/_abandon()) that construct/act on a GameSession
+        # without ever calling prepare() still have a real, non-None self.env to work with.
         self.env = AVGEEnvironment(self.io, build_preset_decks(), default_core_listeners())
         self.task: asyncio.Task[None] | None = None
         self.finished = False
-        self._both_disconnected_task: asyncio.Task[None] | None = None
         self._lifecycle: list[dict[str, Any]] = []
+
+    def configure_decks(self) -> None:
+        '''Replaces the placeholder self.env with a real one built from both seats' resolved
+        decks (PlayerSeat.deck, set by Matchmaker.join()) - must be called after both are set and
+        before prepare()/begin_running(). Replacement, not mutation: AVGEEnvironment.__init__
+        builds self.cache from the complete card list at construction time, so swapping card
+        objects into an already-built environment would leave the cache silently stale.
+        self.io.register_to_environment() (core/AVGEIOManager.py) is a plain re-point with no
+        per-env state to migrate, so rebuilding is safe even though self.io itself isn't rebuilt.
+        Note this also re-rolls env.turn (who goes first, AVGEEnvironment.__init__) - harmless,
+        and arguably more correct once both real decks are actually known.'''
+        decks: dict[User, list[type[AVGECard]]] = {}
+        for user, seat in self.seats.items():
+            assert seat.deck is not None, f"{user.name} has no deck configured"
+            decks[user] = seat.deck
+        assert self.task is None and not self.finished, \
+            "configure_decks() must run before the game starts, not on a running/finished session"
+        self.env = AVGEEnvironment(self.io, decks, default_core_listeners())
 
     def _log_lifecycle(self, kind: str, **fields: Any) -> None:
         entry : dict[str, Any] = {"ts": time.time(), "kind": kind, **fields}
@@ -120,12 +155,16 @@ class GameSession:
         '''A seat can already be disconnected the moment the game actually starts running - e.g.
         the originally-queued player vanished before an opponent ever paired with them
         (Matchmaker.join() doesn't require the waiting seat to still be connected to pair a second
-        player into it). attach()-ing the *other* seat clears the stale _both_disconnected_task
-        without arming any replacement timer for the already-absent one, and detach() itself is a
-        no-op for a seat that's already disconnected - so without this, that seat's absence would
-        never be tracked by any timer for the rest of the match, leaving the connected opponent
-        stuck forever with no forced-win path. Mirrors exactly what detach() would have done had
-        the disconnection happened right now instead of before the game started.'''
+        player into it). detach() itself is a no-op for a seat that's already disconnected - so
+        without this, that seat's absence would never be tracked at all, leaving the connected
+        opponent stuck forever with no forced-win path (or, if both seats are already gone, the
+        session leaking forever with no cleanup path). Mirrors exactly what detach() would have
+        done had the disconnection happened right now instead of before the game started.'''
+        if all(not seat.connected for seat in self.seats.values()):
+            # Both already gone before the game even started running - same immediate-abandon
+            # path detach() takes; nobody to notify, nobody worth waiting on.
+            asyncio.create_task(self._abandon())
+            return
         for user, seat in self.seats.items():
             other = self.seats[user.next]
             if not seat.connected and seat.disconnect_task is None and other.connected:
@@ -197,12 +236,14 @@ class GameSession:
         self._log_lifecycle("attach", user=user.name, reconnect=seat.disconnect_task is not None)
         seat.websocket = websocket
         seat.connected = True
+        seat.ever_attached = True
         if seat.disconnect_task is not None:
             seat.disconnect_task.cancel()
             seat.disconnect_task = None
-        if self._both_disconnected_task is not None:
-            self._both_disconnected_task.cancel()
-            self._both_disconnected_task = None
+        # No _both_disconnected_task to cancel here anymore - both-disconnected abandonment is now
+        # scheduled immediately (detach()) rather than via a long-running cancellable timer, and
+        # _abandon() itself re-checks connection state at execution time to cover a reconnect
+        # landing in that scheduling gap.
         return True
 
     def detach(self, user: User, websocket: Transport | None) -> None:
@@ -221,8 +262,18 @@ class GameSession:
             return
         other = self.seats[user.next]
         if not other.connected:
-            if self._both_disconnected_task is None:
-                self._both_disconnected_task = asyncio.create_task(self._both_disconnected_grace())
+            if other.ever_attached:
+                # Both seats gone now, and `other` was a real occupant (not just an empty seat
+                # nobody has paired into yet) - abandon immediately rather than waiting out a
+                # grace period; this also cancels (via _cancel_all_timers() inside _abandon())
+                # whatever _disconnect_grace timer might still be running for `other` from when it
+                # disconnected first, so the earlier disconnector never gets awarded a win just for
+                # going first.
+                asyncio.create_task(self._abandon())
+            # else: `other` has never been attached at all - this is the matchmaker's lone waiting
+            # occupant vanishing before anyone paired with them, not "both players abandoned a
+            # match". Leave the session in place so a second player can still pair into it later
+            # (see test_begin_running_arms_a_grace_timer_for_a_seat_already_disconnected_before_start).
         else:
             seat.disconnect_task = asyncio.create_task(self._disconnect_grace(user))
             asyncio.create_task(self._notify_disconnected(other))
@@ -254,32 +305,26 @@ class GameSession:
         # this task before self._on_finished() ever ran.
         seat.disconnect_task = None
         if not self.seats[user.next].connected:
-            # The opponent vanished too while this timer was running - their own
-            # _both_disconnected_grace (started later, since it only gets scheduled once BOTH
-            # seats are down) hasn't fired yet, since it shares the same default duration as this
-            # timer. Without this check, whichever seat disconnected FIRST always "wins" the race
-            # and gets awarded the game via force_end below, even though they are equally absent -
-            # this is really an abandonment, not a forfeit to a present opponent.
+            # Defensive fallback, not the primary mechanism: both-disconnect abandonment is now
+            # triggered immediately from detach() the moment the second player disconnects (which
+            # also cancels this very timer via _cancel_all_timers()), so in the normal case this
+            # branch should be unreachable - the opponent's own detach() will have already called
+            # _abandon() and cancelled this task before its sleep could ever complete with the
+            # opponent still gone. Kept as a safety net anyway: this exact race (whichever seat
+            # disconnected first "winning" by default even though both are equally absent) has
+            # bitten this codebase once already (see the regression test in test_session.py).
             await self._abandon()
             return
         await self.force_end(winner=user.next, reason="disconnect_timeout")
 
-    async def _both_disconnected_grace(self) -> None:
-        try:
-            await asyncio.sleep(config.BOTH_DISCONNECTED_GRACE_SECONDS)
-        except asyncio.CancelledError:
-            return
-        if self.finished or any(seat.connected for seat in self.seats.values()):
-            return
-        # Same self-cancellation hazard as _disconnect_grace() above - this coroutine IS
-        # self._both_disconnected_task.
-        self._both_disconnected_task = None
-        await self._abandon()
-
     async def _abandon(self) -> None:
-        '''Both players gone and nobody returned in time - clean up with no winner declared;
-        nobody is left connected to receive a game_over message anyway.'''
-        if self.finished:
+        '''Both players gone - clean up with no winner declared; nobody is left connected to
+        receive a game_over message anyway. Callers that schedule this via asyncio.create_task()
+        (detach(), _arm_grace_timers_for_already_disconnected_seats()) leave a real scheduling gap
+        between "both were disconnected" and this actually running - re-checking connection state
+        here (not just self.finished) covers a reconnect landing in that gap, the same way
+        _disconnect_grace()'s own pre-flight check does for its call path.'''
+        if self.finished or any(seat.connected for seat in self.seats.values()):
             return
         self.finished = True
         self._log_lifecycle("abandoned")
@@ -317,9 +362,6 @@ class GameSession:
             if seat.disconnect_task is not None:
                 seat.disconnect_task.cancel()
                 seat.disconnect_task = None
-        if self._both_disconnected_task is not None:
-            self._both_disconnected_task.cancel()
-            self._both_disconnected_task = None
         self.io.cancel_backstops()
 
     # --- Termination ---

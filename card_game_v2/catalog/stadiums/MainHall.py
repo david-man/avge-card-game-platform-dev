@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...constants import ActionTypes, EngineGroup, ResponseStatus, default_timeout
 from ...core.EventCatalog import TransferCard, PlayNonCharacterCard
-from ...core.AVGEIOManager import BroadcastIO
+from ...core.AVGEIOManager import Notification
 from ...engine.event import Event
 
 if TYPE_CHECKING:
@@ -36,7 +36,9 @@ class MainHall(AVGEStadiumCard):
     async def play_card(self) -> None:
         env = self.env
         if env.round == 0:
-            await env.broadcast(BroadcastIO("MainHall cannot be played on the first turn.", default_timeout))
+            await env.report(Notification(
+                self.owner, "MainHall cannot be played on the first turn.", default_timeout,
+            ), AVGEEngineID(self, ActionTypes.NONCHAR, MainHall))
             return
         self.add_listener(_SmallEnsembleLimitRegulator(self, env, env.round + 1))
 
@@ -112,5 +114,17 @@ class _SmallEnsembleLimitRegulator(AVGEEventRegulator):
         return self._count_player_plays_this_round(player) >= 3
 
     async def respond(self, event: Event) -> ResponseStatus:
-        await self.env.broadcast(BroadcastIO("Main Hall: Small Ensemble Limit prevented this action!", default_timeout))
+        # Actor-only: whoever's play/transfer just tripped the round limit - mirrors match()'s
+        # own derivation of `player`, since that local doesn't survive into this call.
+        assert isinstance(event.id, AVGEEngineID)
+        if isinstance(event, PlayNonCharacterCard):
+            assert not callable(event.target_card)
+            player = event.target_card.owner
+        else:
+            assert isinstance(event, TransferCard)
+            assert not callable(event.card)
+            player = event.card.owner
+        await self.env.report(Notification(
+            player, "Main Hall: Small Ensemble Limit prevented this action!", default_timeout,
+        ), event.id)
         return ResponseStatus.REGULATE_FAIL

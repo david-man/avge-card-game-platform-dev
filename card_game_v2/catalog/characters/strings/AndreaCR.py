@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard, ReorderDeck
-from ....core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -62,9 +62,10 @@ class AndreaCR(AVGECharacterCard):
 
             consider_count = min(3, len(opponent_deck))
             if consider_count <= 1:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     "Foresight fizzled: not enough cards in the opponent's deck.", default_timeout,
-                ))
+                ), _id)
                 return
 
             top_cards = list(opponent_deck.cards_holding[:consider_count])
@@ -137,11 +138,12 @@ class AndreaCR(AVGECharacterCard):
             ] + [
                 c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            if not targets:
-                await env.broadcast(BroadcastIO("Snap Pizz failed: no opposing characters are in play.", default_timeout))
-                return
-
             _id = AVGEEngineID(card, self.resolve_caller(caller_action), AndreaCR)
+            if not targets:
+                await env.report(Notification(
+                    card.owner, "Snap Pizz failed: no opposing characters are in play.", default_timeout,
+                ), _id)
+                return
             picked = await env.report(CardSelectionQuery(
                 card.owner,
                 "Snap Pizz: Choose one opposing character to remove up to 2 energy from.",

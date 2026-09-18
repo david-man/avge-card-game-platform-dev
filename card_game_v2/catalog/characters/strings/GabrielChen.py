@@ -10,7 +10,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, CoinflipData, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery, CoinflipData, BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -133,7 +133,10 @@ class GabrielChen(AVGECharacterCard):
             for _ in range(2):
                 heads += await env.report(CoinflipData(card.owner, "Harmonics: Flip 2 coins."), _id)
             if heads != 2:
-                await env.broadcast(BroadcastIO(f"{card} used Harmonics, but they didn't roll both heads...", default_timeout))
+                await env.report(Notification(
+                    card.owner,
+                    f"{card} used Harmonics, but they didn't roll both heads...", default_timeout,
+                ), _id)
                 return
 
             mode_options = ["Deal 60 to three opposing characters", "Deal 70 to two opposing characters"]

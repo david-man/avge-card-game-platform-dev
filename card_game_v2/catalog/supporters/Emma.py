@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...constants import ActionTypes, EngineGroup, ResponseStatus, User, default_timeout
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Packet
 
 if TYPE_CHECKING:
@@ -35,7 +35,9 @@ class Emma(AVGESupporterCard):
             c for c in opponent_bench.cards_holding if isinstance(c, AVGECharacterCard)
         ]
         if not bench_candidates:
-            await env.broadcast(BroadcastIO("Opponent has no benched character to switch with.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Opponent has no benched character to switch with.", default_timeout,
+            ), _id)
             return
 
         picked = await env.report(CardSelectionQuery(
@@ -88,5 +90,10 @@ class _NextTurnSwapLockRegulator(AVGEEventRegulator):
         return self.env.round == self.round_active
 
     async def respond(self, event: Event) -> ResponseStatus:
-        await self.env.broadcast(BroadcastIO("Emma: this character cannot retreat this turn.", default_timeout))
+        # Actor-only: whoever's attempted retreat just got blocked - the opponent of Emma's own
+        # owner, already tracked as self.opponent.
+        assert isinstance(event.id, AVGEEngineID)
+        await self.env.report(Notification(
+            self.opponent, "Emma: this character cannot retreat this turn.", default_timeout,
+        ), event.id)
         return ResponseStatus.REGULATE_FAIL

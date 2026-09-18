@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEEventListener import AVGEEventRegulator
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, EngineGroup, ResponseStatus, default_timeout
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 if TYPE_CHECKING:
@@ -92,8 +92,14 @@ class BAIEmail(AVGEItemCard):
             return event.deck_to.deck_type == DeckType.STADIUM
 
         async def respond(self, event: Event) -> ResponseStatus:
-            await self.env.broadcast(BroadcastIO("BAIEmail: Stadium cards cannot be played right now.", default_timeout))
             assert isinstance(event, TransferCard)
+            assert not callable(event.card)
+            assert isinstance(event.id, AVGEEngineID)
+            # Actor-only: the person whose stadium play just got blocked, not necessarily
+            # BAIEmail's own owner - this lock applies to both players.
+            await self.env.report(Notification(
+                event.card.owner, "BAIEmail: Stadium cards cannot be played right now.", default_timeout,
+            ), event.id)
             if event.id.calling_action == ActionTypes.PLAYER_CHOICE:
                 return ResponseStatus.REGULATE_FAIL
             return ResponseStatus.REGULATE_IGNORE

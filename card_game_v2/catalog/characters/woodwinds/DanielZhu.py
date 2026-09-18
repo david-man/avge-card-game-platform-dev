@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ....core.AVGEIOManager import D6Input, IntInput, BroadcastIO
+from ....core.AVGEIOManager import D6Input, IntInput, BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -107,7 +107,9 @@ class DanielZhu(AVGECharacterCard):
             ), event.id)
             redirect_damage = max(0, min(max_redirect, redirect_damage))
             if redirect_damage <= 0:
-                await env.broadcast(BroadcastIO("Share the Pain: Redirected 0 damage to Daniel Zhu.", default_timeout))
+                await env.report(Notification(
+                    owner.owner, "Share the Pain: Redirected 0 damage to Daniel Zhu.", default_timeout,
+                ), event.id)
                 return
 
             event.modify_magnitude(-redirect_damage)

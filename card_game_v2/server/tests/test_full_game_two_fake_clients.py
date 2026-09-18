@@ -1,9 +1,11 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from ..app import create_app
-from ._ws_test_utils import QueuedWebSocket, drain_for_type, first_io_request, login
+from ._ws_test_utils import QueuedWebSocket, drain_for_type, first_io_request, login_with_deck
 
 
 class FullGameWiringTests(unittest.TestCase):
@@ -15,7 +17,9 @@ class FullGameWiringTests(unittest.TestCase):
     completion via real HP values, which would be slow and not add real coverage.'''
 
     def setUp(self):
-        self.app = create_app()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.app = create_app(data_dir=Path(self._tmpdir.name))
         # Used as a context manager (not just TestClient(self.app)) so every websocket_connect()
         # call in this test shares ONE portal/event loop, matching production's single shared
         # asyncio loop - otherwise each connection gets its own independent event loop, and a
@@ -29,7 +33,7 @@ class FullGameWiringTests(unittest.TestCase):
 
     def test_two_clients_join_pair_and_receive_game_start(self):
         with self.client.websocket_connect("/ws") as ws1:
-            login(ws1, "alice")
+            login_with_deck(self.client, ws1, "alice")
             ws1.send_json({"type": "join"})
             joined1 = ws1.receive_json()
             self.assertEqual(joined1["type"], "joined")
@@ -40,7 +44,7 @@ class FullGameWiringTests(unittest.TestCase):
             self.assertEqual(waiting["type"], "waiting_for_opponent")
 
             with self.client.websocket_connect("/ws") as ws2:
-                login(ws2, "bob")
+                login_with_deck(self.client, ws2, "bob")
                 ws2.send_json({"type": "join"})
                 joined2 = ws2.receive_json()
                 self.assertEqual(joined2["type"], "joined")
@@ -58,12 +62,12 @@ class FullGameWiringTests(unittest.TestCase):
         with self.client.websocket_connect("/ws") as raw1, self.client.websocket_connect("/ws") as raw2:
             ws1, ws2 = QueuedWebSocket(raw1), QueuedWebSocket(raw2)
 
-            login(ws1, "alice")
+            login_with_deck(self.client, ws1, "alice")
             ws1.send_json({"type": "join"})
             ws1.receive_json()  # joined
             ws1.receive_json()  # waiting_for_opponent
 
-            login(ws2, "bob")
+            login_with_deck(self.client, ws2, "bob")
             ws2.send_json({"type": "join"})
             ws2.receive_json()  # joined
             ws2.receive_json()  # game_start

@@ -8,7 +8,7 @@ from ...core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer
 from ...avge_abstracts.AVGECard import CardType
 from ...constants import AVGEAttributeModifier
 from ...engine.event import Packet
-from ...testing.helpers import Dummy, TestIO, core_listeners
+from ...testing.helpers import Dummy, DummySupporter, TestIO, core_listeners
 from .. import serialization
 from ..decks import CARDS_PER_DECK
 from ..game_setup import perform_initial_setup
@@ -108,6 +108,76 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
         rejected = [m for _, m in self.sent if m.get("io_type") == "ActionRejectedUpdate"]
         self.assertEqual(len(rejected), 2)  # the broadcast still ran
         self.assertEqual(calls, ["extra"])  # and the extra hook ran too
+
+
+class MixedDeckDealingTests(unittest.IsolatedAsyncioTestCase):
+    '''Covers the fix for decks that can now contain non-character cards - _deal_starting_hand
+    must find A character for the active slot, not just assume deck.cards_holding[0] is one.'''
+
+    async def asyncSetUp(self):
+        self.sent: list[tuple[User, dict]] = []
+
+        async def send_message(user, message):
+            self.sent.append((user, message))
+
+        async def on_failure(user):
+            pass
+
+        self.io = NetworkIO(send_message, on_failure)
+
+    def _make_env(self, p1_deck: list[type], p2_deck: list[type] | None = None) -> AVGEEnvironment:
+        env = AVGEEnvironment(self.io, {
+            User.PLAYER_1: p1_deck,
+            User.PLAYER_2: p2_deck if p2_deck is not None else [Dummy] * CARDS_PER_DECK,
+        }, core_listeners())
+        env.turn = User.PLAYER_1
+        return env
+
+    async def test_character_not_at_the_top_of_the_deck_still_becomes_active(self):
+        deck = [DummySupporter] * 7 + [Dummy] + [DummySupporter] * (CARDS_PER_DECK - 8)
+        env = self._make_env(deck)
+        await perform_initial_setup(env)
+        active = env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding
+        self.assertEqual(len(active), 1)
+        self.assertIsInstance(active[0], Dummy)
+
+    async def test_character_only_at_the_very_end_of_the_deck_still_becomes_active(self):
+        deck = [DummySupporter] * (CARDS_PER_DECK - 1) + [Dummy]
+        env = self._make_env(deck)
+        await perform_initial_setup(env)
+        active = env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding
+        self.assertEqual(len(active), 1)
+        self.assertIsInstance(active[0], Dummy)
+
+    async def test_hand_and_deck_sizes_unaffected_by_where_the_character_was(self):
+        deck = [DummySupporter] * (CARDS_PER_DECK - 1) + [Dummy]
+        env = self._make_env(deck)
+        await perform_initial_setup(env)
+        player = env.players[User.PLAYER_1]
+        self.assertEqual(len(player.card_piles[DeckType.HAND]), INITIAL_HAND_SIZE)
+        self.assertEqual(
+            len(player.card_piles[DeckType.DECK]), CARDS_PER_DECK - 1 - INITIAL_HAND_SIZE,
+        )
+
+    async def test_no_character_in_the_deck_raises_a_clear_error(self):
+        deck = [DummySupporter] * CARDS_PER_DECK
+        env = self._make_env(deck)
+        with self.assertRaises(ValueError):
+            await perform_initial_setup(env)
+
+    async def test_no_card_is_duplicated_or_lost_across_active_hand_and_deck(self):
+        deck = [DummySupporter] * 7 + [Dummy] + [DummySupporter] * (CARDS_PER_DECK - 8)
+        env = self._make_env(deck)
+        original_ids = {c.cardID for c in env.players[User.PLAYER_1].card_piles[DeckType.DECK].cards_holding}
+        await perform_initial_setup(env)
+        player = env.players[User.PLAYER_1]
+        after_ids = (
+            {c.cardID for c in player.card_piles[DeckType.ACTIVE_CARD].cards_holding}
+            | {c.cardID for c in player.card_piles[DeckType.HAND].cards_holding}
+            | {c.cardID for c in player.card_piles[DeckType.DECK].cards_holding}
+        )
+        self.assertEqual(original_ids, after_ids)
+        self.assertEqual(len(original_ids), CARDS_PER_DECK)
 
 
 if __name__ == "__main__":

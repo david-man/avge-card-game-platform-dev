@@ -1,9 +1,11 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from ..app import create_app
-from ._ws_test_utils import QueuedWebSocket, drain_for_type, login
+from ._ws_test_utils import QueuedWebSocket, drain_for_type, login, login_with_deck
 
 
 class LoginPrecedenceIntegrationTests(unittest.TestCase):
@@ -12,9 +14,11 @@ class LoginPrecedenceIntegrationTests(unittest.TestCase):
     isolation, already covered by test_matchmaker.py).'''
 
     def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
         # Shared portal across every websocket_connect() in this test - see
         # test_full_game_two_fake_clients.py's setUp for why a bare TestClient(app) is unsafe.
-        self.client = TestClient(create_app())
+        self.client = TestClient(create_app(data_dir=Path(self._tmpdir.name)))
         self.client.__enter__()
         self.addCleanup(lambda: self.client.__exit__(None, None, None))
 
@@ -35,14 +39,14 @@ class LoginPrecedenceIntegrationTests(unittest.TestCase):
     def test_reconnecting_via_auth_token_is_routed_straight_back_into_the_live_game(self):
         with self.client.websocket_connect("/ws") as raw1:
             ws1 = QueuedWebSocket(raw1)
-            login(ws1, "alice")
+            login_with_deck(self.client, ws1, "alice")
             ws1.send_json({"type": "join"})
             ws1.receive_json()  # joined
             ws1.receive_json()  # waiting_for_opponent
 
             with self.client.websocket_connect("/ws") as raw2:
                 ws2 = QueuedWebSocket(raw2)
-                login(ws2, "bob")
+                login_with_deck(self.client, ws2, "bob")
                 ws2.send_json({"type": "join"})
                 ws2.receive_json()  # joined
                 ws2.receive_json()  # game_start
@@ -75,7 +79,7 @@ class LoginPrecedenceIntegrationTests(unittest.TestCase):
         # to get a game_start built from the still-unprepared (no dealt hands) environment.
         with self.client.websocket_connect("/ws") as raw1:
             ws1 = QueuedWebSocket(raw1)
-            login(ws1, "alice")
+            login_with_deck(self.client, ws1, "alice")
             ws1.send_json({"type": "join"})
             ws1.receive_json()  # joined
             ws1.receive_json()  # waiting_for_opponent

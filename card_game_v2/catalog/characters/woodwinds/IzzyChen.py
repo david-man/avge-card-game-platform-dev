@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, ReorderDeck
-from ....core.AVGEIOManager import CardSelectionQuery, CoinflipData, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, CoinflipData, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -58,8 +58,8 @@ class IzzyChen(AVGECharacterCard):
 
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, IzzyChen)
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             return card._wrangler_last_used_round != card.env.round
 
         async def __call__(self, card: AVGECharacterCard) -> None:
@@ -73,9 +73,10 @@ class IzzyChen(AVGECharacterCard):
 
             flip = await env.report(CoinflipData(card.owner, "BAI Wrangler: Flip a coin."), _id)
             if flip != 1:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     "Izzy Chen used BAI Wrangler, but she did not roll heads...", default_timeout,
-                ))
+                ), _id)
                 return
 
             stadiums: list[AVGEStadiumCard] = [c for c in discard.cards_holding if isinstance(c, AVGEStadiumCard)]

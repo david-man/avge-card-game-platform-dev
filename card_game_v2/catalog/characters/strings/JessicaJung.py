@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, ReorderDeck, TransferCard
-from ....core.AVGEIOManager import CoinflipData, CardSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CoinflipData, CardSelectionQuery, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -56,8 +56,8 @@ class JessicaJung(AVGECharacterCard):
 
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, JessicaJung)
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             return card._cleric_spell_last_used_round != card.env.round
 
         async def __call__(self, card: AVGECharacterCard) -> None:
@@ -69,17 +69,20 @@ class JessicaJung(AVGECharacterCard):
             _id = AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, JessicaJung)
             heads = await env.report(CoinflipData(card.owner, "Cleric Spell: Flip a coin."), _id)
             if heads != 1:
-                await env.broadcast(BroadcastIO(
+                await env.report(Notification(
+                    card.owner,
                     "Jessica Jung used Cleric Spell, but she didn't roll a heads...", default_timeout,
-                ))
+                ), _id)
                 return
 
             discard = player.card_piles[DeckType.DISCARD]
             supporter_cards = [c for c in discard.cards_holding if isinstance(c, AVGESupporterCard)]
             if not supporter_cards:
-                await env.broadcast(BroadcastIO(
-                    "Jessica Jung used Cleric Spell, but there are no supporter cards in the discard pile...", default_timeout,
-                ))
+                await env.report(Notification(
+                    card.owner,
+                    "Jessica Jung used Cleric Spell, but there are no supporter cards in the discard pile...",
+                    default_timeout,
+                ), _id)
                 return
 
             picked = await env.report(CardSelectionQuery(

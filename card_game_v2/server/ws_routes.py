@@ -5,17 +5,44 @@ import logging
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from ..avge_abstracts.AVGECard import AVGECard
 from ..constants import User
+from . import deck_rules
+from . import decks as decks_module
 from . import protocol
 from . import serialization
 from .accounts import Account, AccountStore
+from .deck_store import DeckStore
 from .matchmaker import Matchmaker
 from .session import GameSession, safe_send
 
 logger = logging.getLogger(__name__)
 
 
-async def websocket_endpoint(websocket: WebSocket, matchmaker: Matchmaker, accounts: AccountStore) -> None:
+async def _resolve_selected_deck(decks: DeckStore, account_id: str) -> list[type[AVGECard]] | None:
+    '''The actual server-side enforcement of "you need a selected deck to play" - the frontend's
+    disabled Play button is only a UX nicety on top of this. Returns None (never raises) for
+    every failure mode: no deck selected, or a deck that WAS valid when saved but now references
+    a card that's since been removed/renamed from the catalog - deck_rules.validate_deck_cards()
+    is what a real deck builder already enforced at save time, so this is a defensive re-check,
+    not the primary gate.'''
+    stored = await decks.get_selected_deck(account_id)
+    if stored is None:
+        return None
+    try:
+        deck_rules.validate_deck_cards(stored.cards)
+    except deck_rules.DeckValidationError:
+        logger.warning(
+            "Account %s's selected deck %s no longer validates - treating as no deck selected",
+            account_id, stored.deck_id,
+        )
+        return None
+    return decks_module.build_game_deck(stored.cards)
+
+
+async def websocket_endpoint(
+    websocket: WebSocket, matchmaker: Matchmaker, accounts: AccountStore, decks: DeckStore,
+) -> None:
     await websocket.accept()
 
     try:
@@ -99,7 +126,7 @@ async def websocket_endpoint(websocket: WebSocket, matchmaker: Matchmaker, accou
                     if pending is not None:
                         await session.io.send(user, pending.io_obj)
 
-        await _message_loop(websocket, matchmaker, account, session, user)
+        await _message_loop(websocket, matchmaker, account, session, user, decks)
     except Exception:
         # The single place unexpected errors get logged - _message_loop() only ever catches
         # WebSocketDisconnect itself, so any real bug from in there surfaces here too.
@@ -111,7 +138,7 @@ async def websocket_endpoint(websocket: WebSocket, matchmaker: Matchmaker, accou
 
 async def _message_loop(
     websocket: WebSocket, matchmaker: Matchmaker, account: Account,
-    session: GameSession | None, user: User | None,
+    session: GameSession | None, user: User | None, decks: DeckStore,
 ) -> None:
     try:
         while True:
@@ -124,7 +151,16 @@ async def _message_loop(
 
             if session is None:
                 if isinstance(message, protocol.JoinMessage):
-                    joined_session, joined_user = await matchmaker.join(account.account_id)
+                    resolved_deck = await _resolve_selected_deck(decks, account.account_id)
+                    if resolved_deck is None:
+                        await safe_send(websocket, protocol.ErrorMessage(
+                            code="no_deck_selected",
+                            message="Select a valid deck in the deck builder before playing.",
+                        ).model_dump())
+                        continue
+                    joined_session, joined_user = await matchmaker.join(
+                        account.account_id, resolved_deck,
+                    )
                     if not joined_session.attach(joined_user, websocket):
                         # Narrow defense-in-depth window: joined_session.finished could in
                         # principle flip during the earlier `await joined_session.prepare()`

@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, EngineGroup, User, default_timeout
 from ...core.EventCatalog import PlayCharacterCard, TransferCard
-from ...core.AVGEIOManager import BroadcastIO
+from ...core.AVGEIOManager import BroadcastIO, Notification
 from ...engine.event import Event
 from ...catalog.stadiums.AlumnaeHall import AlumnaeHall
 from ...catalog.stadiums.FriedmanHall import FriedmanHall
@@ -43,13 +43,18 @@ class MikuOtamatone(AVGEItemCard):
 
     async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
         env = self.env
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, MikuOtamatone)
         if env.round == 0:
-            await env.broadcast(BroadcastIO("Cannot play Miku Otamatone on the first turn.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Cannot play Miku Otamatone on the first turn.", default_timeout,
+            ), _id)
             return
 
         stadium = env.stadium_cardholder.cards_holding[0] if len(env.stadium_cardholder) > 0 else None
         if not isinstance(stadium, _PERFORMANCE_HALLS):
-            await env.broadcast(BroadcastIO("Miku Otamatone can only be played in performance halls.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Miku Otamatone can only be played in performance halls.", default_timeout,
+            ), _id)
             return
 
         self.add_listener(MikuOtamatone._ThisTurnEnergyDiscount(self.owner, env))

@@ -64,8 +64,8 @@ class InaMa(AVGECharacterCard):
 
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, InaMa)
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             if card._borrow_a_bow_last_used_round == card.env.round:
                 return False
             return len(card._candidates()) > 0

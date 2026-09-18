@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard
-from ....core.AVGEIOManager import CoinflipData, BroadcastIO
+from ....core.AVGEIOManager import CoinflipData, BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -55,17 +55,21 @@ class EdwardWibowo(AVGECharacterCard):
             opponent = env.get_opponent(card.owner)
             opp_active = env.get_player_active(opponent)
             n = len(opp_active.energy_tokens)
+            _id = AVGEEngineID(card, self.resolve_caller(caller_action), EdwardWibowo)
             if n <= 0:
-                await env.broadcast(BroadcastIO("Packet Loss, but there was no energy to remove...", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Packet Loss, but there was no energy to remove...", default_timeout,
+                ), _id)
                 return
 
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), EdwardWibowo)
             heads = 0
             for _ in range(n):
                 heads += await env.report(CoinflipData(card.owner, "Packet Loss: Flip a coin!"), _id)
 
             if heads <= 0:
-                await env.broadcast(BroadcastIO("Packet Loss and got 0 heads...", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Packet Loss and got 0 heads...", default_timeout,
+                ), _id)
                 return
 
             removable = min(heads, len(opp_active.energy_tokens))

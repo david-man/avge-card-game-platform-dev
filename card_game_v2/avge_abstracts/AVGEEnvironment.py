@@ -45,6 +45,18 @@ class AVGEEnvironment:
             start_num += len(initial_deck)
             all_cards += initial_deck
 
+        # TurnEnd.act (core/EventCatalog.py) only re-seeds these per-turn allowances for whoever's
+        # turn is starting NEXT - it never runs before the very first turn, so without this, the
+        # player who goes first would play their entire first turn at AVGEPlayer.__init__'s zeroed
+        # defaults (no attacks, no swaps, no supporter use, no energy adds). Seed both players, not
+        # just whoever goes first (chosen below) - harmless for the other player, since TurnEnd
+        # overwrites these again once it's actually their turn.
+        for player in self.players.values():
+            player.attributes[AVGEPlayerAttribute.ATTACKS_LEFT] = PER_TURN_ATKS
+            player.attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] = PER_TURN_SWAPS
+            player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] = PER_TURN_SUPPORTER_USE
+            player.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] = PER_TURN_TOKEN_ADD
+
         owners : list[AVGECard | AVGEPlayer | Self] = all_cards + list(self.players.values()) + [self]
         self.cache = Cache(owners)
         self.engine: Engine = Engine(io_manager, self.cache)

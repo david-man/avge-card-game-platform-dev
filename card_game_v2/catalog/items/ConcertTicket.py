@@ -5,7 +5,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import BroadcastIO, default_timeout
+from ...core.AVGEIOManager import Notification, default_timeout
 from ...engine.event import Event, Generator, Packet
 
 
@@ -29,19 +29,19 @@ class ConcertTicket(AVGEItemCard):
         hand = player.card_piles[DeckType.HAND]
         deck = player.card_piles[DeckType.DECK]
 
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, ConcertTicket)
         current_hand_size = len(hand)
         if current_hand_size == 1:
-            await env.broadcast(BroadcastIO(
+            await env.report(Notification(
+                self.owner,
                 "Concert Ticket cannot be played as the only card in hand.", default_timeout,
-            ))
+            ), _id)
             return
 
         draw_needed = max(0, 4 - current_hand_size)
         draw_count = min(draw_needed, len(deck))
         if draw_count == 0:
             return
-
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, ConcertTicket)
         # deck.get_top() must be resolved lazily (once per draw, at that draw's own
         # execution time) - resolving it eagerly here would have every TransferCard in
         # this list reference the same, not-yet-moved top card.

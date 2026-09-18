@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, ResponseStatus, AVGEAttributeModifier, User, default_timeout
 from ....engine.event import Event, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, PlayCharacterCard, TransferCard
-from ....core.AVGEIOManager import BroadcastIO
+from ....core.AVGEIOManager import BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -123,9 +123,11 @@ class MeyaGao(AVGECharacterCard):
             return event.target_card is self.card_blocked
 
         async def respond(self, event: Event) -> ResponseStatus:
-            await self.env.broadcast(BroadcastIO(
+            assert isinstance(event.id, AVGEEngineID)
+            await self.env.report(Notification(
+                self.card_blocked.owner,
                 "Cannot attack this round due to Meya Gao's I See Your Soul!", default_timeout,
-            ))
+            ), event.id)
             return ResponseStatus.REGULATE_FAIL
 
     class _Distortion(Attack):

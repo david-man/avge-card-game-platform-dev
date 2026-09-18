@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Awaitable, Callable
 
+from ..avge_abstracts.AVGECard import AVGECharacterCard
 from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..constants import ActionTypes, INITIAL_HAND_SIZE
@@ -22,7 +23,20 @@ async def _deal_starting_hand(env: AVGEEnvironment, player: AVGEPlayer) -> None:
     active = player.card_piles[DeckType.ACTIVE_CARD]
     _id = AVGEEngineID(None, ActionTypes.ENV, None)
 
-    active_card = deck.cards_holding[0]
+    # The deck's own order is already fully shuffled by whoever built it (server/decks.py's
+    # build_preset_decks/build_game_deck) before it ever reaches here - so "the first character
+    # found from the top" is a uniformly random character selection, not necessarily (and, once
+    # decks can contain non-character cards, not safely assumable to be) deck.cards_holding[0].
+    # deck.transfer_card removes by identity (list.remove), not index, so pulling a card from the
+    # middle of the pile is no different from pulling the top one.
+    active_card = next(
+        (c for c in deck.cards_holding if isinstance(c, AVGECharacterCard)), None,
+    )
+    if active_card is None:
+        raise ValueError(
+            f"{player.id.name}'s deck contains no character card to start with - this should be "
+            "unreachable for any deck that passed deck_rules.validate_deck_cards()."
+        )
     events: list[Event | Generator] = [TransferCard(_id, active_card, deck, active, env)]
     for _ in range(INITIAL_HAND_SIZE):
         # Lazy - each of these 5 draws must read the CURRENT top of deck at the moment it

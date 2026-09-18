@@ -5,7 +5,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, RevealCards, BroadcastIO, default_timeout
+from ...core.AVGEIOManager import CardSelectionQuery, RevealCards, Notification, default_timeout
 from ...engine.event import Packet
 
 
@@ -17,18 +17,21 @@ class PrintedScore(AVGEItemCard):
 
     async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
         env = self.env
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, PrintedScore)
         if env.round == 0:
-            await env.broadcast(BroadcastIO("Cannot play Printed Score on the first turn.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Cannot play Printed Score on the first turn.", default_timeout,
+            ), _id)
             return
 
         opponent = env.get_opponent(self.owner)
         opponent_hand = opponent.card_piles[DeckType.HAND]
         opponent_discard = opponent.card_piles[DeckType.DISCARD]
         if len(opponent_hand) == 0:
-            await env.broadcast(BroadcastIO("Printed Score: Opponent has no cards in hand.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Printed Score: Opponent has no cards in hand.", default_timeout,
+            ), _id)
             return
-
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, PrintedScore)
         hand_choices = list(opponent_hand.cards_holding)
         picked = (await env.report(CardSelectionQuery(
             opponent.id,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEEnvironment import EnergyToken
-from ..avge_abstracts.AVGECard import AVGECharacterCard, CardType, AVGEStadiumCard, AVGESupporterCard, AVGECard, Attack
+from ..avge_abstracts.AVGECard import AVGECharacterCard, CardType, AVGEStadiumCard, AVGESupporterCard, AVGEToolCard, AVGECard, Attack
 from ..constants import User, ActionTypes, StatusEffect, AVGEStatusModifier, AVGEPlayerAttribute, AVGEAttributeModifier
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..engine.event import Packet
@@ -24,7 +24,8 @@ from ..engine.engine_io import ListenerReorderIO
 from ..core.CoreListeners import (
     AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
     AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
-    AVGERetreatCostReactor, AVGEPlayCharacterCardValidityCheck, AVGEPlayNonCharacterCardValidityCheck,
+    AVGERetreatCostReactor, AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck,
+    AVGEPlayNonCharacterCardValidityCheck,
 )
 from ..catalog.status_effects.Goon import (
     AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
@@ -108,11 +109,22 @@ class DummySupporter(AVGESupporterCard):
         return
 
 
+class DummyTool(AVGEToolCard):
+    '''A no-op tool, for tests that just need to drive a real TransferCard into a character's
+    tools_attached without any actual attach-time effect.'''
+    async def on_transfer(self, deck_from, deck_to, transfer_event):
+        return
+
+    async def play_card(self) -> None:
+        return
+
+
 def core_listeners():
     return [
         AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
         AVGEMaidDamageShieldModifier, AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
-        AVGERetreatCostReactor, AVGEPlayCharacterCardValidityCheck, AVGEPlayNonCharacterCardValidityCheck,
+        AVGERetreatCostReactor, AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck,
+        AVGEPlayNonCharacterCardValidityCheck,
         AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
         AVGEArrangerStatusReactor,
     ]

@@ -55,6 +55,41 @@ def login(ws: Any, username: str) -> dict[str, Any]:
     return message
 
 
+# A legal (CARDS_PER_DECK-card, exactly-one-character, no copy-limit violations) deck for tests
+# that need to actually queue for a game - one character plus 19 distinct items (items allow up
+# to 2 copies each, but using 19 distinct ones sidesteps that rule entirely rather than depending
+# on it). Kept in sync with deck_rules.py's rules by test_deck_rules.py/test_deck_store.py, not
+# re-verified here - if those ever fail, this fixture likely needs the same fix.
+_TEST_DECK_CARDS = [
+    "AshleyToby",
+    "AVGEBirb", "AnnotatedScore", "BAIEmail", "BUOStand", "Camera", "CastReserve",
+    "ConcertProgram", "ConcertRoster", "ConcertTicket", "CorruptedMusescoreFile",
+    "DressRehearsalRoster", "FoldingStand", "IceSkates", "MatchaLatte", "MikuOtamatone",
+    "Otamatone", "PrintedScore", "RaffleTicket", "StandardMusescoreFile",
+]
+
+
+def login_with_deck(client: Any, ws: Any, username: str) -> dict[str, Any]:
+    '''login() plus saving and selecting a valid deck via the real REST routes (server/
+    deck_routes.py) - Play/join now requires a selected deck (see ws_routes.py's
+    _resolve_selected_deck()), so any WS integration test that queues for a real game needs this
+    instead of the bare login() above. `client` is the same TestClient used for the websocket
+    connection(s) - going through the real HTTP routes (rather than poking a DeckStore directly)
+    also exercises the deck -> game wiring end to end.'''
+    message = login(ws, username)
+    headers = {"Authorization": f"Bearer {message['auth_token']}"}
+    created = client.post(
+        "/api/decks", json={"name": "Test Deck", "cards": _TEST_DECK_CARDS}, headers=headers,
+    )
+    created.raise_for_status()
+    deck_id = created.json()["deck"]["deck_id"]
+    selected = client.put(
+        "/api/decks/selected", json={"deck_id": deck_id}, headers=headers,
+    )
+    selected.raise_for_status()
+    return message
+
+
 def drain_for_type(qws: QueuedWebSocket, expected_type: str, timeout: float = 5.0) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     while True:

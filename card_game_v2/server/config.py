@@ -20,11 +20,14 @@ account roster, which - unlike everything else in this system - is meant to surv
 ACCOUNTS_FILE_PATH: Path = DATA_DIR / "accounts.json"
 """Username -> account roster, persisted across restarts - see accounts.py."""
 
+DECKS_DB_PATH: Path = DATA_DIR / "decks.sqlite3"
+"""Per-account saved decks + the currently-selected-deck preference - see deck_store.py. A
+separate SQLite database rather than another JSON file (unlike ACCOUNTS_FILE_PATH above) - decks
+are per-account and unbounded in aggregate, and the 10-deck cap needs a real atomic transaction,
+not just single-threaded-event-loop check-then-insert."""
+
 RECONNECT_GRACE_SECONDS: float = 30.0
 """How long a disconnected seat has to reconnect before the opponent is awarded the win."""
-
-BOTH_DISCONNECTED_GRACE_SECONDS: float = 30.0
-"""How long a session with both seats disconnected waits before being abandoned with no winner."""
 
 ACK_BACKSTOP_SECONDS: float = 5.0
 """Server-side backstop for acknowledgment-only IOTypes that carry no explicit `timeout` field

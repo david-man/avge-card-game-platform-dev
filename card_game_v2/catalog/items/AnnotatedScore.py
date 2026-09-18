@@ -5,7 +5,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO, default_timeout
+from ...core.AVGEIOManager import CardSelectionQuery, Notification, default_timeout
 from ...engine.event import Event, Generator, Packet
 
 
@@ -25,14 +25,14 @@ class AnnotatedScore(AVGEItemCard):
         opponent_hand = opponent.card_piles[DeckType.HAND]
         opponent_discard = opponent.card_piles[DeckType.DISCARD]
 
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, AnnotatedScore)
         if len(opponent_hand) == 0 or len(opponent_discard) == 0:
-            await env.broadcast(BroadcastIO(
+            await env.report(Notification(
+                self.owner,
                 "Annotated Score cannot be played: the opponent's hand or discard is empty.",
                 default_timeout,
-            ))
+            ), _id)
             return
-
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, AnnotatedScore)
 
         hand_choices = list(opponent_hand.cards_holding)
         hand_pick = (await env.report(CardSelectionQuery(

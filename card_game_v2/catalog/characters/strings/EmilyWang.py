@@ -55,8 +55,8 @@ class EmilyWang(AVGECharacterCard):
 
         def can_play(self, card: AVGECharacterCard) -> bool:
             assert isinstance(card, EmilyWang)
-            if card.env.turn != card.owner:
-                return False
+            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
+            # constructed (server/io_adapter.py's _deserialize_phase2).
             if len(card.tools_attached.cards_holding) == 0:
                 return False
             return card._profit_margins_last_used_round != card.env.round

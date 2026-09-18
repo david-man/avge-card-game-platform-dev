@@ -8,7 +8,7 @@ from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, EngineGroup, User, default_timeout
 from ...core.EventCatalog import PlayCharacterCard, TransferCard
-from ...core.AVGEIOManager import BroadcastIO
+from ...core.AVGEIOManager import BroadcastIO, Notification
 from ...engine.event import Event
 
 if TYPE_CHECKING:
@@ -29,7 +29,9 @@ class Otamatone(AVGEItemCard):
     async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
         env = self.env
         if env.round == 0:
-            await env.broadcast(BroadcastIO("Cannot play Otamatone on the first turn.", default_timeout))
+            await env.report(Notification(
+                self.owner, "Cannot play Otamatone on the first turn.", default_timeout,
+            ), AVGEEngineID(self, ActionTypes.NONCHAR, Otamatone))
             return
 
         self.add_listener(Otamatone._ThisTurnEnergyDiscount(self.owner, env))

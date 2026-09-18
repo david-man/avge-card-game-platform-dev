@@ -101,7 +101,6 @@ class AVGEPlayerAttribute(StrEnum):
 
     # game specific
     KO_COUNT = "KO_COUNT"
-    TOTAL_ENERGY_TOKENS = "TOTAL_ENERGY_TOKENS"
 
 class WinReasons(StrEnum):
     ALL_KOS = "ALL_KOS"

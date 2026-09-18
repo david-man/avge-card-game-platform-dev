@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ....core.AVGEIOManager import CoinflipData, BroadcastIO
+from ....core.AVGEIOManager import CoinflipData, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -58,7 +58,9 @@ class CocoZeng(AVGECharacterCard):
             assert isinstance(card, CocoZeng)
             env = card.env
             if card._last_glissando_round == env.round - 2:
-                await env.broadcast(BroadcastIO("Glissando cannot be used this turn.", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Glissando cannot be used this turn.", default_timeout,
+                ), AVGEEngineID(card, self.resolve_caller(caller_action), CocoZeng))
                 return
 
             opponent = env.get_opponent(card.owner)
@@ -82,13 +84,13 @@ class CocoZeng(AVGECharacterCard):
             env = card.env
             player = env.players[card.owner]
             n = len(player.card_piles[DeckType.HAND])
-            if n <= 0:
-                await env.broadcast(BroadcastIO(
-                    "Inventory Management, but there was no inventory to manage...", default_timeout,
-                ))
-                return
-
             _id = AVGEEngineID(card, self.resolve_caller(caller_action), CocoZeng)
+            if n <= 0:
+                await env.report(Notification(
+                    card.owner,
+                    "Inventory Management, but there was no inventory to manage...", default_timeout,
+                ), _id)
+                return
             heads = 0
             for _ in range(n):
                 heads += await env.report(CoinflipData(card.owner, "Inventory Management: Flip a coin for each card in your hand."), _id)

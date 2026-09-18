@@ -7,7 +7,7 @@ from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ...core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 from .AVGEBirb import AVGEBirb
 
@@ -25,12 +25,14 @@ class RaffleTicket(AVGEItemCard):
         deck = player.card_piles[DeckType.DECK]
         hand = player.card_piles[DeckType.HAND]
 
+        _id = AVGEEngineID(self, ActionTypes.NONCHAR, RaffleTicket)
         if len(deck) == 0:
-            await env.broadcast(BroadcastIO("RaffleTicket: No cards in deck to draw.", default_timeout))
+            await env.report(Notification(
+                self.owner, "RaffleTicket: No cards in deck to draw.", default_timeout,
+            ), _id)
             return
 
         bottom_card = deck.cards_holding[-1]
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, RaffleTicket)
 
         heal_target: AVGECharacterCard | None = None
         if isinstance(bottom_card, AVGEBirb):

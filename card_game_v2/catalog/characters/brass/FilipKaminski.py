@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ....core.AVGEIOManager import StringSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import StringSelectionQuery, BroadcastIO, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -66,10 +66,9 @@ class FilipKaminski(AVGECharacterCard):
             deck = player.card_piles[DeckType.DECK]
 
             if len(deck) == 0:
-                await env.broadcast(BroadcastIO(
-                    "Heart of the Cards, but it did nothing...",
-                    default_timeout,
-                ))
+                await env.report(Notification(
+                    card.owner, "Heart of the Cards, but it did nothing...", default_timeout,
+                ), AVGEEngineID(card, self.resolve_caller(caller_action), FilipKaminski))
                 return
 
             possible_names = sorted({
@@ -104,12 +103,13 @@ class FilipKaminski(AVGECharacterCard):
                     CardType.BRASS,
                     env,
                 ))
-                message = "Heart of the Cards and it HIT!"
+                env.push_packet(Packet(_id, events))
+                await env.broadcast(BroadcastIO("Heart of the Cards and it HIT!", default_timeout))
             else:
-                message = "Heart of the Cards, but it didn't hit..."
-
-            env.push_packet(Packet(_id, events))
-            await env.broadcast(BroadcastIO(message, default_timeout))
+                env.push_packet(Packet(_id, events))
+                await env.report(Notification(
+                    card.owner, "Heart of the Cards, but it didn't hit...", default_timeout,
+                ), _id)
 
     class _IntenseEcho(Attack):
         def __init__(self):

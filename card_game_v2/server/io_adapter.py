@@ -4,6 +4,7 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
+from ..avge_abstracts.AVGEDeck import AVGEToolHolder, DeckType
 from ..avge_abstracts.AVGECard import (
     AVGECard, AVGECharacterCard, AVGEItemCard, AVGESupporterCard, AVGEToolCard, AVGEStadiumCard,
 )
@@ -66,10 +67,15 @@ def _wire_deck_ref(deck: AVGEDeck) -> dict[str, Any]:
     # `# type: ignore` at that construction site) - this cast documents that the declared type is
     # known-inaccurate for that one case, rather than silencing the check on the comparison below.
     owner = cast("AVGEPlayer | None", deck.deck_owner)
-    return {
+    wire: dict[str, Any] = {
         "owner": owner.id.name if owner is not None else None,
         "deck_type": deck.deck_type.name,
     }
+    if isinstance(deck, AVGEToolHolder):
+        # OFFHAND has no meaningful per-player pile (every character has its own tool holder) -
+        # deck_owner alone can't say which character, so the wire ref also carries which one.
+        wire["parent_card_id"] = deck.parent_card.cardID
+    return wire
 
 
 class NetworkIO(AVGEIO):
@@ -233,9 +239,30 @@ class NetworkIO(AVGEIO):
         if isinstance(io, ShowBoxedStrings):
             return {"strings": io.strings_to_show}
         if isinstance(io, Phase2IO):
-            return {}
+            assert self.env is not None
+            player = self.env.players[io.user_for]
+            # Drives the board's per-card "Activate Ability" button (see board/hud/CardView.tsx) -
+            # can_play() is the exact same legality check PlayCharacterCard will run when the
+            # response actually resolves (see EventCatalog.py's Phase2ActivateAbility branch), so
+            # this hint can't drift out of sync with what the server will actually accept.
+            activatable_ability_card_ids = [
+                card.cardID
+                for card in serialization.characters_in_play(player)
+                for ability in card.abilities.values()
+                if ability.ability_type == ActionTypes.ACTIVATE_ABILITY and ability.can_play(card)
+            ]
+            return {"activatable_ability_card_ids": activatable_ability_card_ids}
         if isinstance(io, AtkPhaseIO):
-            return {}
+            assert self.env is not None
+            active = serialization.active_card(self.env.players[io.user_for])
+            # Which attack buttons the board should draw next to the active card - a character
+            # missing ATK_2 (see AVGECharacterCard.base_attacks()) simply never gets that key, so
+            # this list is 1 or 2 entries long, never a fixed 2. SKIP isn't included: it's always
+            # legal regardless of the active card, so the board shows it unconditionally instead.
+            available_attacks = (
+                [action.value for action in active.attacks] if active is not None else []
+            )
+            return {"available_attacks": available_attacks}
         if isinstance(io, CardSelectionQuery):
             return {
                 "header_msg": io.header_msg,
@@ -299,9 +326,15 @@ class NetworkIO(AVGEIO):
                 "made_modification": io.made_modification,
             }
         if isinstance(io, EnergyTransferUpdate):
+            # env_energy_remaining rides alongside token_from/token_to (rather than folding into
+            # _wire_endpoint's "ENV" string, which StatusChangeUpdate's unrelated `giver` field
+            # also uses and shouldn't gain a count) so the client always has the fresh,
+            # authoritative post-transfer pool size instead of tracking it via its own arithmetic.
+            assert self.env is not None
             return {
                 "token_from": _wire_endpoint(io.token_from),
                 "token_to": _wire_endpoint(io.token_to),
+                "env_energy_remaining": len(self.env.energy_tokens),
             }
         if isinstance(io, PlayerAttributeUpdate):
             return {
@@ -412,6 +445,15 @@ class NetworkIO(AVGEIO):
         raise IOException(f"No deserializer for IOType {type(io).__name__!r}")
 
     def _deserialize_phase2(self, env: AVGEEnvironment, data: dict[str, Any]):
+        # Every branch below resolves client-named card ids/deck refs via serialization.resolve_*,
+        # which searches BOTH players' piles with no ownership filtering - so every branch must
+        # independently verify the resolved card(s)/deck(s) actually belong to the player this
+        # Phase2IO request is for (always env.turn - a Phase2IO is only ever pending for env.turn,
+        # and NetworkIO's request-id tracking means this response can only resolve that user's own
+        # pending future, so env.turn is the correct "acting player" reference throughout).
+        # Without these checks a client could name the opponent's cards/piles directly - stealing
+        # cards/energy, forcing an opponent's active-character swap, or crashing the engine by
+        # naming a card that isn't where the handler assumes it is.
         kind = data.get("kind")
         if kind == "finish":
             return Phase2Finish()
@@ -419,6 +461,10 @@ class NetworkIO(AVGEIO):
             card = serialization.resolve_card(env, str(data.get("card_id")))
             if not isinstance(card, AVGECharacterCard):
                 raise IOException(f"Invalid card_id for activate_ability: {data.get('card_id')!r}")
+            if card.owner != env.turn:
+                raise IOException(f"Cannot activate an ability on a card you don't own: {data.get('card_id')!r}")
+            if card.deck_type not in (DeckType.BENCH, DeckType.ACTIVE_CARD):
+                raise IOException(f"Cannot activate an ability on a card that isn't in play: {data.get('card_id')!r}")
             return Phase2ActivateAbility(card=card)
         if kind == "energy_attach":
             token_from = self._resolve_energy_endpoint(env, data.get("token_from"))
@@ -428,15 +474,72 @@ class NetworkIO(AVGEIO):
             card = serialization.resolve_card(env, str(data.get("card_id")))
             if not isinstance(card, (AVGECharacterCard, AVGEToolCard, AVGEStadiumCard)):
                 raise IOException(f"Invalid card_id for card_movement: {data.get('card_id')!r}")
+            if card.owner != env.turn:
+                raise IOException(f"Cannot move a card you don't own: {data.get('card_id')!r}")
             deck_from = self._resolve_deck_field(env, data.get("deck_from"))
             deck_to = self._resolve_deck_field(env, data.get("deck_to"))
+            self._require_acting_players_deck(env, deck_from, "deck_from")
+            self._require_acting_players_deck(env, deck_to, "deck_to")
+            # Retreating is only ever initiated as BENCH -> ACTIVE_CARD - EventCatalog.py's
+            # Phase2CardMovement handling auto-appends the outgoing active card's own
+            # ACTIVE_CARD -> BENCH transfer as part of that same swap. A *direct* client request
+            # naming the active card as deck_from has no such pairing, so it would either leave
+            # the active slot permanently empty (if a retreat-cost-shaped energy transfer happens
+            # to succeed) or roll back only after already broadcasting a phantom CardMovedUpdate -
+            # reject it outright, for every destination, before it ever becomes an orphaned
+            # TransferCard (not just BENCH - DISCARD/HAND/DECK reproduce the exact same crash).
+            if isinstance(card, AVGECharacterCard) and deck_from.deck_type == DeckType.ACTIVE_CARD:
+                raise IOException(
+                    "Retreating must be initiated by moving a bench character into the active "
+                    "slot, not by moving the active character out."
+                )
+            # Symmetrically, a stadium only ever leaves play via a card effect's own internal
+            # TransferCard construction (e.g. BAIEmail) or the auto-replace-on-new-play reactor
+            # (AVGEStadiumReplaceReactor, core/CoreListeners.py) - never a direct client request.
+            if deck_from.deck_type == DeckType.STADIUM:
+                raise IOException("The stadium can't be removed this way.")
+            # Only a character card may ever land on the bench or in the active slot - with an
+            # all-character preset deck this was structurally unreachable (tools/stadiums never
+            # even resolved past the isinstance check above with a BENCH/ACTIVE_CARD deck_to), but
+            # a real deck builder makes mixed decks the norm. Load-bearing, not cosmetic:
+            # AVGEHPChangeReactor's active-KO bench-replacement flow (core/CoreListeners.py)
+            # asserts the incoming card is a character - a tool sneaking onto the bench turns a KO
+            # into an engine crash. AVGETransferValidityCheck (core/CoreListeners.py) is the
+            # authoritative engine-level guard for every PLAYER_CHOICE transfer path, not just
+            # this one - this check just gives a clean, immediate rejection instead of a
+            # REGULATE_FAIL a step later.
+            if (
+                deck_to.deck_type in (DeckType.BENCH, DeckType.ACTIVE_CARD)
+                and not isinstance(card, AVGECharacterCard)
+            ):
+                raise IOException("Only character cards can be played to the bench or active slot.")
+            # Symmetrically, TransferCard.act() asserts the card is an AVGEStadiumCard/AVGEToolCard
+            # for these two destinations - without this check, a client naming e.g. its own
+            # character card as deck_to=STADIUM sails through every check above (it's their own
+            # card, going to a real deck) and hits that assert, crashing the engine and force-
+            # ending the match for both players via GameSession._fail().
+            if deck_to.deck_type == DeckType.STADIUM and not isinstance(card, AVGEStadiumCard):
+                raise IOException("Only stadium cards can be played to the stadium slot.")
+            if deck_to.deck_type == DeckType.OFFHAND and not isinstance(card, AVGEToolCard):
+                raise IOException("Only tool cards can be attached as offhand items.")
             return Phase2CardMovement(card=card, deck_from=deck_from, deck_to=deck_to)
         if kind == "play_card":
             card = serialization.resolve_card(env, str(data.get("card_id")))
             if not isinstance(card, (AVGEItemCard, AVGESupporterCard)):
                 raise IOException(f"Invalid card_id for play_card: {data.get('card_id')!r}")
+            if card.owner != env.turn or card.deck_type != DeckType.HAND:
+                raise IOException(f"Cannot play a card that isn't in your hand: {data.get('card_id')!r}")
             return Phase2PlayCard(card=card)
         raise IOException(f"Unknown Phase2IO response kind: {kind!r}")
+
+    def _require_acting_players_deck(self, env: AVGEEnvironment, deck: AVGEDeck, field_name: str) -> None:
+        '''deck.deck_owner is already the right reference to check even for a tool holder (it's
+        set to the parent character's own owner - avge_abstracts/AVGECard.py) and is None only for
+        the shared STADIUM deck (no owner to check), so this one check covers every deck type
+        uniformly with no special-casing.'''
+        owner = cast("AVGEPlayer | None", deck.deck_owner)
+        if owner is not None and owner.id != env.turn:
+            raise IOException(f"{field_name} does not belong to you: {deck.deck_type.name!r}")
 
     def _resolve_energy_endpoint(self, env: AVGEEnvironment, raw: Any) -> AVGECharacterCard | AVGEEnvironment:
         if raw == "ENV":
@@ -444,6 +547,10 @@ class NetworkIO(AVGEIO):
         card = serialization.resolve_card(env, str(raw))
         if not isinstance(card, AVGECharacterCard):
             raise IOException(f"Invalid energy_attach endpoint: {raw!r}")
+        if card.owner != env.turn:
+            raise IOException(f"energy_attach endpoint does not belong to you: {raw!r}")
+        if card.deck_type not in (DeckType.BENCH, DeckType.ACTIVE_CARD):
+            raise IOException(f"energy_attach endpoint must be in play: {raw!r}")
         return card
 
     def _resolve_deck_field(self, env: AVGEEnvironment, raw_obj: Any):
@@ -459,8 +566,12 @@ class NetworkIO(AVGEIO):
                 owner = User[str(raw["owner"])]
             except KeyError as exc:
                 raise IOException(f"Invalid deck owner: {raw['owner']!r}") from exc
+        parent_card_id = raw.get("parent_card_id")
         try:
-            return serialization.resolve_deck(env, owner, str(raw["deck_type"]))
+            return serialization.resolve_deck(
+                env, owner, str(raw["deck_type"]),
+                str(parent_card_id) if parent_card_id is not None else None,
+            )
         except KeyError as exc:
             raise IOException(f"Invalid deck reference: {raw!r}") from exc
 

@@ -675,6 +675,18 @@ class Phase2(Event):
                         res.deck_from,
                         self.env
                     ))
+                    # AVGETransferValidityCheck only REJECTS once this hits 0 - nothing else in
+                    # this case ever decremented it, so a player could otherwise swap as many
+                    # times as they liked in one turn.
+                    events.append(AVGEPlayerAttributeChange(
+                        AVGEEngineID(
+                            None, ActionTypes.PLAYER_CHOICE, None),
+                        self.env.get_current_player(),
+                        AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        1,
+                        self.env
+                    ))
                 self.env.push_packet(Packet(
                     AVGEEngineID(
                         None, ActionTypes.PLAYER_CHOICE, None),
@@ -682,18 +694,34 @@ class Phase2(Event):
                 ))
                 self.env.append_packet(return_to_phase_2)
             case Phase2EnergyAttach():
+                energy_events: list[Event | Generator] = [
+                    AVGEEnergyTransfer(
+                        AVGEEngineID(
+                            None, ActionTypes.PLAYER_CHOICE, None),
+                        res.token_from,
+                        res.token_to,
+                        self.env
+                    )
+                ]
+                if isinstance(res.token_to, AVGECharacterCard):
+                    # AVGETokenTransferCheck only REJECTS once this hits 0 - nothing else ever
+                    # decremented it, so a player could otherwise attach unlimited energy in one
+                    # turn. Matches that check's own gating (token_to being a character) rather
+                    # than assuming every Phase2EnergyAttach attaches to one, since token_to can
+                    # also be the environment.
+                    energy_events.append(AVGEPlayerAttributeChange(
+                        AVGEEngineID(
+                            None, ActionTypes.PLAYER_CHOICE, None),
+                        self.env.get_current_player(),
+                        AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN,
+                        AVGEAttributeModifier.SUBSTRACTIVE,
+                        1,
+                        self.env
+                    ))
                 self.env.push_packet(Packet(
                     AVGEEngineID(
                         None, ActionTypes.PLAYER_CHOICE, None),
-                    [
-                        AVGEEnergyTransfer(
-                            AVGEEngineID(
-                                None, ActionTypes.PLAYER_CHOICE, None),
-                            res.token_from,
-                            res.token_to,
-                            self.env
-                        )
-                    ]
+                    energy_events
                 ))
                 self.env.append_packet(return_to_phase_2)
             case Phase2Finish():

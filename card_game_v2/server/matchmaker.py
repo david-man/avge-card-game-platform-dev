@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from ..avge_abstracts.AVGECard import AVGECard
 from ..constants import User
 from . import protocol
 from .session import GameSession, Transport, safe_send
@@ -56,14 +57,22 @@ class Matchmaker:
             return None
         return session, user
 
-    async def join(self, account_id: str) -> tuple[GameSession, User]:
-        '''Called when an account sends "join". Returns the (session, user) it's placed into -
-        the account's already-active session if it has one (so calling this more than once for
-        the same account, e.g. a duplicate "join" message, can never seat one account twice), or
-        a freshly paired/created one otherwise. The caller (ws_routes.py) is responsible for
-        calling session.attach(user, websocket) immediately after this returns, and - when this
-        call paired two players (PLAYER_2's return) - for calling session.begin_running() only
-        once both clients have received game_start, so no event traffic can race ahead of it.'''
+    async def join(
+        self, account_id: str, deck: list[type[AVGECard]],
+    ) -> tuple[GameSession, User]:
+        '''Called when an account sends "join". `deck` is that account's own resolved, shuffled
+        deck (server/decks.py's build_game_deck output) - required, not defaulted, so a caller can
+        never accidentally queue someone with no deck of their own (see ws_routes.py's
+        _resolve_selected_deck(), which is what actually enforces "you need a selected deck to
+        play" before this is ever called). Returns the (session, user) it's placed into - the
+        account's already-active session if it has one (so calling this more than once for the
+        same account, e.g. a duplicate "join" message, can never seat one account twice - and
+        never re-resolves their deck either, since a reconnect to a live game must use whatever
+        deck the game already started with), or a freshly paired/created one otherwise. The caller
+        (ws_routes.py) is responsible for calling session.attach(user, websocket) immediately
+        after this returns, and - when this call paired two players (PLAYER_2's return) - for
+        calling session.begin_running() only once both clients have received game_start, so no
+        event traffic can race ahead of it.'''
         found = self.find_active_game(account_id)
         if found is not None:
             return found
@@ -71,14 +80,22 @@ class Matchmaker:
         if self._waiting is not None and not self._waiting.finished:
             session = self._waiting
             self._waiting = None
-            await session.prepare()
+            # Registering the account (both the seat's own account_id and the matchmaker's own
+            # account_id -> session lookup) BEFORE awaiting prepare() closes a small pre-existing
+            # gap: a duplicate "join" for this same account arriving while prepare() is still
+            # in-flight used to find neither _waiting (already cleared above) nor a registry entry
+            # (previously set one line after this await), and could spin up a stray third session.
             session.seats[User.PLAYER_2].account_id = account_id
+            session.seats[User.PLAYER_2].deck = deck
             self._active_game_by_account[account_id] = (session.id, User.PLAYER_2)
+            session.configure_decks()
+            await session.prepare()
             return session, User.PLAYER_2
 
         session = GameSession(str(uuid.uuid4()), self._on_session_finished)
         self.sessions[session.id] = session
         session.seats[User.PLAYER_1].account_id = account_id
+        session.seats[User.PLAYER_1].deck = deck
         self._active_game_by_account[account_id] = (session.id, User.PLAYER_1)
         self._waiting = session
         return session, User.PLAYER_1

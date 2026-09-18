@@ -8,7 +8,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
-from ....core.AVGEIOManager import BroadcastIO
+from ....core.AVGEIOManager import Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -57,7 +57,9 @@ class HenryWang(AVGECharacterCard):
             assert isinstance(card, HenryWang)
             env = card.env
             if card._last_glissando_round == env.round - 2:
-                await env.broadcast(BroadcastIO("Glissando cannot be used this turn.", default_timeout))
+                await env.report(Notification(
+                    card.owner, "Glissando cannot be used this turn.", default_timeout,
+                ), AVGEEngineID(card, self.resolve_caller(caller_action), HenryWang))
                 return
 
             opponent = env.get_opponent(card.owner)
