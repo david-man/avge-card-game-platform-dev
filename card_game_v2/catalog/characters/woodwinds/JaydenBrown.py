@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEIOListener
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -45,11 +45,9 @@ class JaydenBrown(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._HyperVentilation()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._HyperVentilation()}), **({ActionTypes.PASSIVE: self._FourLeafCloverPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._FourLeafCloverPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -59,13 +57,11 @@ class JaydenBrown(AVGECharacterCard):
             super().__init__(
                 name="Four-leaf Clover",
                 description="Once per round, while active, may force your first coinflip of the round to heads.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, JaydenBrown)
             if card._four_leaf_clover is None:
                 card._four_leaf_clover = JaydenBrown._FourLeafCloverListener(card, card.env)
@@ -112,15 +108,17 @@ class JaydenBrown(AVGECharacterCard):
             super().__init__(
                 name="Hyper-Ventilation!",
                 description="Roll a D6. Deal 30 + 10 per pip damage to the opposing active.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JaydenBrown)
+            _id = AVGEEngineID(card, self.action_type, JaydenBrown)
 
             roll = await env.report(D6Input(card.owner, "Hyper-Ventilation!: Roll a D6."), _id)
             damage = 30 + (10 * roll)

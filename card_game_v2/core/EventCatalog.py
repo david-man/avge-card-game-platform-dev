@@ -248,6 +248,10 @@ class AVGEEnergyTransfer(Event):
         self._transferred_token = None
         self.env = env
 
+    @property
+    def did_transfer(self) -> bool:
+        return self._transferred_token is not None
+
     async def act(self) -> None:
         '''Defines what the event does'''
         assert not callable(self.token_from)
@@ -313,23 +317,40 @@ class TransferCard(Event):
                  card: AVGECard | Callable[[], AVGECard],
                  deck_from: AVGEDeck | Callable[[], AVGEDeck],
                  deck_to: AVGEDeck | Callable[[], AVGEDeck],
-                 env: AVGEEnvironment):
-        super().__init__(id=id, card=card, deck_from=deck_from, deck_to=deck_to, env=env)
+                 env: AVGEEnvironment,
+                 cost: int | Callable[[], int] = 0):
+        super().__init__(id=id, card=card, deck_from=deck_from, deck_to=deck_to, env=env, cost=cost)
         self.id = id
         self.card = card
         self.deck_from = deck_from
         self.deck_to = deck_to
         self.env = env
+        # Only ever meaningful for the ACTIVE_CARD -> BENCH leg of a retreat (see
+        # Phase2CardMovement's own construction site below and A2's retreat-cost fix):
+        # 0 for every other transfer, which is a no-op everywhere this is read/charged.
+        # Kiki's/GOON's/Petteruti's cost effects are plain EXTERNAL_MODIFIERS_1
+        # modifiers on this field now, instead of the old regulator-plus-reactor pairs
+        # that could never see each other's adjustments (see each of their own files).
+        self.cost = cost
 
     async def _on_character_entry(self, card : AVGECharacterCard):
         _id = AVGEEngineID(card, ActionTypes.PASSIVE, type(card))
-        if(ActionTypes.PASSIVE in card.abilities):
+        if(ActionTypes.PASSIVE in card.actions):
             events : list[Event | Generator] = [PlayCharacterCard(
                 _id, card, ActionTypes.PASSIVE, 0, self.env
             )]
             self.env.push_packet(Packet(_id, events))
 
-    async def _on_character_discard(self, card: AVGECharacterCard):
+    async def _on_character_leaves_play(self, card: AVGECharacterCard):
+        '''Resets a character's HP/energy/statuses and moves its tools to discard -
+        originally only fired for discard-bound transfers (hence the old name), but
+        none of this is actually discard-specific: a character leaving play to HAND or
+        DECK (RachaelYuan's E2 Reaction, HappyRuthJara's Leave Rehearsal Early,
+        PascalKim's Ominous Chimes) needs the exact same reset, and previously got
+        none at all - it kept its damage, energy, and statuses, then re-entered play
+        later still carrying them. Attached tools always go to the owner's discard
+        regardless of where the character itself is headed - that part was never
+        discard-specific to begin with.'''
         _id = AVGEEngineID(None, ActionTypes.ENV, None)
         events: list[Event | Generator] = []
         # 1. reset HP
@@ -374,14 +395,45 @@ class TransferCard(Event):
             raise Exception(
                 "REGULATE_FAIL occured on character card discard for unknown reason")
 
+    async def _on_retreat_cost(self, card: AVGECharacterCard, cost: int):
+        '''Charges this transfer's own (already-modifier-resolved, already-validated -
+        see AVGETransferValidityCheck) cost directly, mirroring
+        _on_character_leaves_play's own energy-removal loop. Replaces the old
+        AVGERetreatCostReactor, which read the card's raw, undiscounted retreat_cost
+        instead of this event's own cost - see A2's own writeup for why that made
+        Kiki's/Petteruti's discounts and GOON's surcharge unable to agree with the
+        earlier validity check on what a retreat actually costs.'''
+        if cost <= 0:
+            return
+        _id = AVGEEngineID(None, ActionTypes.ENV, None)
+        events: list[Event | Generator] = [AVGEEnergyTransfer(
+            _id, card, self.env, self.env,
+        ) for _ in range(cost)]
+        resp = await self.interrupt(events)
+        if (resp == ResponseStatus.REGULATE_FAIL):
+            raise Exception(
+                "REGULATE_FAIL occured on retreat cost charge for unknown reason")
+
     async def act(self):
         assert not callable(self.card)
         assert not callable(self.deck_to)
         assert not callable(self.deck_from)
+        assert not callable(self.cost)
 
-        # Special Case 1: Default Character Discard handling. This does NOT deal with garbage collection
-        if (self.deck_to.deck_type == DeckType.DISCARD and self.deck_from.deck_type in [DeckType.BENCH, DeckType.ACTIVE_CARD] and isinstance(self.card, AVGECharacterCard)):
-            await self._on_character_discard(self.card)
+        # Special Case 0: retreat cost. Only ever nonzero for the ACTIVE_CARD -> BENCH
+        # leg of a retreat (see Phase2CardMovement's construction site) - runs before
+        # the physical transfer below, same as every other special case here.
+        if (self.cost > 0 and self.deck_from.deck_type == DeckType.ACTIVE_CARD and self.deck_to.deck_type == DeckType.BENCH and isinstance(self.card, AVGECharacterCard)):
+            await self._on_retreat_cost(self.card, self.cost)
+
+        # Special Case 1: Default character-leaves-play handling (HP/energy/status
+        # reset, tools to discard). Originally only fired for a discard-bound
+        # transfer; broadened to also cover HAND/DECK destinations (see
+        # _on_character_leaves_play's own docstring) - a character returning to hand
+        # or deck needs the exact same reset a discard already got. This does NOT
+        # deal with garbage collection.
+        if (self.deck_to.deck_type in [DeckType.DISCARD, DeckType.HAND, DeckType.DECK] and self.deck_from.deck_type in [DeckType.BENCH, DeckType.ACTIVE_CARD] and isinstance(self.card, AVGECharacterCard)):
+            await self._on_character_leaves_play(self.card)
 
         # Special Case 2: Default character passive activation handling
         if (self.deck_from.deck_type not in [DeckType.BENCH, DeckType.ACTIVE_CARD] and self.deck_to.deck_type in [DeckType.BENCH, DeckType.ACTIVE_CARD] and isinstance(self.card, AVGECharacterCard)):
@@ -393,7 +445,6 @@ class TransferCard(Event):
             self.push_event(PlayNonCharacterCard(
                 self.id,
                 self.card,
-                ActionTypes.NONCHAR,
                 self.env
             ))
 
@@ -471,13 +522,10 @@ class PlayCharacterCard(Event):
         assert not callable(self.target_card)
         acting_card = self.target_card if not isinstance(
             self.id.calling_card, AVGECharacterCard) else self.id.calling_card
-        match self.action:
-            case ActionTypes.ATK_1 | ActionTypes.ATK_2:
-                await self.target_card.attacks[self.action](acting_card, self.action)
-            case ActionTypes.ACTIVATE_ABILITY | ActionTypes.PASSIVE:
-                await self.target_card.abilities[self.action](self.target_card)
-            case _:
-                raise Exception("Invalid card action passed")
+        action = self.target_card.actions.get(self.action)
+        if action is None:
+            return
+        await action(self.target_card, acting_card)
 
     def rollback(self):
         return
@@ -486,31 +534,22 @@ class PlayCharacterCard(Event):
 class PlayNonCharacterCard(Event):
     def __init__(self,
                  id: AVGEEngineID,
-                 target_card: AVGEToolCard | AVGESupporterCard | AVGEItemCard | AVGEStadiumCard | Callable[[], AVGEToolCard | AVGESupporterCard | AVGEItemCard | AVGEStadiumCard],
-                 action: ActionTypes | Callable[[], ActionTypes],
+                 target_card: AVGENonCharacterCard | Callable[[], AVGENonCharacterCard],
                  env: AVGEEnvironment):
-        super().__init__(id=id, target_card=target_card, action=action, env=env)
+        super().__init__(id=id, target_card=target_card, action=ActionTypes.NONCHAR, env=env)
         self.id = id
         self.target_card = target_card
-        self.action = action
+        self.action = ActionTypes.NONCHAR
         self.env = env
 
     async def act(self):
-        assert not callable(self.action)
         assert not callable(self.target_card)
         acting_card = self.target_card if not isinstance(
             self.id.calling_card, AVGECard) else self.id.calling_card
-        match self.target_card:
-            case AVGEStadiumCard():
-                await self.target_card.play_card()
-            case AVGEToolCard():
-                await self.target_card.play_card()
-            case AVGEItemCard():
-                await self.target_card.play_card(acting_card, self.action)
-            case AVGESupporterCard():
-                await self.target_card.play_card(acting_card, self.action)
-            case _:
-                raise Exception("Invalid nonchar card passed")
+        action = self.target_card.actions.get(ActionTypes.NONCHAR)
+        if action is None:
+            return
+        await action(self.target_card, acting_card)
 
     def rollback(self):
         return
@@ -524,34 +563,39 @@ class PhasePickCard(Event):
 
     async def act(self):
         player: AVGEPlayer = self.env.get_current_player()
-        if (len(player.card_piles[DeckType.DECK]) > 0):
-            deck = player.card_piles[DeckType.DECK]
-            hand = player.card_piles[DeckType.HAND]
+        deck = player.card_piles[DeckType.DECK]
+        hand = player.card_piles[DeckType.HAND]
 
-            def draw_top_card() -> list[Event | Generator]:
-                if len(deck) == 0:
-                    return []
-                return [TransferCard(
-                    AVGEEngineID(None, ActionTypes.ENV, None),
-                    deck.get_top(),
-                    deck,
-                    hand,
-                    self.env)]
-
-            self.env.append_packet(Packet(
+        def draw_top_card() -> list[Event | Generator]:
+            if len(deck) == 0:
+                return []
+            return [TransferCard(
                 AVGEEngineID(None, ActionTypes.ENV, None),
-                [draw_top_card]))
-            self.env.append_packet(Packet(
-                AVGEEngineID(
-                    None, ActionTypes.ENV, None),
-                [
-                    Phase2(
-                        AVGEEngineID(
-                            None, ActionTypes.ENV, None),
-                        self.env
-                    )
-                ]
-            ))
+                deck.get_top(),
+                deck,
+                hand,
+                self.env)]
+
+        # Queuing both packets unconditionally (rather than only when the deck is
+        # non-empty) means a player whose deck is already empty at turn start simply
+        # skips the draw - draw_top_card() above already no-ops on an empty deck - and
+        # still reaches Phase2 normally. Previously, an empty deck here queued nothing
+        # at all: no draw, no Phase2, no way to ever act again - a silent, permanent
+        # freeze for that player.
+        self.env.append_packet(Packet(
+            AVGEEngineID(None, ActionTypes.ENV, None),
+            [draw_top_card]))
+        self.env.append_packet(Packet(
+            AVGEEngineID(
+                None, ActionTypes.ENV, None),
+            [
+                Phase2(
+                    AVGEEngineID(
+                        None, ActionTypes.ENV, None),
+                    self.env
+                )
+            ]
+        ))
 
     def rollback(self):
         return
@@ -590,7 +634,6 @@ class Phase2(Event):
                                     AVGEEngineID(
                                         None, ActionTypes.PLAYER_CHOICE, None),
                                     res.card,
-                                    ActionTypes.PLAYER_CHOICE,
                                     self.env
                                 ),
                                 TransferCard(
@@ -614,7 +657,6 @@ class Phase2(Event):
                                     AVGEEngineID(
                                         None, ActionTypes.PLAYER_CHOICE, None),
                                     res.card,
-                                    ActionTypes.PLAYER_CHOICE,
                                     self.env
                                 ),
                                 AVGEPlayerAttributeChange(
@@ -666,14 +708,19 @@ class Phase2(Event):
                 ]
                 if (isinstance(res.card, AVGECharacterCard) and res.deck_from.deck_type == DeckType.BENCH and res.deck_to.deck_type == DeckType.ACTIVE_CARD):
                     # implements the swap
+                    outgoing_active = self.env.get_current_player().card_piles[DeckType.ACTIVE_CARD][0]
+                    assert isinstance(outgoing_active, AVGECharacterCard)
                     events.append(TransferCard(
                         AVGEEngineID(
                             None, ActionTypes.PLAYER_CHOICE, None),
-                        self.env.get_current_player(
-                        ).card_piles[DeckType.ACTIVE_CARD][0],
+                        outgoing_active,
                         res.deck_to,
                         res.deck_from,
-                        self.env
+                        self.env,
+                        # Base cost, before Kiki's/GOON's/Petteruti's own
+                        # EXTERNAL_MODIFIERS_1 modifiers (if any apply) adjust it and
+                        # AVGETransferValidityCheck validates the result - see A2.
+                        outgoing_active.retreat_cost,
                     ))
                     # AVGETransferValidityCheck only REJECTS once this hits 0 - nothing else in
                     # this case ever decremented it, so a player could otherwise swap as many
@@ -753,7 +800,27 @@ class AtkPhase(Event):
         self.env = env
 
     async def act(self):
-        res = await (self.env.report(AtkPhaseIO(self.env.turn), self.id))
+        # get_player_active() indexes into the active pile directly and raises if it's
+        # empty - previously never reached here unless res != SKIP (see below), so a
+        # turn with no active card at all (a test-harness-only situation today, but not
+        # guaranteed to stay that way - see B4) still worked, just always skipping.
+        # Guarding this the same way keeps that tolerance intact now that the active
+        # card's own attacks are needed earlier, to build allowed_actions.
+        current_active = self.env.get_current_player().card_piles[DeckType.ACTIVE_CARD]
+        allowed_actions: list[ActionTypes] = [ActionTypes.SKIP]
+        if len(current_active) > 0:
+            active_card = current_active[0]
+            assert isinstance(active_card, AVGECharacterCard)
+            allowed_actions += [
+                action_type
+                for action_type in (ActionTypes.ATK_1, ActionTypes.ATK_2)
+                if (
+                    (action := active_card.actions.get(action_type)) is not None
+                    and isinstance(action, Attack)
+                    and action.can_play(active_card, active_card)
+                )
+            ]
+        res = await (self.env.report(AtkPhaseIO(self.env.turn, allowed_actions), self.id))
         assert (res == ActionTypes.ATK_1 or res ==
                 ActionTypes.ATK_2 or res == ActionTypes.SKIP)
         _id = AVGEEngineID(None,
@@ -781,13 +848,16 @@ class AtkPhase(Event):
             self.env
         )]
         if (res != ActionTypes.SKIP):
+            active_card = self.env.get_player_active(self.env.turn)
+            action = active_card.actions.get(res)
+            if not isinstance(action, Attack):
+                return
             base_packet += [
                 PlayCharacterCard(
                     _id,
-                    self.env.get_player_active(self.env.turn),
+                    active_card,
                     res,
-                    self.env.get_player_active(
-                        self.env.turn).attacks[res].cost,
+                    action.cost,
                     self.env
                 ),
             ]

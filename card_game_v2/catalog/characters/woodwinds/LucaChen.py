@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier
@@ -34,11 +34,9 @@ class LucaChen(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._SparklingRun(), ActionTypes.ATK_2: self._PiccoloSolo()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._SparklingRun(), ActionTypes.ATK_2: self._PiccoloSolo()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -48,15 +46,17 @@ class LucaChen(AVGECharacterCard):
             super().__init__(
                 name="Sparkling Run",
                 description="Deal 30 damage to the opposing active. Heal yourself 20.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), LucaChen)
+            _id = AVGEEngineID(card, self.action_type, LucaChen)
 
             env.push_packet(Packet(_id, [
                 AVGECardHPChangeEvent(_id, target, 30, AVGEAttributeModifier.SUBSTRACTIVE, CardType.WOODWIND, env),
@@ -68,16 +68,18 @@ class LucaChen(AVGECharacterCard):
             super().__init__(
                 name="Piccolo Solo",
                 description="Deal 40 damage to the opposing active (90 if Luca is the only WOODWIND character anywhere in play).",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), LucaChen)
+            _id = AVGEEngineID(card, self.action_type, LucaChen)
 
             all_chars = [
                 c for p in (player, opponent)

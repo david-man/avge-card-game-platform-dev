@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventRegulator, AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -42,11 +42,9 @@ class MeyaGao(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Distortion()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Distortion()}), **({ActionTypes.PASSIVE: self._ISeeYourSoul()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._ISeeYourSoul()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -56,13 +54,11 @@ class MeyaGao(AVGECharacterCard):
             super().__init__(
                 name="I See Your Soul",
                 description="Whenever this character, while active, takes attack damage, both it and the attacker are locked out of attacking on their own next turn.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, MeyaGao)
             if card._damage_reactor is None:
                 card._damage_reactor = MeyaGao._DamageReactor(card, card.env)
@@ -120,30 +116,39 @@ class MeyaGao(AVGECharacterCard):
                 return False
             if event.action not in (ActionTypes.ATK_1, ActionTypes.ATK_2):
                 return False
-            return event.target_card is self.card_blocked
+            acting_card = (
+                event.id.calling_card
+                if isinstance(event.id.calling_card, AVGECharacterCard)
+                else event.target_card
+            )
+            return acting_card is self.card_blocked
 
         async def respond(self, event: Event) -> ResponseStatus:
             assert isinstance(event.id, AVGEEngineID)
-            await self.env.report(Notification(
-                self.card_blocked.owner,
-                "Cannot attack this round due to Meya Gao's I See Your Soul!", default_timeout,
-            ), event.id)
-            return ResponseStatus.REGULATE_FAIL
+            if event.id.calling_action == ActionTypes.PLAYER_CHOICE:
+                await self.env.report(Notification(
+                    self.card_blocked.owner,
+                    "Cannot attack this round due to Meya Gao's I See Your Soul!", default_timeout,
+                ), event.id)
+                return ResponseStatus.REGULATE_FAIL
+            return ResponseStatus.REGULATE_IGNORE
 
     class _Distortion(Attack):
         def __init__(self):
             super().__init__(
                 name="Distortion",
                 description="Deal 40 damage to the opposing active. Your next GUITAR attack on your own following turn deals +40 damage.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), MeyaGao)
+            _id = AVGEEngineID(card, self.action_type, MeyaGao)
 
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 40, AVGEAttributeModifier.SUBSTRACTIVE, CardType.GUITAR, env,

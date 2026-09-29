@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGESupporterCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGESupporterCard, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventRegulator
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -24,42 +24,58 @@ class Emma(AVGESupporterCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        opponent = env.get_opponent(self.owner)
-        opponent_active_pile = opponent.card_piles[DeckType.ACTIVE_CARD]
-        opponent_bench = opponent.card_piles[DeckType.BENCH]
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, Emma)
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        bench_candidates: list[AVGECharacterCard] = [
-            c for c in opponent_bench.cards_holding if isinstance(c, AVGECharacterCard)
-        ]
-        if not bench_candidates:
-            await env.report(Notification(
-                self.owner, "Opponent has no benched character to switch with.", default_timeout,
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="Emma",
+                description=Emma.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, Emma):
+                raise TypeError("Emma action requires its defining card")
+            env = acting_card.env
+            opponent = env.get_opponent(acting_card.owner)
+            opponent_active_pile = opponent.card_piles[DeckType.ACTIVE_CARD]
+            opponent_bench = opponent.card_piles[DeckType.BENCH]
+            _id = AVGEEngineID(acting_card, self.action_type, Emma)
+
+            bench_candidates: list[AVGECharacterCard] = [
+                c for c in opponent_bench.cards_holding if isinstance(c, AVGECharacterCard)
+            ]
+            if not bench_candidates:
+                await env.report(Notification(
+                    acting_card.owner, "Opponent has no benched character to switch with.", default_timeout,
+                ), _id)
+                return
+
+            picked = await env.report(CardSelectionQuery(
+                acting_card.owner,
+                "Emma: Choose one of the opponent's benched characters to force into active.",
+                1,
+                cast(list[AVGECard], bench_candidates),
+                cast(list[AVGECard], bench_candidates),
+                False,
+                False,
             ), _id)
-            return
+            locked_character = picked[0]
+            assert isinstance(locked_character, AVGECharacterCard)
 
-        picked = await env.report(CardSelectionQuery(
-            self.owner,
-            "Emma: Choose one of the opponent's benched characters to force into active.",
-            1,
-            cast(list[AVGECard], bench_candidates),
-            cast(list[AVGECard], bench_candidates),
-            False,
-            False,
-        ), _id)
-        locked_character = picked[0]
-        assert isinstance(locked_character, AVGECharacterCard)
+            opponent_active = env.get_player_active(opponent)
+            round_active = env.round + 1
+            acting_card.add_listener(_NextTurnSwapLockRegulator(action_card, env, locked_character, opponent.id, round_active))
 
-        opponent_active = env.get_player_active(opponent)
-        round_active = env.round + 1
-        self.add_listener(_NextTurnSwapLockRegulator(self, env, locked_character, opponent.id, round_active))
+            env.push_packet(Packet(_id, [
+                TransferCard(_id, locked_character, opponent_bench, opponent_active_pile, env),
+                TransferCard(_id, opponent_active, opponent_active_pile, opponent_bench, env),
+            ]))
 
-        env.push_packet(Packet(_id, [
-            TransferCard(_id, locked_character, opponent_bench, opponent_active_pile, env),
-            TransferCard(_id, opponent_active, opponent_active_pile, opponent_bench, env),
-        ]))
 
 
 class _NextTurnSwapLockRegulator(AVGEEventRegulator):

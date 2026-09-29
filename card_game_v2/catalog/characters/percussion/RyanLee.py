@@ -32,11 +32,9 @@ class RyanLee(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._PercussionEnsemble(), ActionTypes.ATK_2: self._FourMallets()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._PercussionEnsemble(), ActionTypes.ATK_2: self._FourMallets()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -46,11 +44,13 @@ class RyanLee(AVGECharacterCard):
             super().__init__(
                 name="Percussion Ensemble",
                 description="Attach up to 2 free energy to a chosen benched PERCUSSION character.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             bench = player.card_piles[DeckType.BENCH]
@@ -59,7 +59,7 @@ class RyanLee(AVGECharacterCard):
             if not candidates or max_attach == 0:
                 return
 
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), RyanLee)
+            _id = AVGEEngineID(card, self.action_type, RyanLee)
             picked = await env.report(CardSelectionQuery(
                 card.owner,
                 "Percussion Ensemble: Choose a benched percussion character.",
@@ -87,18 +87,20 @@ class RyanLee(AVGECharacterCard):
             super().__init__(
                 name="Four Mallets",
                 description="Deal 10 damage 4 times to the opposing active. The 4th hit also draws a card.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), RyanLee)
+            _id = AVGEEngineID(card, self.action_type, RyanLee)
 
             events: list[Event | Generator] = []
             for i in range(4):

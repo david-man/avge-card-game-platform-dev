@@ -37,11 +37,9 @@ class EugeniaAmpofo(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._StickTrick()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._StickTrick()}), **({ActionTypes.ACTIVATE_ABILITY: self._Fermentation()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.ACTIVATE_ABILITY: self._Fermentation()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -70,10 +68,11 @@ class EugeniaAmpofo(AVGECharacterCard):
             super().__init__(
                 name="Fermentation",
                 description="Once per turn, after your normal energy attach, attach 1 more free energy to a different in-play character.",
-                ability_type=ActionTypes.ACTIVATE_ABILITY,
+                action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            card = action_card
             assert isinstance(card, EugeniaAmpofo)
             env = card.env
             # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
@@ -97,7 +96,8 @@ class EugeniaAmpofo(AVGECharacterCard):
             ]
             return any(c is not first_attached for c in own_chars)
 
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, EugeniaAmpofo)
             env = card.env
             player = env.players[card.owner]
@@ -138,16 +138,18 @@ class EugeniaAmpofo(AVGECharacterCard):
             super().__init__(
                 name="Stick Trick",
                 description="Deal 20 damage to the opposing active. You may swap with a benched character for free.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), EugeniaAmpofo)
+            _id = AVGEEngineID(card, self.action_type, EugeniaAmpofo)
 
             events: list[Event | Generator] = [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PERCUSSION, env,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
@@ -36,11 +36,9 @@ class CocoZeng(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Glissando(), ActionTypes.ATK_2: self._InventoryManagement()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Glissando(), ActionTypes.ATK_2: self._InventoryManagement()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,41 +48,46 @@ class CocoZeng(AVGECharacterCard):
             super().__init__(
                 name="Glissando",
                 description="Deal 50 damage to the opposing active. Cannot be used the turn after it was last used.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
-            assert isinstance(card, CocoZeng)
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
+            if not isinstance(action_card, CocoZeng):
+                raise TypeError("Glissando's definition card must be CocoZeng")
             env = card.env
-            if card._last_glissando_round == env.round - 2:
+            if action_card._last_glissando_round == env.round - 2:
                 await env.report(Notification(
                     card.owner, "Glissando cannot be used this turn.", default_timeout,
-                ), AVGEEngineID(card, self.resolve_caller(caller_action), CocoZeng))
+                ), AVGEEngineID(card, self.action_type, CocoZeng))
                 return
 
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), CocoZeng)
+            _id = AVGEEngineID(card, self.action_type, CocoZeng)
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 50, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
             )]))
-            card._last_glissando_round = env.round
+            action_card._last_glissando_round = env.round
 
     class _InventoryManagement(Attack):
         def __init__(self):
             super().__init__(
                 name="Inventory Management",
                 description="Flip a coin for each card in your hand. Deal 30 damage per head.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             n = len(player.card_piles[DeckType.HAND])
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), CocoZeng)
+            _id = AVGEEngineID(card, self.action_type, CocoZeng)
             if n <= 0:
                 await env.report(Notification(
                     card.owner,

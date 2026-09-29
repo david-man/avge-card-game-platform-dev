@@ -60,7 +60,11 @@ class Phase2IO(UserIOType[Phase2EnergyAttach | Phase2CardMovement | Phase2Activa
 
 @dataclass
 class AtkPhaseIO(UserIOType[ActionTypes]):
-    pass
+    '''allowed_actions is the source of truth the IOManager's deserialize() validates a
+    raw response against (see server/io_adapter.py) - mirrors CardSelectionQuery's own
+    allowed_selections field. Always includes SKIP (legal regardless of the active
+    card) plus whichever of ATK_1/ATK_2 the active character actually has.'''
+    allowed_actions: list[ActionTypes]
 
 @dataclass
 class GameEndIO(UserIOType[None]):
@@ -219,7 +223,7 @@ class CharacterActionUpdate(IOType[None]):
 @dataclass
 class NonCharacterPlayUpdate(IOType[None]):
     '''Mirrors PlayNonCharacterCard.'''
-    target_card: AVGEToolCard | AVGESupporterCard | AVGEItemCard | AVGEStadiumCard
+    target_card: AVGENonCharacterCard
     action: ActionTypes
 
 

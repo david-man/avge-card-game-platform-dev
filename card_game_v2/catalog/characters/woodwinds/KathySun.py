@@ -36,11 +36,9 @@ class KathySun(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._AnalysisParalysis(), ActionTypes.ATK_2: self._FlutterTongue()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._AnalysisParalysis(), ActionTypes.ATK_2: self._FlutterTongue()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,16 +48,18 @@ class KathySun(AVGECharacterCard):
             super().__init__(
                 name="Analysis Paralysis",
                 description="Reveal the opponent's hand. They choose up to 2 cards to shuffle into their own deck.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             opponent_hand = opponent.card_piles[DeckType.HAND]
             opponent_deck = opponent.card_piles[DeckType.DECK]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), KathySun)
+            _id = AVGEEngineID(card, self.action_type, KathySun)
 
             choose_count = min(2, len(opponent_hand))
             if choose_count == 0:
@@ -72,11 +72,11 @@ class KathySun(AVGECharacterCard):
             await env.report(RevealCards(card.owner, list(opponent_hand.cards_holding)), _id)
             picked = await env.report(CardSelectionQuery(
                 opponent.id,
-                "Analysis Paralysis: Choose cards to shuffle into your deck.",
+                f"Analysis Paralysis: Choose up to {choose_count} cards to shuffle into your deck.",
                 choose_count,
                 opponent_hand.cards_holding,
                 opponent_hand.cards_holding,
-                False,
+                True,
                 False,
             ), _id)
 
@@ -100,15 +100,17 @@ class KathySun(AVGECharacterCard):
             super().__init__(
                 name="Flutter Tongue",
                 description="Roll a D6 repeatedly until two consecutive rolls sum to 7. Deal 10 damage to the opposing active per roll taken.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), KathySun)
+            _id = AVGEEngineID(card, self.action_type, KathySun)
 
             prev_roll: int | None = None
             roll_count = 0

@@ -14,6 +14,11 @@ from ...catalog.stadiums.RedRoom import RedRoom
 from ..serialization import snapshot, card_to_wire, resolve_card, resolve_deck
 
 
+class _CollidingWireStateCard(Dummy):
+    def additional_wire_state(self):
+        return {"id": "not-allowed"}
+
+
 class SerializationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.env = AVGEEnvironment(TestIO(), {
@@ -40,6 +45,23 @@ class SerializationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(wire["statuses"], [])
         self.assertEqual(wire["tools"], [])
 
+    async def test_additional_wire_state_cannot_replace_standard_fields(self):
+        env = AVGEEnvironment(TestIO(), {
+            User.PLAYER_1: [_CollidingWireStateCard],
+            User.PLAYER_2: [Dummy],
+        }, core_listeners())
+        card = env.players[User.PLAYER_1].card_piles[DeckType.DECK][0]
+        with self.assertRaises(ValueError):
+            card_to_wire(card)
+
+    async def test_cache_get_does_not_create_a_rollback_change(self):
+        self.active.cache_set("stable", 7)
+        self.env.cache.solidy_changes()
+        self.assertEqual(self.active.cache_get("stable"), 7)
+        self.assertEqual(self.active.cache_get("missing", 11), 11)
+        self.env.cache.unwind()
+        self.assertEqual(self.active.cache_get("stable"), 7)
+
     async def test_card_to_wire_includes_attached_tools(self):
         tool = await attach_tool(
             self.env, self.p1, AVGETShirt("t", self.env, User.PLAYER_1, DeckType.HAND), self.active,
@@ -47,6 +69,11 @@ class SerializationTests(unittest.IsolatedAsyncioTestCase):
         wire = card_to_wire(self.active)
         self.assertEqual(len(wire["tools"]), 1)
         self.assertEqual(wire["tools"][0]["id"], tool.cardID)
+
+    async def test_snapshot_includes_usernames_only_when_given(self):
+        self.assertNotIn("usernames", snapshot(self.env))
+        names = {User.PLAYER_1.name: "alice", User.PLAYER_2.name: "bob"}
+        self.assertEqual(snapshot(self.env, names)["usernames"], names)
 
     async def test_snapshot_shape_and_hand_deck_discard(self):
         snap = snapshot(self.env)

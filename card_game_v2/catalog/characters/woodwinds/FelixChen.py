@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -43,11 +43,9 @@ class FelixChen(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Multiphonics()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Multiphonics()}), **({ActionTypes.PASSIVE: self._SynesthesiaPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._SynesthesiaPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -57,13 +55,11 @@ class FelixChen(AVGECharacterCard):
             super().__init__(
                 name="Synesthesia",
                 description="While your whole team has all-distinct card types, reduce incoming opponent attack damage by 10.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, FelixChen)
             if card._synesthesia is None:
                 card._synesthesia = FelixChen._SynesthesiaModifier(card, card.env)
@@ -114,14 +110,16 @@ class FelixChen(AVGECharacterCard):
             super().__init__(
                 name="Multiphonics",
                 description="Flip 2 coins. Both heads: 50 damage to all opposing bench. Both tails: 100 damage to the opposing active. Split: nothing.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), FelixChen)
+            _id = AVGEEngineID(card, self.action_type, FelixChen)
 
             heads = 0
             for _ in range(2):

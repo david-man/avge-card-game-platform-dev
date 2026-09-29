@@ -6,9 +6,11 @@ these tests follow.
 """
 from __future__ import annotations
 
+import contextlib
+
 from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEEnvironment import EnergyToken
-from ..avge_abstracts.AVGECard import AVGECharacterCard, CardType, AVGEStadiumCard, AVGESupporterCard, AVGEToolCard, AVGECard, Attack
+from ..avge_abstracts.AVGECard import AVGECharacterCard, CardType, AVGEStadiumCard, AVGESupporterCard, AVGEToolCard, AVGECard, Ability, Attack
 from ..constants import User, ActionTypes, StatusEffect, AVGEStatusModifier, AVGEPlayerAttribute, AVGEAttributeModifier
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..engine.event import Packet
@@ -24,13 +26,12 @@ from ..engine.engine_io import ListenerReorderIO
 from ..core.CoreListeners import (
     AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
     AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
-    AVGERetreatCostReactor, AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck,
-    AVGEPlayNonCharacterCardValidityCheck,
+    AVGEStadiumReplaceReactor, AVGEPlayCardValidityCheck, AVGETransferSourceCheck,
 )
 from ..catalog.status_effects.Goon import (
-    AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
+    AVGEGoonRetreatCostModifier, AVGEGoonStatusChangeReactor,
 )
-from ..catalog.status_effects.Maid import AVGEMaidDamageShieldModifier
+from ..catalog.status_effects.Maid import AVGEMaidDamageShieldRegulator
 from ..catalog.status_effects.Arranger import AVGEArrangerStatusReactor
 
 
@@ -50,18 +51,17 @@ class Dummy(AVGECharacterCard):
     def base_retreat_cost(self):
         return 1
 
-    def base_attacks(self):
-        return {}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({}), **({})}
 
-    def base_abilities(self):
-        return {}
 
     async def on_transfer(self, deck_from, deck_to, transfer_event):
         return
 
 
 class _NoOpAttack(Attack):
-    async def __call__(self, calling_card, caller_action):
+    async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+        card = acting_card
         return
 
 
@@ -83,11 +83,9 @@ class Attacker(AVGECharacterCard):
     def base_retreat_cost(self):
         return 1
 
-    def base_attacks(self):
-        return {ActionTypes.ATK_1: _NoOpAttack("Dummy Attack", "Does nothing.", ActionTypes.ATK_1, 3)}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: _NoOpAttack('Dummy Attack', 'Does nothing.', ActionTypes.ATK_1, 3)}), **({})}
 
-    def base_abilities(self):
-        return {}
 
     async def on_transfer(self, deck_from, deck_to, transfer_event):
         return
@@ -97,16 +95,48 @@ class DummyStadium(AVGEStadiumCard):
     async def on_transfer(self, deck_from, deck_to, transfer_event):
         return
 
-    async def play_card(self):
-        return
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="DummyStadium",
+                description=DummyStadium.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, DummyStadium):
+                raise TypeError("DummyStadium action requires its defining card")
+            return
+
 
 
 class DummySupporter(AVGESupporterCard):
     async def on_transfer(self, deck_from, deck_to, transfer_event):
         return
 
-    async def play_card(self, card: AVGECard, caller_action) -> None:
-        return
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="DummySupporter",
+                description=DummySupporter.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, DummySupporter):
+                raise TypeError("DummySupporter action requires its defining card")
+            return
+
 
 
 class DummyTool(AVGEToolCard):
@@ -115,17 +145,32 @@ class DummyTool(AVGEToolCard):
     async def on_transfer(self, deck_from, deck_to, transfer_event):
         return
 
-    async def play_card(self) -> None:
-        return
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="DummyTool",
+                description=DummyTool.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, DummyTool):
+                raise TypeError("DummyTool action requires its defining card")
+            return
+
 
 
 def core_listeners():
     return [
         AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
-        AVGEMaidDamageShieldModifier, AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
-        AVGERetreatCostReactor, AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck,
-        AVGEPlayNonCharacterCardValidityCheck,
-        AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
+        AVGEMaidDamageShieldRegulator, AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
+        AVGEStadiumReplaceReactor, AVGEPlayCardValidityCheck, AVGETransferSourceCheck,
+        AVGEGoonRetreatCostModifier, AVGEGoonStatusChangeReactor,
         AVGEArrangerStatusReactor,
     ]
 
@@ -268,12 +313,44 @@ async def detach_tool(env, player, tool):
     return tool
 
 
+async def retreat(env, player, incoming=None):
+    '''Drives a real retreat: the exact two-TransferCard packet shape
+    core/EventCatalog.py's Phase2CardMovement case builds for a BENCH -> ACTIVE_CARD
+    move - the incoming bench card swaps in, the outgoing active card swaps out to
+    bench, carrying its own retreat_cost as that leg's cost (see TransferCard's own
+    cost field and A2's retreat-cost fix), both tagged PLAYER_CHOICE in one packet.
+    Constructing a single bare TransferCard(ACTIVE_CARD -> BENCH) directly instead -
+    an easy trap, since that's the event that actually pays the cost - bypasses the
+    swap-in leg entirely and every EXTERNAL_MODIFIERS_1 cost modifier that only
+    matches the real two-event shape (Kiki's tool, GOON's status, Petteruti's
+    stadium), so it doesn't exercise real cost-discount/surcharge card effects at
+    all. Returns the outgoing card, so callers can assert on its resulting deck_type
+    and energy_tokens - engine.flush() itself doesn't return a usable ResponseStatus
+    (only the lower-level Packet.flush() does), so a rejected retreat has to be
+    read off board state instead: the outgoing card stays active with its energy
+    untouched, rather than landing on the bench with energy charged.'''
+    outgoing = player.card_piles[DeckType.ACTIVE_CARD][0]
+    assert isinstance(outgoing, AVGECharacterCard)
+    if incoming is None:
+        incoming = player.card_piles[DeckType.BENCH][0]
+    bench_deck = player.card_piles[DeckType.BENCH]
+    active_deck = player.card_piles[DeckType.ACTIVE_CARD]
+    _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
+    pkt = Packet(_id, [
+        TransferCard(_id, incoming, bench_deck, active_deck, env),
+        TransferCard(_id, outgoing, active_deck, bench_deck, env, outgoing.retreat_cost),
+    ])
+    env.push_packet(pkt)
+    await env.engine.flush(lambda: False)
+    return outgoing
+
+
 async def play_item(env, player, item):
     '''Plays an item card from hand, mirroring Phase2.act()'s real dispatch: resolve
     its effect, then discard it - see EventCatalog.py's AVGEItemCard branch.'''
     _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
     pkt = Packet(_id, [
-        PlayNonCharacterCard(_id, item, ActionTypes.PLAYER_CHOICE, env),
+        PlayNonCharacterCard(_id, item, env),
         TransferCard(_id, item, player.card_piles[DeckType.HAND], player.card_piles[DeckType.DISCARD], env),
     ])
     env.push_packet(pkt)
@@ -302,7 +379,7 @@ async def play_supporter(env, player, supporter):
     player.attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] = 1
     _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
     pkt = Packet(_id, [
-        PlayNonCharacterCard(_id, supporter, ActionTypes.PLAYER_CHOICE, env),
+        PlayNonCharacterCard(_id, supporter, env),
         AVGEPlayerAttributeChange(
             _id, player, AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN,
             AVGEAttributeModifier.SUBSTRACTIVE, 1, env,
@@ -313,14 +390,62 @@ async def play_supporter(env, player, supporter):
     await env.engine.flush(lambda: False)
 
 
-async def fire_phase_pick_card(env):
-    '''Fires a bare PhasePickCard. Caller should size decks so both players are already
-    empty by this point - otherwise this cascades through the real draw/Phase2/AtkPhase/
-    TurnEnd machinery (TestIO auto-answers Phase2Finish/SKIP), eventually flipping turn
-    back and firing a second, unintended PhasePickCard.'''
+@contextlib.asynccontextmanager
+async def phase_pick_card_limit(env, n=1):
+    '''Async context manager: bounds whatever runs inside the `with` block to stop the
+    moment the (n+1)th PhasePickCard would commit, instead of running to natural
+    completion. An empty deck is no longer, on its own, a natural stopping point for a
+    PhasePickCard cascade (PhasePickCard.act() now always reaches Phase2 regardless of
+    deck size - see the deck-out fix), so any scenario with both players' decks already
+    empty by design - directly firing PhasePickCard, or reaching a TurnEnd some other
+    way, e.g. a card whose own effect ends the turn directly like Johann's or
+    RossWilliams' - will flip turn back and forth forever instead of terminating on its
+    own. n=1 (the default) lets exactly one player's own turn resolve, which is what
+    almost every scenario actually wants; conftest.py's autouse fixture also wraps
+    every Engine.flush() call with a generous event-count safety net as a backstop, but
+    that alone isn't precise enough for assertions that care about the exact board
+    state (a large-but-finite cap still eventually reaches a second, "unintended" turn,
+    which can make an assertion pass for the wrong reason). AVGEShowcaseSticker's own
+    tests used to need n=2 for this reason (its bonus draw was append_packet'd behind
+    PhasePickCard's own draw/Phase2, needing an extra turn's headroom to run at all
+    before this stopped the cascade) - now push_packet'd like every other card, it
+    resolves within the same n=1 turn; see test_tools.py's
+    test_heads_draws_an_extra_card_resolves_within_the_same_turn.'''
+    seen = 0
+    previous_hook = env.engine.on_event_committed
+
+    async def stop_after_nth_turn(event):
+        nonlocal seen
+        if isinstance(event, PhasePickCard):
+            seen += 1
+            if seen > n:
+                env.engine.terminate_flag = True
+        if previous_hook is not None:
+            await previous_hook(event)
+
+    env.engine.on_event_committed = stop_after_nth_turn
+    try:
+        yield
+    finally:
+        env.engine.on_event_committed = previous_hook
+        env.engine.terminate_flag = False
+
+
+async def fire_phase_pick_card(env, n=1):
+    '''Fires a bare PhasePickCard and lets it cascade through the real draw/Phase2/
+    AtkPhase/TurnEnd machinery (TestIO auto-answers Phase2Finish/SKIP), bounded by
+    phase_pick_card_limit (see its own docstring for why this needs bounding at all,
+    and when the n=1 default isn't the right value).'''
     _id = AVGEEngineID(None, ActionTypes.ENV, None)
-    env.push_packet(Packet(_id, [PhasePickCard(_id, env)]))
-    await env.engine.flush(lambda: False)
+    async with phase_pick_card_limit(env, n=n):
+        env.push_packet(Packet(_id, [PhasePickCard(_id, env)]))
+        await env.engine.flush(lambda: False)
+
+
+async def fire_phase_pick_card_for_n_turns(env, n=1):
+    '''Alias for fire_phase_pick_card(env, n=n) - kept for callers that spell out the
+    turn count explicitly.'''
+    await fire_phase_pick_card(env, n=n)
 
 
 async def give_status(env, card, status: StatusEffect, giver=None):
@@ -342,7 +467,7 @@ async def remove_status(env, card, status: StatusEffect, giver=None):
 async def run_attack(env, attacker, action=ActionTypes.ATK_1, energy=5):
     attacker.energy_tokens = attacker.energy_tokens + [EnergyToken(f"e{i}") for i in range(energy)]
     _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
-    pkt = Packet(_id, [PlayCharacterCard(_id, attacker, action, attacker.attacks[action].cost, env)])
+    pkt = Packet(_id, [PlayCharacterCard(_id, attacker, action, attacker.actions[action].cost, env)])
     env.push_packet(pkt)
     await env.engine.flush(lambda: False)
 

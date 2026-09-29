@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType, AVGEStadiumCard
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType, AVGEStadiumCard
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
@@ -33,14 +33,9 @@ class FilipKaminski(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {
-            ActionTypes.ATK_1: self._HeartOfTheCards(),
-            ActionTypes.ATK_2: self._IntenseEcho(),
-        }
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._HeartOfTheCards(), ActionTypes.ATK_2: self._IntenseEcho()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -56,11 +51,13 @@ class FilipKaminski(AVGECharacterCard):
             super().__init__(
                 name="Heart of the Cards",
                 description="Name a card, then draw the top card of your deck. If it matches, deal 50 damage to the opposing active character.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             deck = player.card_piles[DeckType.DECK]
@@ -68,7 +65,7 @@ class FilipKaminski(AVGECharacterCard):
             if len(deck) == 0:
                 await env.report(Notification(
                     card.owner, "Heart of the Cards, but it did nothing...", default_timeout,
-                ), AVGEEngineID(card, self.resolve_caller(caller_action), FilipKaminski))
+                ), AVGEEngineID(card, self.action_type, FilipKaminski))
                 return
 
             possible_names = sorted({
@@ -77,7 +74,7 @@ class FilipKaminski(AVGECharacterCard):
                 for c in player.card_piles[zone]
             })
 
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), FilipKaminski)
+            _id = AVGEEngineID(card, self.action_type, FilipKaminski)
             result = await env.report(StringSelectionQuery(
                 card.owner,
                 "Heart of the Cards: Name a card.",
@@ -116,15 +113,17 @@ class FilipKaminski(AVGECharacterCard):
             super().__init__(
                 name="Intense Echo",
                 description="Deal 50 damage to the opposing active character. If you have a stadium in play, also deal 20 damage to each of the opponent's benched characters.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), FilipKaminski)
+            _id = AVGEEngineID(card, self.action_type, FilipKaminski)
 
             events: list[Event | Generator] = [
                 AVGECardHPChangeEvent(

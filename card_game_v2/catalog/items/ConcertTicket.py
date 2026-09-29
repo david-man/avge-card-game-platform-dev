@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
@@ -14,38 +14,54 @@ class ConcertTicket(AVGEItemCard):
     still physically in hand at play time and only leaves via the normal post-play
     discard - see V2_MIGRATION_PLAN.md). Cannot be played as the only card in hand.
 
-    v1 treats that "only card in hand" case as a full cancel - the card is never even
-    consumed. v2's item dispatch always discards the played card in a follow-up packet
-    (see Phase2.act()), queued independently of play_card()'s own effects, so there is
-    no clean way to also cancel that discard from here; this instead just skips the
-    draw effect and still lets the card be discarded normally.'''
+    The centralized play validator rejects the root packet when that prerequisite is
+    not met, so the card stays in hand and no play-side state is consumed.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        hand = player.card_piles[DeckType.HAND]
-        deck = player.card_piles[DeckType.DECK]
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, ConcertTicket)
-        current_hand_size = len(hand)
-        if current_hand_size == 1:
-            await env.report(Notification(
-                self.owner,
-                "Concert Ticket cannot be played as the only card in hand.", default_timeout,
-            ), _id)
-            return
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="ConcertTicket",
+                description=ConcertTicket.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        draw_needed = max(0, 4 - current_hand_size)
-        draw_count = min(draw_needed, len(deck))
-        if draw_count == 0:
-            return
-        # deck.get_top() must be resolved lazily (once per draw, at that draw's own
-        # execution time) - resolving it eagerly here would have every TransferCard in
-        # this list reference the same, not-yet-moved top card.
-        events: list[Event | Generator] = [
-            TransferCard(_id, lambda: deck.get_top(), deck, hand, env) for _ in range(draw_count)
-        ]
-        env.push_packet(Packet(_id, events))
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            hand = acting_card.env.players[acting_card.owner].card_piles[DeckType.HAND]
+            return len(hand) > 1
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, ConcertTicket):
+                raise TypeError("ConcertTicket action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            hand = player.card_piles[DeckType.HAND]
+            deck = player.card_piles[DeckType.DECK]
+
+            _id = AVGEEngineID(acting_card, self.action_type, ConcertTicket)
+            current_hand_size = len(hand)
+            if current_hand_size == 1:
+                await env.report(Notification(
+                    acting_card.owner,
+                    "Concert Ticket cannot be played as the only card in hand.", default_timeout,
+                ), _id)
+                return
+
+            draw_needed = max(0, 4 - current_hand_size)
+            draw_count = min(draw_needed, len(deck))
+            if draw_count == 0:
+                return
+            # deck.get_top() must be resolved lazily (once per draw, at that draw's own
+            # execution time) - resolving it eagerly here would have every TransferCard in
+            # this list reference the same, not-yet-moved top card.
+            events: list[Event | Generator] = [
+                TransferCard(_id, lambda: deck.get_top(), deck, hand, env) for _ in range(draw_count)
+            ]
+            env.push_packet(Packet(_id, events))

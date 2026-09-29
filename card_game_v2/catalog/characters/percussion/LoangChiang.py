@@ -32,11 +32,9 @@ class LoangChiang(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._StickTrick(), ActionTypes.ATK_2: self._ExcusedAbsence()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._StickTrick(), ActionTypes.ATK_2: self._ExcusedAbsence()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -46,16 +44,18 @@ class LoangChiang(AVGECharacterCard):
             super().__init__(
                 name="Stick Trick",
                 description="Deal 20 damage to the opposing active. You may swap with a benched character for free.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), LoangChiang)
+            _id = AVGEEngineID(card, self.action_type, LoangChiang)
 
             events: list[Event | Generator] = [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PERCUSSION, env,
@@ -87,14 +87,16 @@ class LoangChiang(AVGECharacterCard):
             super().__init__(
                 name="Excused Absence",
                 description="Heal all of your own in-play characters 30. Discard 1 of your own energy.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), LoangChiang)
+            _id = AVGEEngineID(card, self.action_type, LoangChiang)
 
             own_chars: list[AVGECharacterCard] = [
                 c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)

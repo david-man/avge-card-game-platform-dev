@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -39,11 +39,9 @@ class DanielYang(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._EightHandsPiano()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._EightHandsPiano()}), **({ActionTypes.PASSIVE: self._DelicateEarsPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._DelicateEarsPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -53,13 +51,11 @@ class DanielYang(AVGECharacterCard):
             super().__init__(
                 name="Delicate Ears",
                 description="This character's own attacks deal +10 damage, unless a BRASS character is in play anywhere.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, DanielYang)
             if card._no_brass_boost is None:
                 card._no_brass_boost = DanielYang._NoBrassBoost(card, card.env)
@@ -103,16 +99,18 @@ class DanielYang(AVGECharacterCard):
             super().__init__(
                 name="Eight Hands Piano",
                 description="Deal 50 damage to the opposing active. If you have 3+ PIANO characters on your bench, also deal 30 damage to each opposing benched character.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), DanielYang)
+            _id = AVGEEngineID(card, self.action_type, DanielYang)
 
             piano_count = sum(
                 1 for c in player.card_piles[DeckType.BENCH]

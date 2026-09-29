@@ -36,11 +36,9 @@ class BarronLee(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Embouchure()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Embouchure()}), **({ActionTypes.PASSIVE: self._GetServed()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._GetServed()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         # Entering play is handled globally by TransferCard's own passive-trigger special case.
@@ -101,13 +99,11 @@ class BarronLee(AVGECharacterCard):
             super().__init__(
                 name="Get Served",
                 description="Opposing characters cannot hold more than 3 energy at a time.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, BarronLee)
             env = card.env
             if card._energy_cap_listener is None:
@@ -139,15 +135,17 @@ class BarronLee(AVGECharacterCard):
             super().__init__(
                 name="Embouchure",
                 description="Deal 20 damage to the opposing active character. Then, rearrange all energy currently on your characters however you like.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), BarronLee)
+            _id = AVGEEngineID(card, self.action_type, BarronLee)
 
             events: list[Event | Generator] = [
                 AVGECardHPChangeEvent(
@@ -167,9 +165,11 @@ class BarronLee(AVGECharacterCard):
             sources = [c for c in own_chars for _ in c.energy_tokens]
 
             if sources:
+                # destinations are paired with `sources` by position, so spell that order out.
+                source_names = ", ".join(str(c) for c in sources)
                 destinations = await env.report(CardSelectionQuery(
                     card.owner,
-                    "Embouchure: How do you want to rearrange your energy?",
+                    f"Embouchure: Choose where each energy goes, in this order (currently on: {source_names}).",
                     len(sources),
                     cast(list[AVGECard], own_chars),
                     cast(list[AVGECard], own_chars),

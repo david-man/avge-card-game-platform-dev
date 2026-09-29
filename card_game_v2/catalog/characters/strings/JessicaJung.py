@@ -37,11 +37,9 @@ class JessicaJung(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Vibrato()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Vibrato()}), **({ActionTypes.ACTIVATE_ABILITY: self._ClericSpell()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.ACTIVATE_ABILITY: self._ClericSpell()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -51,16 +49,18 @@ class JessicaJung(AVGECharacterCard):
             super().__init__(
                 name="Cleric Spell",
                 description="Once per turn, flip a coin; on heads, may shuffle a supporter from your discard into your deck.",
-                ability_type=ActionTypes.ACTIVATE_ABILITY,
+                action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            card = action_card
             assert isinstance(card, JessicaJung)
             # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
             # constructed (server/io_adapter.py's _deserialize_phase2).
             return card._cleric_spell_last_used_round != card.env.round
 
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, JessicaJung)
             env = card.env
             player = env.players[card.owner]
@@ -112,13 +112,15 @@ class JessicaJung(AVGECharacterCard):
 
     class _Vibrato(Attack):
         def __init__(self):
-            super().__init__(name="Vibrato", description="Deal 40 damage to the opposing active.", atk_type=ActionTypes.ATK_1, cost=2)
+            super().__init__(name="Vibrato", description="Deal 40 damage to the opposing active.", action_type=ActionTypes.ATK_1, cost=2)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JessicaJung)
+            _id = AVGEEngineID(card, self.action_type, JessicaJung)
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 40, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env,
             )]))

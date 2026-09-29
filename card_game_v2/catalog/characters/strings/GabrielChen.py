@@ -34,11 +34,9 @@ class GabrielChen(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_2: self._Harmonics()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_2: self._Harmonics()}), **({ActionTypes.PASSIVE: self._YouKnowWhatItIsPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._YouKnowWhatItIsPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -48,13 +46,11 @@ class GabrielChen(AVGECharacterCard):
             super().__init__(
                 name="You Know What It Is",
                 description="The first time your HP drops below 60, may deal 70 damage to a random opposing character.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, GabrielChen)
             if card._threshold_reactor is None:
                 card._threshold_reactor = GabrielChen._ThresholdReactor(card, card.env)
@@ -121,13 +117,15 @@ class GabrielChen(AVGECharacterCard):
             super().__init__(
                 name="Harmonics",
                 description="Flip 2 coins. If both are heads, choose to deal 60 damage to 3 opposing characters, or 70 damage to 2.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), GabrielChen)
+            _id = AVGEEngineID(card, self.action_type, GabrielChen)
 
             heads = 0
             for _ in range(2):

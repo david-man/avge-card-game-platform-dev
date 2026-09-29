@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
@@ -32,11 +32,9 @@ class HappyRuthJara(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Coloratura()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Coloratura()}), **({ActionTypes.ACTIVATE_ABILITY: self._LeaveRehearsalEarly()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.ACTIVATE_ABILITY: self._LeaveRehearsalEarly()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,12 +48,13 @@ class HappyRuthJara(AVGECharacterCard):
             super().__init__(
                 name="Leave Rehearsal Early",
                 description="Once per turn, if you haven't just benched this character, return it to your hand.",
-                ability_type=ActionTypes.ACTIVATE_ABILITY,
+                action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
-            # constructed (server/io_adapter.py's _deserialize_phase2).
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            card = action_card
+            if not isinstance(card, HappyRuthJara):
+                return False
             if card.deck_type != DeckType.BENCH:
                 return False
             if len(card.tools_attached) > 0:
@@ -77,7 +76,10 @@ class HappyRuthJara(AVGECharacterCard):
                     return True
                 index += 1
 
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
+            if not isinstance(card, HappyRuthJara):
+                raise TypeError("Leave Rehearsal Early's definition card must be HappyRuthJara")
             env = card.env
             player = env.players[card.owner]
             _id = AVGEEngineID(
@@ -100,14 +102,15 @@ class HappyRuthJara(AVGECharacterCard):
             super().__init__(
                 name="Coloratura",
                 description="Flip 2 coins. Deal 30 damage. If both are heads, deal 40 more.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
-            _id = AVGEEngineID(card, self.resolve_caller(
-                caller_action), HappyRuthJara)
+            _id = AVGEEngineID(card, self.action_type, HappyRuthJara)
             r0 = await env.report(CoinflipData(card.owner, "Coloratura: Flip 2 coins."), _id)
             r1 = await env.report(CoinflipData(card.owner, "Coloratura: Flip 2 coins."), _id)
             damage = 30 + (40 if r0 == 1 and r1 == 1 else 0)

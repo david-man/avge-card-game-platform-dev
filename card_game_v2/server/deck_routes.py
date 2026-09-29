@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from ..catalog import registry
-from ..constants import CARDS_PER_DECK, INITIAL_HAND_SIZE, MAX_BENCH_SIZE
+from ..constants import CARDS_PER_DECK, INITIAL_HAND_SIZE, MAX_BENCH_SIZE, NO_STARTING_ACTIVE_CARDS
 from . import deck_rules
 from .accounts import Account, AccountStore
 from .deck_store import DeckStore, StoredDeck
@@ -60,6 +60,7 @@ def _catalog_wire() -> dict[str, Any]:
             "max_copies_default": deck_rules.MAX_COPIES_DEFAULT,
             "initial_hand_size": INITIAL_HAND_SIZE,
             "max_bench_size": MAX_BENCH_SIZE,
+            "no_starting_active": sorted(NO_STARTING_ACTIVE_CARDS),
         },
     }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGEStadiumCard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEEventListener import AVGEEventRegulator
 from ...avge_abstracts.AVGEID import AVGEEngineID
@@ -41,40 +41,56 @@ class BAIEmail(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        deck = player.card_piles[DeckType.DECK]
-        hand = player.card_piles[DeckType.HAND]
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, BAIEmail)
-        events: list[Event | Generator] = []
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="BAIEmail",
+                description=BAIEmail.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        if len(env.stadium_cardholder) > 0:
-            active_stadium = env.stadium_cardholder.cards_holding[0]
-            assert isinstance(active_stadium, AVGEStadiumCard)
-            discard_owner = env.players[active_stadium.owner]
-            events.append(TransferCard(
-                _id, active_stadium, env.stadium_cardholder, discard_owner.card_piles[DeckType.DISCARD], env,
-            ))
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, BAIEmail):
+                raise TypeError("BAIEmail action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            deck = player.card_piles[DeckType.DECK]
+            hand = player.card_piles[DeckType.HAND]
 
-        stadiums_in_deck = [c for c in deck.cards_holding if isinstance(c, AVGEStadiumCard)]
-        if stadiums_in_deck:
-            picked = await env.report(CardSelectionQuery(
-                self.owner,
-                "BAIEmail: Choose a Stadium from your deck to put into your hand.",
-                1,
-                cast(list[AVGECard], stadiums_in_deck),
-                list(deck.cards_holding),
-                True,
-                False,
-            ), _id)
-            if picked:
-                events.append(TransferCard(_id, picked[0], deck, hand, env))
+            _id = AVGEEngineID(acting_card, self.action_type, BAIEmail)
+            events: list[Event | Generator] = []
 
-        self.add_listener(BAIEmail._StadiumPlayLock(env.round + 2, env))
-        if events:
-            env.push_packet(Packet(_id, events))
+            if len(env.stadium_cardholder) > 0:
+                active_stadium = env.stadium_cardholder.cards_holding[0]
+                assert isinstance(active_stadium, AVGEStadiumCard)
+                discard_owner = env.players[active_stadium.owner]
+                events.append(TransferCard(
+                    _id, active_stadium, env.stadium_cardholder, discard_owner.card_piles[DeckType.DISCARD], env,
+                ))
+
+            stadiums_in_deck = [c for c in deck.cards_holding if isinstance(c, AVGEStadiumCard)]
+            if stadiums_in_deck:
+                picked = await env.report(CardSelectionQuery(
+                    acting_card.owner,
+                    "BAIEmail: Choose a Stadium from your deck to put into your hand.",
+                    1,
+                    cast(list[AVGECard], stadiums_in_deck),
+                    list(deck.cards_holding),
+                    True,
+                    False,
+                ), _id)
+                if picked:
+                    events.append(TransferCard(_id, picked[0], deck, hand, env))
+
+            acting_card.add_listener(BAIEmail._StadiumPlayLock(env.round + 2, env))
+            if events:
+                env.push_packet(Packet(_id, events))
+
 
     class _StadiumPlayLock(AVGEEventRegulator):
         def __init__(self, round_until: int, env: AVGEEnvironment):

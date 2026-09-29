@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard, Ability
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
@@ -36,30 +36,46 @@ class AVGEBirb(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        opponent = env.get_opponent(self.owner)
-        opponent_discard = opponent.card_piles[DeckType.DISCARD]
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        opposing_chars: list[AVGECharacterCard] = [
-            c for c in opponent.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
-        ] + [
-            c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
-        ]
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="AVGEBirb",
+                description=AVGEBirb.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, AVGEBirb)
-        events: list[Event | Generator] = []
-        for character in opposing_chars:
-            for tool in list(character.tools_attached.cards_holding):
-                events.append(TransferCard(_id, tool, character.tools_attached, opponent_discard, env))
-            for status in StatusEffect:
-                for giver in list(character.statuses_attached[status]):
-                    events.append(AVGECardStatusChange(_id, character, giver, status, AVGEStatusModifier.REMOVE, env))
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, AVGEBirb):
+                raise TypeError("AVGEBirb action requires its defining card")
+            env = acting_card.env
+            opponent = env.get_opponent(acting_card.owner)
+            opponent_discard = opponent.card_piles[DeckType.DISCARD]
 
-        if events:
-            env.push_packet(Packet(_id, events))
+            opposing_chars: list[AVGECharacterCard] = [
+                c for c in opponent.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
+            ] + [
+                c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
+            ]
 
-        self.add_listener(AVGEBirb._NextAttackDamageCurse(self.owner, env))
+            _id = AVGEEngineID(acting_card, self.action_type, AVGEBirb)
+            events: list[Event | Generator] = []
+            for character in opposing_chars:
+                for tool in list(character.tools_attached.cards_holding):
+                    events.append(TransferCard(_id, tool, character.tools_attached, opponent_discard, env))
+                for status in StatusEffect:
+                    for giver in list(character.statuses_attached[status]):
+                        events.append(AVGECardStatusChange(_id, character, giver, status, AVGEStatusModifier.REMOVE, env))
+
+            if events:
+                env.push_packet(Packet(_id, events))
+
+            acting_card.add_listener(AVGEBirb._NextAttackDamageCurse(acting_card.owner, env))
+
 
     class _NextAttackDamageCurse(AVGEEventModifier):
         '''Adds +20 to the first qualifying ATK damage the owner's active character

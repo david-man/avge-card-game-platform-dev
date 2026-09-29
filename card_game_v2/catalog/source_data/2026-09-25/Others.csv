@@ -1,0 +1,56 @@
+conc,Type,Description,Balance Notes,Photo,Photo Taker
+Riley Hall,Stadium,"Attendance Policy: If this Stadium is active at the beginning of a player's turn, each of their characters takes 10 nonlethal damage for each empty bench slot you have.","is very interesting early-game. i think it should affect every character at the beginning of every turn because right now it just negatively affects only you at the beginning of the turn, which is very meh.
+
+also has interesting synergies with characters like rachael (removes characters from opponent bench)",online,
+Alumnae Hall,Stadium,"Return by 4pm: Upon this Stadium being played, both players discard all items (only when played after first turn).
+Intense Reverb: While active, whenever a player draws a card, all their active and benched characters take 10 nonlethal damage.",i forgot this stadium is a thing... this might singlehandedly make bench damage actually playable,online,
+Main Hall,Stadium,"Small Ensemble Limit: Each player may only play up to three cards per turn, starting the turn after this is played. May not be played on the first turn.",playtest how this kills item cycle,online,
+Salomon DECI,Stadium,"Electric Acoustics: For every guitar, piano, choir or percussion attack, roll a d6. On 3–6: −30 damage.",feel like this and red room are kinda just both not worth using? but maybe the 20 damage difference is a lot',online,
+Red Room,Stadium,"Amp Diff: Strings, woodwinds and brass do −10 damage; choir, guitars, percussion, pianos do +10 damage.",this actually has really interesting synergies with multi-attack characters and singlehandedly makes them really good,take photo,
+Lindemann Practice Room,Stadium,"Sectionals: If all of your benched characters share a type with your active character, your attacks take 1 less energy.",,take photo,
+Petteruti Lounge,Stadium,"Matcha Maid Cafe: Maids do +10 damage and have -1 retreat cost. Matcha heals +10 additional health.
+Powerpoint Night: For each attack a player does, they may choose a random card to look at from their opponent's hand.",playtest maid deck (is no retreat cost too strong?),from archive,
+Steinert Practice Room,Stadium,"Practice Prison: Each player may not have more than 2 benched characters. If a player has 3, they discard one (the player who played this stadium discards first).
+15 Minute Walk: Each attack costs 1 additional energy.",,take photo,
+Steinert Basement Studio,Stadium,"Duo Queue: If you have exactly two character cards in play at the start of your turn, draw two cards instead of one.
+15 Minute Walk: Each attack costs 1 additional energy.",,take photo,
+Friedman Hall,Stadium,Democratic Process: Draw two cards per turn. Your opponent chooses one for you to keep; shuffle the other back into your deck.,,from archive,
+Maid Outfit,Tool,Forced Recruitment: Attached character gains Maid status while holding this tool.,,take photo,Ryan Li?
+Kiki’s Headband,Tool,Delivery: Retreat cost is reduced by 1 energy.,,take photo,Cavin
+Bucket,Tool,Anything you want to be: Attached character becomes a Percussion type.,,take photo,Loang?
+AVGE T-Shirt,Tool,Volunteer: Grants Goon status while attached.,,take photo,Emily
+AVGE Showcase Sticker,Tool,"AVGE Ambassador: If attached character is active at the start of your turn, flip a coin. If heads, draw 1 extra card.",,use digital,Emily
+Musescore Subscription,Tool,Arranging Workshop: Grants Arranger status while attached.,,use digital,Emily
+Otamatone,Item,"During this turn only, your active character has one additional energy attached. Cannot be played on the first turn.",ok,take photo,Ryan Lee
+Miku Otamatone,Item,"You can only play this card in concert halls. During this turn only, your active character has two additional energy attached. Cannot be played on the first turn.",ok,take photo,Ryan Lee
+Matcha Latte,Item,All your characters heal 10 health.,right now not as useful cuz bench damage isn't good,from archive,Emily
+Strawberry Matcha Latte,Item,One character of your choice heals 20 health.,ok,from archive,Emily
+Printed Score,Item,Opponent reveals their entire hand and chooses one card to discard. Cannot be played on the first turn.,ok,take photo,Emily
+Annotated Score,Item,Opponent reveals their entire hand and you choose one card to discard. Choose a different card from their discard pile to return to their hand. (They must have a card in discard to play this),Choosing 2 cards to remove from opposing hand is rly good; maybe they choose two?,take photo,Emily
+Standard Musescore File,Item,Discard a tool from one of your characters. Search for any item card in your deck and put it in your hand.,,use digital,Emily
+Corrupted Musescore File,Item,Discard a tool from one of your characters. Search for any non-item card in your deck and put it in your hand.,,use digital ((PMDM score)),Emily
+Cast Reserve,Item,Search for three unique items from your deck and reveal them. Your opponent chooses two to shuffle back into your deck. Put the other in your hand.,ok,take photo (print poster),Emily
+Folding Stand,Item,"On their first attack, your active character does +10 damage this turn.",,take photo,Iris Yang
+BUO Stand,Item,"On their first attack,  your active character does +20 damage this turn. Discard 1 energy from the active character.",,take photo (perc closet),Ryan Lee
+Ice Skates,Item,Switch your active character with one of your benched characters.,,take photo,Sophia Y. Wang
+Concert Program,Item,"Look at the top 5 cards of your deck. You may choose one character you find there, reveal it, and put it into your hand. Shuffle your deck afterwards.",ok,take photo (reprint program),Emily
+Concert Roster,Item,"Look at the top 3 cards of your deck. You may choose one character or stadium you find there, reveal it, and put it in your hand. Shuffle your deck afterwards.",,take photo (reprint program),Emily
+Dress Rehearsal Roster,Item,Discard 1 energy from your characters in play. Shuffle 3 random cards from your discard into your deck.,ok,take photo of qr code on screen in riley,Emily
+Concert Ticket,Item,Draw cards until you have 3 cards in hand. You may not play this if it is the only card in your hand.,ok,take photo (print poster),
+BAI Email,Item,"Discard any stadium in play. Then, search for a Stadium and put it in your hand. Neither player can play a stadium until the end of your next turn.",maybe make another stadium focused card,use digital (screenshot),Izzy Chen
+AVGE Birb,Item,"Remove all tool cards and status effects from your opponent's active and benched characters. During your next turn, your active character takes +20 damage from the first attack.",ok (probably playtest w/ video camera and raffle ticket),from archive,Emily
+Camera,Item,Shuffle one Supporter or Stadium from your discard pile into your deck.,ok,take photo,Henry B. Wang
+Video Camera,Item,Move an Item from your discard pile to the top of your deck.,ok,take photo,Henry B. Wang
+Raffle Ticket,Item,"Draw a card from the bottom of your deck. If it is an AVGE Birb, heal all damage from one character.",,take photo,Emily
+Johann,Supporter,"From The Start: Choose up to one Supporter, one Item or Tool, and one Stadium card from your discard pile and put them into your hand. Your turn ends.",,,
+Richard,Supporter,"Break it Down: Shuffle both your discard pile and your deck, and switch them.",,,
+Michelle,Supporter,Discord Announcement: Opponent discards down to 1 card in hand. Cannot be played on the first turn.,,,
+Will,Supporter,Arrangement: Shuffle all items from your discard pile into your deck.,,,
+Lucas,Supporter,Small Ensemble: Search for and reveal up to two characters of different types that share no types with your board. Put one on the top of your deck and the other in your hand.,,,
+Angel,Supporter,Head Goon: Give all your active and benched characters Goon status. Remove all tools from opposing characters.,,,
+Lio,Supporter,"New Canvas: Shuffle your hand into your deck, then draw 4 cards.",,,
+Emma,Supporter,Toxic Sabotage: Switch your opponent’s active character with a benched character of your choice. That character may not retreat during the next turn.,,,
+Victoria Chen,Supporter,Section Leader: Choose a type. Search for and reveal up two characters of that type in your deck. Put one on the top of your deck and the other in your hand.,,,
+Maid,Status,"This character is immune to all attacks of 10 base damage or less (before debuffs, but after super effective bonus).",,,
+Goon,Status,"This character gains 20 health, and each music stand used grants this character +10 damage, but their retreat cost is increased by 1",,,
+Arranger,Status,"Whenever this character takes damage or has a tool discarded from it, you may shuffle a random card from your discard pile into your deck.",,,

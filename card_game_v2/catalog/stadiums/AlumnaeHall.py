@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGECharacterCard, AVGEItemCard, AVGEStadiumCard, CardType
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEItemCard, AVGEStadiumCard, CardType, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -24,23 +24,39 @@ class AlumnaeHall(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        env = self.env
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, AlumnaeHall)
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        if env.round > 0:
-            events: list[Event | Generator] = []
-            for player in env.players.values():
-                hand = player.card_piles[DeckType.HAND]
-                discard = player.card_piles[DeckType.DISCARD]
-                items = [c for c in hand.cards_holding if isinstance(c, AVGEItemCard)]
-                for item in items:
-                    events.append(TransferCard(_id, item, hand, discard, env))
-            if events:
-                await env.broadcast(BroadcastIO("Alumnae Hall: Return by 4PM", default_timeout))
-                env.push_packet(Packet(_id, events))
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="AlumnaeHall",
+                description=AlumnaeHall.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        self.add_listener(_IntenseReverbReactor(self, env))
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, AlumnaeHall):
+                raise TypeError("AlumnaeHall action requires its defining card")
+            env = acting_card.env
+            _id = AVGEEngineID(acting_card, self.action_type, AlumnaeHall)
+
+            if env.round > 0:
+                events: list[Event | Generator] = []
+                for player in env.players.values():
+                    hand = player.card_piles[DeckType.HAND]
+                    discard = player.card_piles[DeckType.DISCARD]
+                    items = [c for c in hand.cards_holding if isinstance(c, AVGEItemCard)]
+                    for item in items:
+                        events.append(TransferCard(_id, item, hand, discard, env))
+                if events:
+                    await env.broadcast(BroadcastIO("Alumnae Hall: Return by 4PM", default_timeout))
+                    env.push_packet(Packet(_id, events))
+
+            acting_card.add_listener(_IntenseReverbReactor(action_card, env))
+
 
 
 class _IntenseReverbReactor(AVGEEventReactor):

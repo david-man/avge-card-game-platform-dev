@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -41,11 +41,9 @@ class JoshuaKou(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._SeparateHands()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._SeparateHands()}), **({ActionTypes.PASSIVE: self._CategoryTheoryPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._CategoryTheoryPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -55,13 +53,11 @@ class JoshuaKou(AVGECharacterCard):
             super().__init__(
                 name="Category Theory",
                 description="At the start of your turn, if you have fewer than 4 cards in hand, may draw up to 4.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, JoshuaKou)
             if card._category_theory is None:
                 card._category_theory = JoshuaKou._CategoryTheory(card, card.env)
@@ -111,21 +107,24 @@ class JoshuaKou(AVGECharacterCard):
             super().__init__(
                 name="Separate Hands",
                 description="Deal 40 damage to the opposing active, but only if this attack was also used on your last turn.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
-            assert isinstance(card, JoshuaKou)
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
+            if not isinstance(action_card, JoshuaKou):
+                raise TypeError("Separate Hands' definition card must be JoshuaKou")
             env = card.env
-            was_used_last_turn = card._last_used_round == env.round - 2
-            card._last_used_round = env.round
+            was_used_last_turn = action_card._last_used_round == env.round - 2
+            action_card._last_used_round = env.round
             if not was_used_last_turn:
                 return
 
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JoshuaKou)
+            _id = AVGEEngineID(card, self.action_type, JoshuaKou)
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 40, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
             )]))

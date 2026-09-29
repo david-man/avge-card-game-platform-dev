@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from ...avge_abstracts.AVGECard import AVGECard, AVGEItemCard, AVGESupporterCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGEItemCard, AVGESupporterCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
@@ -16,23 +16,38 @@ class Will(AVGESupporterCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        discard = player.card_piles[DeckType.DISCARD]
-        deck = player.card_piles[DeckType.DECK]
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, Will)
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        items = [c for c in discard.cards_holding if isinstance(c, AVGEItemCard)]
-        if not items:
-            return
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="Will",
+                description=Will.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        events: list[Event | Generator] = [TransferCard(_id, c, discard, deck, env) for c in items]
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, Will):
+                raise TypeError("Will action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            discard = player.card_piles[DeckType.DISCARD]
+            deck = player.card_piles[DeckType.DECK]
+            _id = AVGEEngineID(acting_card, self.action_type, Will)
 
-        def _make_shuffle(deck: AVGEDeck = deck):
-            def gen() -> list[AVGECard]:
-                return random.sample(deck.cards_holding, len(deck.cards_holding))
-            return gen
-        events.append(ReorderDeck(_id, deck, _make_shuffle(), env))
+            items = [c for c in discard.cards_holding if isinstance(c, AVGEItemCard)]
+            if not items:
+                return
 
-        env.push_packet(Packet(_id, events))
+            events: list[Event | Generator] = [TransferCard(_id, c, discard, deck, env) for c in items]
+
+            def _make_shuffle(deck: AVGEDeck = deck):
+                def gen() -> list[AVGECard]:
+                    return random.sample(deck.cards_holding, len(deck.cards_holding))
+                return gen
+            events.append(ReorderDeck(_id, deck, _make_shuffle(), env))
+
+            env.push_packet(Packet(_id, events))

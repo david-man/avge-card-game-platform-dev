@@ -36,11 +36,9 @@ class YanwanZhu(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._IntenseVoice()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._IntenseVoice()}), **({ActionTypes.PASSIVE: self._BassBoost()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._BassBoost()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         # Entering play is handled globally by TransferCard's own passive-trigger special case.
@@ -121,13 +119,11 @@ class YanwanZhu(AVGECharacterCard):
             super().__init__(
                 name="Bass Boost",
                 description="At the start of your turn, if Yanwan Zhu is active with exactly 2 energy, heal a different damaged character on your team for 30.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, YanwanZhu)
             if card._heal_reactor is None:
                 card._heal_reactor = YanwanZhu._StartOfTurnHeal(card)
@@ -142,16 +138,17 @@ class YanwanZhu(AVGECharacterCard):
             super().__init__(
                 name="Intense Voice",
                 description="Deal 60 damage to the opposing active character, and 10 damage to each of the opponent's benched characters.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(
-                caller_action), YanwanZhu)
+            _id = AVGEEngineID(card, self.action_type, YanwanZhu)
 
             events: list[Event | Generator] = [
                 AVGECardHPChangeEvent(

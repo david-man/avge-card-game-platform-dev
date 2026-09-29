@@ -100,6 +100,20 @@ class Matchmaker:
         self._waiting = session
         return session, User.PLAYER_1
 
+    def leave_waiting(self, account_id: str) -> bool:
+        '''Cancels the queued game `account_id` opened, if it is still the lone occupant of the
+        waiting session. Returns False (changing nothing) once an opponent has paired in - join()
+        clears `_waiting` synchronously before it awaits prepare(), so a leave landing mid-pairing
+        loses cleanly and the game starts as normal.'''
+        session = self._waiting
+        if session is None or session.finished:
+            return False
+        if session.seats[User.PLAYER_1].account_id != account_id:
+            return False
+        session.finished = True
+        self._on_session_finished(session.id)
+        return True
+
     def _on_session_finished(self, game_id: str) -> None:
         session = self.sessions.pop(game_id, None)
         if session is not None:

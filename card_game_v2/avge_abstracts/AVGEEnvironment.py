@@ -82,6 +82,10 @@ class AVGEEnvironment:
         '''Sets a key-value in the owner's cache'''
         self.cache.set(owner, key, new_value)
 
+    def cache_get(self, owner: AVGECard | AVGEPlayer | Self, key: str, default: Any = None) -> Any:
+        '''Reads a cache value without journaling a change.'''
+        return self.cache.get(owner, key, default)
+
     def cache_delete(self, owner: AVGECard | AVGEPlayer | Self, key: str):
         '''Deletes a key from the owner's associated cache key'''
         self.cache.remove(owner, key)

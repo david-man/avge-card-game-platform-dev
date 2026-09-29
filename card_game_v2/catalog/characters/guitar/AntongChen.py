@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier, default_timeout
@@ -39,11 +39,9 @@ class AntongChen(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Fingerstyle(), ActionTypes.ATK_2: self._PowerChord()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Fingerstyle(), ActionTypes.ATK_2: self._PowerChord()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -53,15 +51,18 @@ class AntongChen(AVGECharacterCard):
             super().__init__(
                 name="Fingerstyle",
                 description="Cannot be used the turn after Power Chord. Flip 5 coins, deal 20 damage per head.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
-            assert isinstance(card, AntongChen)
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
+            if not isinstance(action_card, AntongChen):
+                raise TypeError("Fingerstyle's definition card must be AntongChen")
             env = card.env
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AntongChen)
-            if card._last_atk2_round == env.round - 2:
+            _id = AVGEEngineID(card, self.action_type, AntongChen)
+            if action_card._last_atk2_round == env.round - 2:
                 await env.report(Notification(
                     card.owner, "Fingerstyle couldn't be used the turn after Power Chord!", default_timeout,
                 ), _id)
@@ -89,16 +90,19 @@ class AntongChen(AVGECharacterCard):
             super().__init__(
                 name="Power Chord",
                 description="Deal 90 damage to the opposing active. Discard up to 2 of your own energy.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
-            assert isinstance(card, AntongChen)
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
+            if not isinstance(action_card, AntongChen):
+                raise TypeError("Power Chord's definition card must be AntongChen")
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AntongChen)
+            _id = AVGEEngineID(card, self.action_type, AntongChen)
 
             events: list[Event | Generator] = [
                 AVGECardHPChangeEvent(_id, target, 90, AVGEAttributeModifier.SUBSTRACTIVE, CardType.GUITAR, env),
@@ -106,4 +110,4 @@ class AntongChen(AVGECharacterCard):
                 AVGEEnergyTransfer(_id, card, env, env),
             ]
             env.push_packet(Packet(_id, events))
-            card._last_atk2_round = env.round
+            action_card._last_atk2_round = env.round

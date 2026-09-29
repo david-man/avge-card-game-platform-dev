@@ -20,6 +20,13 @@ class JoinMessage(BaseModel):
     type: Literal["join"] = "join"
 
 
+class LeaveMessage(BaseModel):
+    '''Backs out of matchmaking: only honored while the sender is the lone occupant of a session
+    nobody has paired into yet (see Matchmaker.leave_waiting()). Once an opponent has paired in,
+    the game is starting and the only way out is concede.'''
+    type: Literal["leave"] = "leave"
+
+
 class ConcedeMessage(BaseModel):
     type: Literal["concede"] = "concede"
 
@@ -33,11 +40,12 @@ class IoResponseMessage(BaseModel):
     payload: dict[str, Any]
 
 
-ClientMessage = LoginMessage | JoinMessage | ConcedeMessage | IoResponseMessage
+ClientMessage = LoginMessage | JoinMessage | LeaveMessage | ConcedeMessage | IoResponseMessage
 
 _CLIENT_MESSAGE_TYPES: dict[str, type[ClientMessage]] = {
     "login": LoginMessage,
     "join": JoinMessage,
+    "leave": LeaveMessage,
     "concede": ConcedeMessage,
     "io_response": IoResponseMessage,
 }
@@ -75,6 +83,12 @@ class LoggedOutElsewhereMessage(BaseModel):
 
 class WaitingForOpponentMessage(BaseModel):
     type: Literal["waiting_for_opponent"] = "waiting_for_opponent"
+
+
+class LeftMessage(BaseModel):
+    '''Confirms a "leave": the queued game is gone and this connection is back to having no game,
+    free to send "join" again.'''
+    type: Literal["left"] = "left"
 
 
 class JoinedMessage(BaseModel):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
@@ -26,15 +26,34 @@ class Otamatone(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        if env.round == 0:
-            await env.report(Notification(
-                self.owner, "Cannot play Otamatone on the first turn.", default_timeout,
-            ), AVGEEngineID(self, ActionTypes.NONCHAR, Otamatone))
-            return
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        self.add_listener(Otamatone._ThisTurnEnergyDiscount(self.owner, env))
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="Otamatone",
+                description=Otamatone.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            return acting_card.env.round > 0
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, Otamatone):
+                raise TypeError("Otamatone action requires its defining card")
+            env = acting_card.env
+            if env.round == 0:
+                await env.report(Notification(
+                    acting_card.owner, "Cannot play Otamatone on the first turn.", default_timeout,
+                ), AVGEEngineID(acting_card, self.action_type, Otamatone))
+                return
+
+            acting_card.add_listener(Otamatone._ThisTurnEnergyDiscount(acting_card.owner, env))
+
 
     class _ThisTurnEnergyDiscount(AVGEEventModifier):
         '''Reduces the energy cost of a matching attack by 1 (floor 0). Matches any

@@ -3,12 +3,12 @@ from __future__ import annotations
 import random
 from typing import cast
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes
+from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import TransferCard, ReorderDeck
-from ...core.AVGEIOManager import CardSelectionQuery
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
@@ -28,59 +28,84 @@ class CastReserve(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        opponent = env.get_opponent(self.owner)
-        deck = player.card_piles[DeckType.DECK]
-        hand = player.card_piles[DeckType.HAND]
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        seen_types: set[type[AVGECard]] = set()
-        unique_item_choices: list[AVGEItemCard] = []
-        for c in deck.cards_holding:
-            if isinstance(c, AVGEItemCard) and type(c) not in seen_types:
-                seen_types.add(type(c))
-                unique_item_choices.append(c)
-        if len(unique_item_choices) < 3:
-            return
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="CastReserve",
+                description=CastReserve.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, CastReserve)
-        player_picked = await env.report(CardSelectionQuery(
-            self.owner,
-            "Cast Reserve: Either choose 3 unique item cards from your deck or choose none at all.",
-            3,
-            cast(list[AVGECard], unique_item_choices),
-            list(deck.cards_holding),
-            True,
-            False,
-        ), _id)
-        if not player_picked:
-            return
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, CastReserve):
+                raise TypeError("CastReserve action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            opponent = env.get_opponent(acting_card.owner)
+            deck = player.card_piles[DeckType.DECK]
+            hand = player.card_piles[DeckType.HAND]
 
-        selected_three = player_picked
-        opponent_picked = await env.report(CardSelectionQuery(
-            opponent.id,
-            "Cast Reserve: Choose 2 of the chosen items to shuffle back.",
-            2,
-            selected_three,
-            selected_three,
-            False,
-            False,
-        ), _id)
+            seen_types: set[type[AVGECard]] = set()
+            unique_item_choices: list[AVGEItemCard] = []
+            for c in deck.cards_holding:
+                if isinstance(c, AVGEItemCard) and type(c) not in seen_types:
+                    seen_types.add(type(c))
+                    unique_item_choices.append(c)
+            if len(unique_item_choices) < 3:
+                return
 
-        card_to_hand = next(c for c in selected_three if c not in opponent_picked)
-        shuffle_back = tuple(opponent_picked)
+            _id = AVGEEngineID(acting_card, self.action_type, CastReserve)
+            # allows_none=True only means "0 is a valid answer" - the query still lets a client submit
+            # 1 or 2 cards, which would leave the opponent's follow-up query with fewer than 3 cards to
+            # work from (and next() below with nothing left to find). So keep asking until the answer
+            # is exactly 3 or none.
+            while True:
+                player_picked = await env.report(CardSelectionQuery(
+                    acting_card.owner,
+                    "Cast Reserve: Choose exactly 3 unique item cards from your deck, or choose none at all.",
+                    3,
+                    cast(list[AVGECard], unique_item_choices),
+                    list(deck.cards_holding),
+                    True,
+                    False,
+                ), _id)
+                if len(player_picked) in (0, 3):
+                    break
+                await env.report(Notification(
+                    acting_card.owner, "Cast Reserve: choose exactly 3 cards, or none at all.", default_timeout,
+                ), _id)
+            if not player_picked:
+                return
 
-        events: list[Event | Generator] = [TransferCard(_id, card_to_hand, deck, hand, env)]
+            selected_three = player_picked
+            opponent_picked = await env.report(CardSelectionQuery(
+                opponent.id,
+                "Cast Reserve: Choose 2 of the chosen items to shuffle back.",
+                2,
+                selected_three,
+                selected_three,
+                False,
+                False,
+            ), _id)
 
-        def _reordering_with_both_shuffled_in(deck: AVGEDeck = deck, shuffle_back: tuple[AVGECard, ...] = shuffle_back):
-            def gen() -> list[AVGECard]:
-                rest = [c for c in deck.cards_holding if c not in shuffle_back]
-                for chosen in shuffle_back:
-                    idx = random.randint(0, len(rest))
-                    rest.insert(idx, chosen)
-                return rest
-            return gen
+            card_to_hand = next(c for c in selected_three if c not in opponent_picked)
+            shuffle_back = tuple(opponent_picked)
 
-        events.append(ReorderDeck(_id, deck, _reordering_with_both_shuffled_in(), env))
-        env.push_packet(Packet(_id, events))
+            events: list[Event | Generator] = [TransferCard(_id, card_to_hand, deck, hand, env)]
+
+            def _reordering_with_both_shuffled_in(deck: AVGEDeck = deck, shuffle_back: tuple[AVGECard, ...] = shuffle_back):
+                def gen() -> list[AVGECard]:
+                    rest = [c for c in deck.cards_holding if c not in shuffle_back]
+                    for chosen in shuffle_back:
+                        idx = random.randint(0, len(rest))
+                        rest.insert(idx, chosen)
+                    return rest
+                return gen
+
+            events.append(ReorderDeck(_id, deck, _reordering_with_both_shuffled_in(), env))
+            env.push_packet(Packet(_id, events))

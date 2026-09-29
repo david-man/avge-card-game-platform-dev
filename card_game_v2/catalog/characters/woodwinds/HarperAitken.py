@@ -32,11 +32,9 @@ class HarperAitken(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Overblow(), ActionTypes.ATK_2: self._Wipeout()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Overblow(), ActionTypes.ATK_2: self._Wipeout()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -46,15 +44,17 @@ class HarperAitken(AVGECharacterCard):
             super().__init__(
                 name="Overblow",
                 description="Deal 50 damage to the opposing active. Deal 10 recoil damage to yourself.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), HarperAitken)
+            _id = AVGEEngineID(card, self.action_type, HarperAitken)
 
             env.push_packet(Packet(_id, [
                 AVGECardHPChangeEvent(_id, target, 50, AVGEAttributeModifier.SUBSTRACTIVE, CardType.WOODWIND, env),
@@ -66,14 +66,16 @@ class HarperAitken(AVGECharacterCard):
             super().__init__(
                 name="Wipeout",
                 description="Choose up to 2 opposing characters to deal 80 damage each. Deal 80 recoil damage to yourself regardless.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), HarperAitken)
+            _id = AVGEEngineID(card, self.action_type, HarperAitken)
 
             chars_in_play: list[AVGECharacterCard] = [
                 c for c in opponent.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)

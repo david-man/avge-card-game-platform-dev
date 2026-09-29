@@ -9,6 +9,17 @@ INITIAL_HAND_SIZE = 5
 MAX_BENCH_SIZE = 5
 KOS_TO_WIN = 3
 
+# Characters that can never be the one placed in the active slot when the game starts (class names,
+# as in the catalog registry). The starting active card and opening hand are dealt before the
+# clients have even been told the game began, so a character whose deploy effect asks the player
+# something (or only makes sense mid-game) doesn't belong there:
+#   BenCherekIII  - Loudmouth's whole effect is a "switch me into active?" prompt on entering play.
+# They can still be in a deck, played normally, and drawn/benched like any other character.
+# (Every other character was checked by test_game_setup's sweep: none prompts during the opening
+# deal, as passives run as their own packet right after the one that draws the opening hand.)
+NO_STARTING_ACTIVE_CARDS: frozenset[str] = frozenset({"BenCherekIII"})
+
+
 PER_TURN_TOKEN_ADD = 1
 PER_TURN_SUPPORTER_USE = 1
 PER_TURN_SWAPS = 1
@@ -22,15 +33,16 @@ default_timeout = 5
 class EngineGroup(Enum):
     EXTERNAL_MODIFIERS_1 = 0  # used if you want something to come before internal prechecks
     INTERNAL_1 = 1  # all internal prechecks & the weaknesses are calculated in here
-    EXTERNAL_PRECHECK_1 = 2
-    EXTERNAL_MODIFIERS_2 = 3  # debuffs all go here
-    EXTERNAL_MODIFIERS_3 = 4  # any
-    EXTERNAL_PRECHECK_2 = 5
-    INTERNAL_2 = 6  # i honestly don't think anything goes in here tbh
-    CORE = 7
-    INTERNAL_3 = 8
-    EXTERNAL_REACTORS = 9
-    INTERNAL_4 = 10
+    INTERNAL_2 = 2  # post-weakness, before external debuffs (Maid immunity)
+    EXTERNAL_PRECHECK_1 = 3
+    EXTERNAL_MODIFIERS_2 = 4  # debuffs all go here
+    EXTERNAL_MODIFIERS_3 = 5  # any
+    EXTERNAL_PRECHECK_2 = 6
+    INTERNAL_3 = 7  # reserved pre-core internal slot (formerly INTERNAL_2)
+    CORE = 8
+    INTERNAL_4 = 9  # post-core internal reactors (formerly INTERNAL_3)
+    EXTERNAL_REACTORS = 10
+    INTERNAL_5 = 11  # formerly INTERNAL_4
 
     def succ(self):
         v = self.value + 1

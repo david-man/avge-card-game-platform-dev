@@ -49,6 +49,9 @@ class PlayerSeat:
     def __init__(self, user: User):
         self.user = user
         self.account_id: str | None = None
+        # Display name of the account in this seat (Account.username), for clients to show who is
+        # who - the engine itself only knows PLAYER_1/PLAYER_2.
+        self.username: str | None = None
         self.websocket: Transport | None = None
         self.connected = False
         self.disconnect_task: asyncio.Task[None] | None = None
@@ -220,6 +223,11 @@ class GameSession:
         await self._finish()
 
     # --- Connection state ---
+
+    def usernames(self) -> dict[str, str]:
+        '''Seat name -> display name for both seats (the seat name itself if nobody's been
+        seated there yet).'''
+        return {user.name: seat.username or user.name for user, seat in self.seats.items()}
 
     def attach(self, user: User, websocket: Transport) -> bool:
         '''Returns False (and does nothing else) if the session has already finished - force_end/

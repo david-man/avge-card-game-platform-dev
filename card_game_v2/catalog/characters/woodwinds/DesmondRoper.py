@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, AVGEAttributeModifier
@@ -31,11 +31,9 @@ class DesmondRoper(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._CircularBreathing(), ActionTypes.ATK_2: self._SpeedrunCentral()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._CircularBreathing(), ActionTypes.ATK_2: self._SpeedrunCentral()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -49,7 +47,7 @@ class DesmondRoper(AVGECharacterCard):
             super().__init__(
                 name="Circular Breathing",
                 description="Deal 10 damage, plus 10 more per consecutive prior turn this attack was used (capped at +40).",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
@@ -76,11 +74,13 @@ class DesmondRoper(AVGECharacterCard):
                 chapter_increment += 2
             return streak
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), DesmondRoper)
+            _id = AVGEEngineID(card, self.action_type, DesmondRoper)
 
             streak = self._streak(card)
             damage = 10 + min(40, 10 * streak)
@@ -94,16 +94,18 @@ class DesmondRoper(AVGECharacterCard):
             super().__init__(
                 name="Speedrun Central",
                 description="Deal 100 damage if Desmond moved into active this turn, else 40.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), DesmondRoper)
+            _id = AVGEEngineID(card, self.action_type, DesmondRoper)
 
             active_pile = player.card_piles[DeckType.ACTIVE_CARD]
             event, _ = env.search_history(

@@ -35,11 +35,9 @@ class SarahChen(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._DoubleTongue(), ActionTypes.ATK_2: self._ArtistAlley()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._DoubleTongue(), ActionTypes.ATK_2: self._ArtistAlley()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -54,15 +52,17 @@ class SarahChen(AVGECharacterCard):
             super().__init__(
                 name="Double Tongue",
                 description="Deal 10 damage to the opposing active, twice.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), SarahChen)
+            _id = AVGEEngineID(card, self.action_type, SarahChen)
 
             env.push_packet(Packet(_id, [
                 AVGECardHPChangeEvent(_id, target, 10, AVGEAttributeModifier.SUBSTRACTIVE, CardType.WOODWIND, env),
@@ -74,17 +74,19 @@ class SarahChen(AVGECharacterCard):
             super().__init__(
                 name="Artist Alley",
                 description="Discard any number of Concert Program/Roster/Ticket cards from hand; deal 40 damage to a chosen opposing character per card discarded this way.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             hand = player.card_piles[DeckType.HAND]
             discard = player.card_piles[DeckType.DISCARD]
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), SarahChen)
+            _id = AVGEEngineID(card, self.action_type, SarahChen)
 
             eligible_cards = [
                 c for c in hand.cards_holding if isinstance(c, (ConcertProgram, ConcertRoster, ConcertTicket))

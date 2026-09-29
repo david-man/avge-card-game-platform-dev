@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from enum import StrEnum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .AVGEDeck import AVGEDeck, DeckType, AVGEToolHolder
+from .labels import label_for
 from ..constants import *
 if TYPE_CHECKING:
     from .AVGEEnvironment import AVGEEnvironment, EnergyToken
@@ -20,6 +21,7 @@ class AVGECard(ABC):
         self.owner = owner
         self.deck_type = deck_in
         self.env: AVGEEnvironment = env
+        self.actions: dict[ActionTypes, Ability] = {}
 
     @abstractmethod
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event : TransferCard):
@@ -29,6 +31,10 @@ class AVGECard(ABC):
     def cache_set(self, key: str, new_value: Any):
         '''Sets a new value in the global cache'''
         self.env.cache_set(self, key, new_value)
+
+    def cache_get(self, key: str, default: Any = None) -> Any:
+        '''Reads a value from the global cache without journaling a change.'''
+        return self.env.cache_get(self, key, default)
 
     def cache_delete(self, key: str):
         '''Cleans up a value in the global cache'''
@@ -49,6 +55,47 @@ class AVGECard(ABC):
     def add_io_listener(self, listener : AVGEIOListener):
         '''Adds an io listener to the engine'''
         self.env.add_io_listener(listener)
+
+    def additional_wire_state(self) -> dict[str, Any]:
+        '''Explicit per-card state that may supplement the standard wire representation.'''
+        return {}
+
+    def __str__(self) -> str:
+        '''A human-readable display name for this card, for use in any player-facing text
+        (notifications, broadcasts) - "HappyRuthJara" -> "Happy Ruth Jara". Without this, an
+        f-string like f"{card}" falls back to object.__repr__, leaking a raw Python object repr
+        (e.g. "<...KathySun object at 0x...>") into what the player sees.'''
+        return label_for(type(self).__name__)
+
+    def _set_actions(self, actions: object, allowed: set[ActionTypes]) -> None:
+        if not isinstance(actions, dict):
+            raise TypeError(f"{type(self).__name__}.base_actions() must return a dict")
+        raw_actions = cast(dict[object, object], actions)
+        validated: dict[ActionTypes, Ability] = {}
+        for key, action in raw_actions.items():
+            if not isinstance(key, ActionTypes) or key not in allowed:
+                raise ValueError(
+                    f"{type(self).__name__} has unsupported action key: {key!r}"
+                )
+            if not isinstance(action, Ability):
+                raise TypeError(
+                    f"{type(self).__name__}.actions[{key.name}] must be an Ability"
+                )
+            # Treat this as untrusted runtime data even though Ability's annotation is
+            # ActionTypes: subclasses and fixtures can still supply a malformed value.
+            declared_type = vars(action).get("action_type")
+            if not isinstance(declared_type, ActionTypes):
+                raise ValueError(
+                    f"{type(self).__name__}.actions[{key.name}] declares an invalid "
+                    f"action type: {declared_type!r}"
+                )
+            if key != declared_type:
+                raise ValueError(
+                    f"{type(self).__name__}.actions[{key.name}] contains an action "
+                    f"declaring {declared_type.name}"
+                )
+            validated[key] = action
+        self.actions = validated
 
 class CardType(StrEnum):
     ALL = "ALL"  # treat this as a sort of "true" element that has no resistance and can be used for all energy
@@ -71,42 +118,23 @@ type_weaknesses = {
 }
 
 @dataclass
-class Attack(ABC):
-    name : str
-    description : str
-    atk_type : ActionTypes
-    cost : int
-
-    @abstractmethod
-    async def __call__(self, calling_card : AVGECharacterCard, caller_action: ActionTypes):
-        pass
-
-    def resolve_caller(self, caller_action : ActionTypes):
-        if(caller_action in [ActionTypes.ENV, ActionTypes.PLAYER_CHOICE]):
-            return self.atk_type
-        else:
-            return caller_action
-
-@dataclass
 class Ability(ABC):
     name : str
     description : str
-    ability_type : ActionTypes
+    action_type : ActionTypes
 
     @abstractmethod
-    async def __call__(self, card : AVGECharacterCard):
+    async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
         pass
 
-    @abstractmethod
-    def can_play(self, card : AVGECharacterCard) -> bool:
-        '''Whether this ability can be played. Passives should always set this to true, even though, as of now, it's not being checked for passives'''
-        pass
+    def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+        '''Whether this action is intrinsically legal. This must be side-effect-free.'''
+        return True
 
-    def resolve_caller(self, caller_action : ActionTypes):
-        if(caller_action in [ActionTypes.ENV, ActionTypes.PLAYER_CHOICE]):
-            return self.ability_type
-        else:
-            return caller_action
+
+@dataclass
+class Attack(Ability):
+    cost: int
 
 
 class AVGECharacterCard(AVGECard, ABC):
@@ -121,8 +149,15 @@ class AVGECharacterCard(AVGECard, ABC):
         self.card_type = self.base_card_type()
         self.retreat_cost = self.base_retreat_cost()
 
-        self.attacks = self.base_attacks()
-        self.abilities = self.base_abilities()
+        self._set_actions(
+            self.base_actions(),
+            {
+                ActionTypes.ATK_1,
+                ActionTypes.ATK_2,
+                ActionTypes.ACTIVATE_ABILITY,
+                ActionTypes.PASSIVE,
+            },
+        )
 
     @abstractmethod
     def base_hp(self) -> int:
@@ -141,36 +176,33 @@ class AVGECharacterCard(AVGECard, ABC):
         pass
 
     @abstractmethod
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
+    def base_actions(self) -> dict[ActionTypes, Ability]:
         pass
+
+
+class AVGENonCharacterCard(AVGECard, ABC):
+    def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
+        super().__init__(cardID, env, owner, deck_in)
+        self._set_actions(self.base_actions(), {ActionTypes.NONCHAR})
 
     @abstractmethod
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
+    def base_actions(self) -> dict[ActionTypes, Ability]:
         pass
 
 
-class AVGESupporterCard(AVGECard):
-    @abstractmethod
-    async def play_card(self, card: 'AVGECard', caller_action: ActionTypes) -> None:
-        pass
+class AVGESupporterCard(AVGENonCharacterCard):
+    pass
 
 
-class AVGEItemCard(AVGECard):
-    @abstractmethod
-    async def play_card(self, card: 'AVGECard', caller_action: ActionTypes) -> None:
-        pass
+class AVGEItemCard(AVGENonCharacterCard):
+    pass
 
 
-class AVGEStadiumCard(AVGECard):
-    @abstractmethod
-    async def play_card(self) -> None:
-        pass
+class AVGEStadiumCard(AVGENonCharacterCard):
+    pass
 
 
-class AVGEToolCard(AVGECard):
+class AVGEToolCard(AVGENonCharacterCard):
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in : DeckType):
         self.parent_card: AVGECharacterCard | None = None
         super().__init__(cardID, env, owner, deck_in)
-    @abstractmethod
-    async def play_card(self) -> None:
-        pass

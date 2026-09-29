@@ -55,3 +55,7 @@ class Cache[T]:
             self._wound_changes.append(Cache.Insertion(
                 owner, key, new_value))
         self.cache[owner][key] = new_value
+
+    def get(self, owner: T, key: str, default: Any = None) -> Any:
+        '''Reads a cached value without adding it to the rollback journal.'''
+        return self.cache[owner].get(key, default)

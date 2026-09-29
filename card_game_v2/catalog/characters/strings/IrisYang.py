@@ -36,11 +36,9 @@ class IrisYang(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._OpenStrings(), ActionTypes.ATK_2: self._Spike()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._OpenStrings(), ActionTypes.ATK_2: self._Spike()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,11 +48,13 @@ class IrisYang(AVGECharacterCard):
             super().__init__(
                 name="Open Strings",
                 description="Deal 10 damage to the opposing active. Draw a card - if it's an item, play it immediately and discard it.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
@@ -62,7 +62,7 @@ class IrisYang(AVGECharacterCard):
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
             discard = player.card_piles[DeckType.DISCARD]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), IrisYang)
+            _id = AVGEEngineID(card, self.action_type, IrisYang)
 
             def draw_and_maybe_play_item() -> list[Event | Generator]:
                 if len(deck) == 0:
@@ -70,7 +70,7 @@ class IrisYang(AVGECharacterCard):
                 top = deck.get_top()
                 events: list[Event | Generator] = [TransferCard(_id, top, deck, hand, env)]
                 if isinstance(top, AVGEItemCard):
-                    events.append(PlayNonCharacterCard(_id, top, ActionTypes.ATK_1, env))
+                    events.append(PlayNonCharacterCard(_id, top, env))
                     events.append(TransferCard(_id, top, hand, discard, env))
                 return events
 
@@ -85,17 +85,19 @@ class IrisYang(AVGECharacterCard):
             super().__init__(
                 name="Spike",
                 description="Deal 30 damage to the opposing active. You may switch it with one of the opponent's benched characters.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             opponent_bench: list[AVGECharacterCard] = [
                 c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), IrisYang)
+            _id = AVGEEngineID(card, self.action_type, IrisYang)
 
             selected_bench: AVGECharacterCard | None = None
             if opponent_bench:

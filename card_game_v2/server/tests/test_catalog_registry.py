@@ -1,16 +1,47 @@
 import inspect
 import unittest
 from pathlib import Path
+from typing import cast
 
-from ...avge_abstracts.AVGECard import AVGECard
+from ...avge_abstracts.AVGECard import AVGECard, AVGENonCharacterCard, Ability, Attack
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ...catalog import registry
-from ...constants import User
-from ...testing.helpers import TestIO, core_listeners
+from ...constants import ActionTypes, User
+from ...testing.helpers import Dummy, TestIO, core_listeners
 from .. import serialization
 
 _CATALOG_DIR = Path(registry.__file__).resolve().parent
+
+
+class _NoOpAction(Ability):
+    async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+        return
+
+
+class _UnsupportedActionKey(Dummy):
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        action = _NoOpAction("bad", "bad", ActionTypes.NONCHAR)
+        return {ActionTypes.NONCHAR: action}
+
+
+class _NonAbilityValue(Dummy):
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return cast(dict[ActionTypes, Ability], {ActionTypes.ATK_1: object()})
+
+
+class _MismatchedActionType(Dummy):
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        action = _NoOpAction("bad", "bad", ActionTypes.ATK_2)
+        return {ActionTypes.ATK_1: action}
+
+
+class _InvalidDeclaredActionType(Dummy):
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        action = _NoOpAction(
+            "bad", "bad", cast(ActionTypes, "not-an-action-type"),
+        )
+        return {ActionTypes.ATK_1: action}
 
 
 def _file_count(subdir: str) -> int:
@@ -25,6 +56,24 @@ def _file_count(subdir: str) -> int:
 
 
 class AllEntriesTests(unittest.TestCase):
+    def test_attack_is_an_ability(self):
+        self.assertTrue(issubclass(Attack, Ability))
+
+    def test_malformed_action_maps_raise_explicit_exceptions(self):
+        for bad_class, error in (
+            (_UnsupportedActionKey, ValueError),
+            (_NonAbilityValue, TypeError),
+            (_MismatchedActionType, ValueError),
+            (_InvalidDeclaredActionType, ValueError),
+        ):
+            with self.subTest(bad_class=bad_class.__name__):
+                with self.assertRaises(error):
+                    AVGEEnvironment(
+                        TestIO(),
+                        {User.PLAYER_1: [bad_class], User.PLAYER_2: [Dummy]},
+                        core_listeners(),
+                    )
+
     def test_per_kind_counts_match_the_filesystem(self):
         entries = registry.all_entries()
         counts = {}
@@ -101,6 +150,12 @@ class FullCatalogSmokeTests(unittest.TestCase):
             for card in player.card_piles[DeckType.DECK].cards_holding:
                 wire = serialization.card_to_wire(card)
                 seen_names.add(wire["class_name"])
+                self.assertIsInstance(card.actions, dict)
+                for key, action in card.actions.items():
+                    self.assertIsInstance(action, Ability)
+                    self.assertIs(key, action.action_type)
+                if isinstance(card, AVGENonCharacterCard):
+                    self.assertEqual(set(card.actions), {ActionTypes.NONCHAR})
         self.assertEqual(seen_names, {e.class_name for e in registry.all_entries()})
 
 

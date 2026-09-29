@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...avge_abstracts.AVGECard import AVGEToolCard, AVGECharacterCard, CardType
+from ...avge_abstracts.AVGECard import AVGECard, AVGEToolCard, AVGECharacterCard, CardType, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType, AVGEToolHolder
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ...avge_abstracts.AVGEID import AVGEEngineID, CardID
@@ -26,10 +26,25 @@ class Bucket(AVGEToolCard):
             )]))
             self._original_type = None
 
-    async def play_card(self) -> None:
-        assert isinstance(self.parent_card, AVGECharacterCard)
-        self._original_type = self.parent_card.card_type
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, Bucket)
-        self.env.push_packet(Packet(_id, [AVGECardTypeChange(
-            _id, self.parent_card, CardType.PERCUSSION, self.env,
-        )]))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="Bucket",
+                description=Bucket.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, Bucket):
+                raise TypeError("Bucket action requires its defining card")
+            assert isinstance(action_card.parent_card, AVGECharacterCard)
+            action_card._original_type = action_card.parent_card.card_type
+            _id = AVGEEngineID(acting_card, self.action_type, Bucket)
+            acting_card.env.push_packet(Packet(_id, [AVGECardTypeChange(
+                _id, action_card.parent_card, CardType.PERCUSSION, acting_card.env,
+            )]))

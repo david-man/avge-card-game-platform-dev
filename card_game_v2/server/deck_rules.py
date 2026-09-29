@@ -5,7 +5,7 @@ from typing import NoReturn, Sequence
 
 from ..catalog import registry
 from ..catalog.registry import CardKind
-from ..constants import CARDS_PER_DECK
+from ..constants import CARDS_PER_DECK, NO_STARTING_ACTIVE_CARDS
 
 MAX_DECKS_PER_ACCOUNT = 10
 MAX_COPIES_ITEM_OR_TOOL = 2
@@ -63,7 +63,8 @@ def validate_deck_name(name: str) -> str:
 
 def validate_deck_cards(cards: Sequence[str]) -> list[str]:
     '''The full deck-legality ruleset, checked in order: exact card count, every name resolves in
-    the catalog, per-card copy limits by kind, at least one character card. Returns the validated
+    the catalog, per-card copy limits by kind, at least one character card, at least one character
+    that is allowed to start the game in the active slot. Returns the validated
     list unchanged on success (never mutates/reorders it - callers that care about the user's own
     ordering, e.g. round-tripping a saved deck back to the builder, can rely on that).'''
     cards = list(cards)
@@ -75,12 +76,15 @@ def validate_deck_cards(cards: Sequence[str]) -> list[str]:
 
     counts = collections.Counter(cards)
     has_character = False
+    has_starter = False
     for name, count in counts.items():
         found = registry.entry(name)
         if found is None:
             _raise("unknown_card", f"Unknown card: {name!r}.")
         if found.kind is CardKind.CHARACTER:
             has_character = True
+            if name not in NO_STARTING_ACTIVE_CARDS:
+                has_starter = True
         limit = max_copies_for(found.kind)
         if count > limit:
             copies = "copy" if limit == 1 else "copies"
@@ -91,6 +95,12 @@ def validate_deck_cards(cards: Sequence[str]) -> list[str]:
 
     if not has_character:
         _raise("no_character_card", "A deck must contain at least one character card.")
+    if not has_starter:
+        restricted = ", ".join(registry.label_for(n) for n in sorted(NO_STARTING_ACTIVE_CARDS))
+        _raise(
+            "no_starter_character",
+            f"A deck needs at least one character that can start the game (not {restricted}).",
+        )
 
     return cards
 

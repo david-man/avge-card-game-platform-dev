@@ -34,6 +34,10 @@ class ParseClientMessageTests(unittest.TestCase):
         msg = protocol.parse_client_message({"type": "concede"})
         self.assertIsInstance(msg, protocol.ConcedeMessage)
 
+    def test_parses_leave(self):
+        msg = protocol.parse_client_message({"type": "leave"})
+        self.assertIsInstance(msg, protocol.LeaveMessage)
+
     def test_parses_io_response(self):
         msg = protocol.parse_client_message({
             "type": "io_response", "request_id": "r1", "payload": {"value": 3},

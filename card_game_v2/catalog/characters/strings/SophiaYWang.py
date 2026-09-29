@@ -38,11 +38,9 @@ class SophiaYWang(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._GachaGaming(), ActionTypes.ATK_2: self._Ricochet()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._GachaGaming(), ActionTypes.ATK_2: self._Ricochet()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -60,16 +58,18 @@ class SophiaYWang(AVGECharacterCard):
             super().__init__(
                 name="Gacha Gaming",
                 description="Repeatedly draw a card for 20 self-damage (min 1 HP) until you stop, run out of deck, or drop to 20 HP. Landing AVGEBirb ends the streak, heals you to full, and keeps everything drawn.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), SophiaYWang)
+            _id = AVGEEngineID(card, self.action_type, SophiaYWang)
 
             remaining_deck = list(deck.cards_holding)
             running_hp = card.hp
@@ -130,17 +130,18 @@ class SophiaYWang(AVGECharacterCard):
             super().__init__(
                 name="Ricochet",
                 description="Deal 50 damage to the opposing active. Each knockout dealt this way splashes 30 damage to every remaining opposing bench character, recursively.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), SophiaYWang)
+            _id = AVGEEngineID(card, self.action_type, SophiaYWang)
 
-            assert isinstance(card, SophiaYWang)
             card.add_listener(SophiaYWang._KnockoutChainReactor(card, env, 1))
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 50, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env,
@@ -153,7 +154,7 @@ class SophiaYWang(AVGECharacterCard):
         whenever one of those hits is a knockout - so a KO chain can cascade through
         the whole opposing bench. Self-removes once no pending hits remain.'''
 
-        def __init__(self, owner_card: SophiaYWang, env: AVGEEnvironment, pending_hits: int):
+        def __init__(self, owner_card: AVGECharacterCard, env: AVGEEnvironment, pending_hits: int):
             super().__init__(AVGEEngineID(owner_card, ActionTypes.ATK_2, SophiaYWang), env, EngineGroup.EXTERNAL_REACTORS)
             self.owner_card = owner_card
             self.pending_hits = pending_hits
@@ -185,7 +186,7 @@ class SophiaYWang(AVGECharacterCard):
 
             # Use the snapshot taken at CORE-time (`final_change`), not the live
             # `.hp` - by the time this EXTERNAL_REACTORS-group reactor runs, the
-            # engine's own INTERNAL_3 discard-and-replace flow has already discarded
+            # engine's own INTERNAL_4 discard-and-replace flow has already discarded
             # a KO'd character and reset its HP back to max as part of cleanup.
             if event.final_change == 0:
                 opponent = env.get_opponent(owner.owner)

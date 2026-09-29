@@ -3,7 +3,10 @@ import unittest
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import User, ActionTypes, INITIAL_HAND_SIZE
+from ...catalog import registry
+from ...catalog.characters.guitar.BenCherekIII import BenCherekIII
+from ...catalog.items.AVGEBirb import AVGEBirb
+from ...constants import User, ActionTypes, AVGEPlayerAttribute, INITIAL_HAND_SIZE, NO_STARTING_ACTIVE_CARDS
 from ...core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer
 from ...avge_abstracts.AVGECard import CardType
 from ...constants import AVGEAttributeModifier
@@ -68,22 +71,27 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_regulate_fail_broadcasts_the_regulators_reason_and_a_resync_snapshot(self):
         '''AVGETokenTransferCheck (core/CoreListeners.py) REGULATE_FAILs an AVGEEnergyTransfer
-        when the source card has no energy to move - the exact "attach energy with none
-        available" case from the review. Confirms the live per-event broadcast (none here, since
-        nothing committed before the failure) plus the single combined ActionRejectedUpdate
-        carrying both the regulator's own reason and a post-rollback state snapshot.'''
+        when the destination player has already used up their once-per-turn energy attach - the
+        exact "attach energy with none available" scenario used to use the *source* card having
+        no energy instead, but that branch is REGULATE_IGNORE now (a legitimately-already-empty
+        source is a no-op, not a failure - see A6), so this uses the still-REGULATE_FAIL branch
+        instead, purely as a convenient trigger for what this test actually covers: the live
+        per-event broadcast (none here, since nothing committed before the failure) plus the
+        single combined ActionRejectedUpdate carrying both the regulator's own reason and a
+        post-rollback state snapshot.'''
         await perform_initial_setup(self.env)
-        active = self.env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
-        active.energy_tokens = []
+        p1 = self.env.players[User.PLAYER_1]
+        active = p1.card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
+        p1.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] = 0
 
-        _id = AVGEEngineID(None, ActionTypes.ENV, None)
-        self.env.push_packet(Packet(_id, [AVGEEnergyTransfer(_id, active, self.env, self.env)]))
+        _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
+        self.env.push_packet(Packet(_id, [AVGEEnergyTransfer(_id, self.env, active, self.env)]))
         await self.env.engine.flush(lambda: False)
 
         rejected = [m for _, m in self.sent if m.get("io_type") == "ActionRejectedUpdate"]
         self.assertEqual(len(rejected), 2)  # broadcast to both players
         payload = rejected[0]["payload"]
-        self.assertEqual(payload["reason"], "No energy left on that card to move.")
+        self.assertEqual(payload["reason"], "You've already attached energy this turn.")
         self.assertEqual(payload["snapshot"], serialization.snapshot(self.env))
 
     async def test_extra_on_packet_failed_runs_alongside_the_broadcast(self):
@@ -98,11 +106,12 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
             calls.append("extra")
 
         await perform_initial_setup(self.env, extra_on_packet_failed=extra)
-        active = self.env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
-        active.energy_tokens = []
+        p1 = self.env.players[User.PLAYER_1]
+        active = p1.card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
+        p1.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] = 0
 
-        _id = AVGEEngineID(None, ActionTypes.ENV, None)
-        self.env.push_packet(Packet(_id, [AVGEEnergyTransfer(_id, active, self.env, self.env)]))
+        _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
+        self.env.push_packet(Packet(_id, [AVGEEnergyTransfer(_id, self.env, active, self.env)]))
         await self.env.engine.flush(lambda: False)
 
         rejected = [m for _, m in self.sent if m.get("io_type") == "ActionRejectedUpdate"]
@@ -179,6 +188,57 @@ class MixedDeckDealingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(original_ids, after_ids)
         self.assertEqual(len(original_ids), CARDS_PER_DECK)
 
+    async def test_excluded_character_is_skipped_even_when_it_is_first_in_the_deck(self):
+        deck = [BenCherekIII, Dummy] + [DummySupporter] * (CARDS_PER_DECK - 2)
+        env = self._make_env(deck)
+        await perform_initial_setup(env)
+        active = env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding
+        self.assertEqual(len(active), 1)
+        self.assertIsInstance(active[0], Dummy)
 
-if __name__ == "__main__":
-    unittest.main()
+    async def test_deck_whose_only_characters_are_excluded_raises_a_clear_error(self):
+        deck = [BenCherekIII] + [DummySupporter] * (CARDS_PER_DECK - 1)
+        env = self._make_env(deck)
+        with self.assertRaises(ValueError):
+            await perform_initial_setup(env)
+
+
+class _PromptRecordingIO(TestIO):
+    def __init__(self):
+        super().__init__()
+        self.prompts: list[object] = []
+
+    async def send(self, user, io):
+        self.prompts.append(io)
+        await super().send(user, io)
+
+
+class StartingActivePromptSweepTests(unittest.IsolatedAsyncioTestCase):
+    '''The opening deal runs before the clients know the game started, so no character allowed to start
+    (see constants.NO_STARTING_ACTIVE_CARDS) may ask the player anything during it.
+    A deck of [character] + AVGE Birbs makes that character the starter and fills the opening hand
+    with the card that Yuelin Hu's draw-reactor watches for.'''
+
+    async def _prompts_for_starter(self, starter: type, *, as_player: User) -> list[object]:
+        io = _PromptRecordingIO()
+        filler = [Dummy] * CARDS_PER_DECK
+        decks = {User.PLAYER_1: list(filler), User.PLAYER_2: list(filler)}
+        decks[as_player] = [starter] + [AVGEBirb] * (CARDS_PER_DECK - 1)
+        env = AVGEEnvironment(io, decks, core_listeners())
+        env.turn = as_player
+        await perform_initial_setup(env)
+        self.assertIsInstance(
+            env.players[as_player].card_piles[DeckType.ACTIVE_CARD].cards_holding[0], starter,
+        )
+        return io.prompts
+
+    async def test_every_character_allowed_to_start_deploys_without_a_prompt(self):
+        for entry in registry.all_entries():
+            if entry.kind is not registry.CardKind.CHARACTER:
+                continue
+            if entry.class_name in NO_STARTING_ACTIVE_CARDS:
+                continue
+            for as_player in (User.PLAYER_1, User.PLAYER_2):
+                with self.subTest(character=entry.class_name, player=as_player.name):
+                    prompts = await self._prompts_for_starter(entry.card_class, as_player=as_player)
+                    self.assertEqual(prompts, [])

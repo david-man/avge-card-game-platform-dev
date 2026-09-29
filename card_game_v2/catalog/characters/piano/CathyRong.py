@@ -32,11 +32,9 @@ class CathyRong(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._RacketSmash(), ActionTypes.ATK_2: self._FourHands()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._RacketSmash(), ActionTypes.ATK_2: self._FourHands()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -46,15 +44,17 @@ class CathyRong(AVGECharacterCard):
             super().__init__(
                 name="Racket Smash",
                 description="Deal 20 damage to the opposing active. Optionally discard 1 energy from a chosen opposing benched character.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), CathyRong)
+            _id = AVGEEngineID(card, self.action_type, CathyRong)
 
             events: list[Event | Generator] = [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
@@ -86,16 +86,18 @@ class CathyRong(AVGECharacterCard):
             super().__init__(
                 name="Four Hands",
                 description="Deal 50 damage to the opposing active (80 if another PIANO character is on your bench).",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), CathyRong)
+            _id = AVGEEngineID(card, self.action_type, CathyRong)
 
             has_piano_benchmate = any(
                 isinstance(c, AVGECharacterCard) and c is not card and c.card_type == CardType.PIANO

@@ -6,14 +6,13 @@ from ...engine.event import Event
 from ...core.EventCatalog import *
 
 
-class AVGEMaidDamageShieldModifier(AVGEEventModifier):
+class AVGEMaidDamageShieldRegulator(AVGEEventRegulator):
     '''MAID status: a character carrying MAID is immune to attack damage of 10 or less.
-    Must be registered after AVGEWeaknessModifier (both INTERNAL_1) in core_listeners()
-    so this checks the post-weakness-crit magnitude, matching v1's actual attach order
-    (Weakness modifier attached before Maid's on every AVGECardHPChange) - a crit that
-    pushes a small hit over 10 is NOT shielded, by design/parity, not by accident.'''
+    Registered at INTERNAL_2, strictly after AVGEWeaknessModifier's INTERNAL_1 and before
+    every external modifier. Ignoring the event prevents a later positive modifier from reviving
+    damage that immunity already blocked.'''
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_2)
 
     def _eligible(self, event: Event) -> bool:
         if not isinstance(event, AVGECardHPChangeEvent):
@@ -33,8 +32,6 @@ class AVGEMaidDamageShieldModifier(AVGEEventModifier):
     def match(self, event: Event) -> bool:
         return self._eligible(event)
 
-    async def modify(self, event: Event):
-        assert isinstance(event, AVGECardHPChangeEvent)
-        assert not callable(event.magnitude)
-        event.modify_magnitude(-event.magnitude)
+    async def respond(self, event: Event) -> ResponseStatus:
         await self.env.broadcast(BroadcastIO("Maid: This character is immune to all damage <= 10", default_timeout))
+        return ResponseStatus.REGULATE_IGNORE

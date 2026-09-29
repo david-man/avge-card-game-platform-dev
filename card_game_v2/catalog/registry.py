@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
-import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -11,6 +10,7 @@ from .. import catalog
 from ..avge_abstracts.AVGECard import (
     AVGECard, AVGECharacterCard, AVGEItemCard, AVGEStadiumCard, AVGESupporterCard, AVGEToolCard,
 )
+from ..avge_abstracts.labels import label_for as label_for
 
 # Instrument sub-package names under catalog/characters/ - the only thing `subtype` is ever
 # derived from (never from `kind`, and never used to classify a card - isinstance against the
@@ -94,7 +94,7 @@ def _build_entries() -> tuple[CatalogEntry, ...]:
             if inspect.isabstract(obj):
                 # Excludes AVGECard/AVGECharacterCard and the four thin AVGE*Card bases
                 # themselves - each still has at least one unimplemented @abstractmethod
-                # (on_transfer / play_card) until a concrete leaf class overrides it.
+                # (on_transfer / base_actions) until a concrete leaf class overrides it.
                 continue
             card_class = obj
             class_name = attr_name
@@ -135,12 +135,7 @@ def card_class(class_name: str) -> type[AVGECard] | None:
     return found.card_class if found is not None else None
 
 
-_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
-
-
-def label_for(class_name: str) -> str:
-    '''A human-readable display label for a class name - "HappyRuthJara" -> "Happy Ruth Jara",
-    "AVGEBirb" -> "AVGE Birb". Purely cosmetic (used by server/deck_routes.py's catalog payload,
-    not for any lookup) - imperfect on some acronym-adjacent edge cases (e.g. "AVGETShirt" ->
-    "AVGET Shirt") is an acceptable tradeoff for a simple, dependency-free splitter.'''
-    return _CAMEL_SPLIT_RE.sub(" ", class_name)
+# label_for is imported (and re-exported) from avge_abstracts/labels.py, above - moved there so
+# AVGECard.__str__ can use it too, without AVGECard.py importing back from this module (which
+# itself imports AVGECard.py). Existing callers (server/deck_rules.py, server/deck_routes.py)
+# keep working unchanged via registry.label_for.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -33,11 +33,9 @@ class JordanRoosevelt(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Trickster(), ActionTypes.ATK_2: self._SparklingRun()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Trickster(), ActionTypes.ATK_2: self._SparklingRun()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -48,7 +46,7 @@ class JordanRoosevelt(AVGECharacterCard):
         notify text), not a bug: Jordan's own next attack gets a much bigger buff
         (+60 vs +20), so this is a net-favorable trickster gamble, not a mistake.'''
 
-        def __init__(self, owner_card: JordanRoosevelt, env: AVGEEnvironment, round_active: int):
+        def __init__(self, owner_card: AVGECharacterCard, env: AVGEEnvironment, round_active: int):
             super().__init__(AVGEEngineID(owner_card, ActionTypes.ATK_1, JordanRoosevelt), env, EngineGroup.EXTERNAL_MODIFIERS_2)
             self.owner_card = owner_card
             self.round_active = round_active
@@ -78,7 +76,7 @@ class JordanRoosevelt(AVGECharacterCard):
             await self.env.broadcast(BroadcastIO("Trickster: Opponent attack +20 this turn.", default_timeout))
 
     class _SelfAttackBoost(AVGEEventModifier):
-        def __init__(self, owner_card: JordanRoosevelt, env: AVGEEnvironment, round_active: int):
+        def __init__(self, owner_card: AVGECharacterCard, env: AVGEEnvironment, round_active: int):
             super().__init__(AVGEEngineID(owner_card, ActionTypes.ATK_1, JordanRoosevelt), env, EngineGroup.EXTERNAL_MODIFIERS_2)
             self.owner_card = owner_card
             self.round_active = round_active
@@ -113,12 +111,13 @@ class JordanRoosevelt(AVGECharacterCard):
             super().__init__(
                 name="Trickster",
                 description="Deals no damage. Your next attack this cycle gets +60 damage; the opponent's next attack gets +20.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
-            assert isinstance(card, JordanRoosevelt)
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             next_opp_round = env.round + (1 if env.turn == card.owner else 2)
             next_own_round = env.round + (2 if env.turn == card.owner else 1)
@@ -130,15 +129,17 @@ class JordanRoosevelt(AVGECharacterCard):
             super().__init__(
                 name="Sparkling Run",
                 description="Deal 30 damage to the opposing active. Heal yourself 20.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JordanRoosevelt)
+            _id = AVGEEngineID(card, self.action_type, JordanRoosevelt)
 
             env.push_packet(Packet(_id, [
                 AVGECardHPChangeEvent(_id, target, 30, AVGEAttributeModifier.SUBSTRACTIVE, CardType.WOODWIND, env),

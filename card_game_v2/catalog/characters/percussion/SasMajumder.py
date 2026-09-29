@@ -39,11 +39,9 @@ class SasMajumder(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._FourMallets()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._FourMallets()}), **({ActionTypes.PASSIVE: self._CybersecurityPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._CybersecurityPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -53,13 +51,11 @@ class SasMajumder(AVGECharacterCard):
             super().__init__(
                 name="Cybersecurity",
                 description="Once per round, if your own card gets discarded during the opponent's turn, you may put it back on top of your deck.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, SasMajumder)
             if card._cybersecurity is None:
                 card._cybersecurity = SasMajumder._Cybersecurity(card, card.env)
@@ -94,7 +90,7 @@ class SasMajumder(AVGECharacterCard):
             _id = AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, SasMajumder)
             choice = await self.env.report(StringSelectionQuery(
                 self.owner_card.owner,
-                f"Cybersecurity: Put {type(discarded).__name__} back on top of your deck?",
+                f"Cybersecurity: Put {discarded} back on top of your deck?",
                 1,
                 ["Yes", "No"],
                 ["Yes", "No"],
@@ -125,18 +121,20 @@ class SasMajumder(AVGECharacterCard):
             super().__init__(
                 name="Four Mallets",
                 description="Deal 10 damage 4 times to the opposing active. The 4th hit also draws a card.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), SasMajumder)
+            _id = AVGEEngineID(card, self.action_type, SasMajumder)
 
             events: list[Event | Generator] = []
             for i in range(4):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...avge_abstracts.AVGECard import AVGEToolCard, AVGECharacterCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGEToolCard, AVGECharacterCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType, AVGEToolHolder
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ...avge_abstracts.AVGEID import AVGEEngineID, CardID
@@ -24,11 +24,27 @@ class AVGEShowcaseSticker(AVGEToolCard):
             self._turn_start_reactor.cleanup()
             self._turn_start_reactor = None
 
-    async def play_card(self) -> None:
-        assert isinstance(self.parent_card, AVGECharacterCard)
-        if self._turn_start_reactor is None:
-            self._turn_start_reactor = AVGEShowcaseSticker._TurnStartReactor(self)
-            self.add_listener(self._turn_start_reactor)
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="AVGEShowcaseSticker",
+                description=AVGEShowcaseSticker.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, AVGEShowcaseSticker):
+                raise TypeError("AVGEShowcaseSticker action requires its defining card")
+            assert isinstance(action_card.parent_card, AVGECharacterCard)
+            if action_card._turn_start_reactor is None:
+                action_card._turn_start_reactor = AVGEShowcaseSticker._TurnStartReactor(action_card)
+                acting_card.add_listener(action_card._turn_start_reactor)
+
 
     class _TurnStartReactor(AVGEEventReactor):
         def __init__(self, owner_card: AVGEShowcaseSticker):
@@ -57,15 +73,20 @@ class AVGEShowcaseSticker(AVGEToolCard):
             player = self.env.players[character.owner]
             env = self.env
 
-            # PhasePickCard's own normal turn-start draw is queued as a *separate*,
-            # later packet (env.append_packet from within its own act()) that still
-            # holds a reference to whatever was on top of the deck *before* this
-            # reactor runs. Resolving our own draw target eagerly here (deck.get_top())
-            # would race that already-queued draw and grab the same card out from
-            # under it. Deferring both the emptiness check and the top-of-deck lookup
-            # into a generator - itself queued as another separate, still-later packet
-            # - makes this draw only actually look at the deck once the normal draw has
-            # already happened.
+            # push_packet (front-of-queue), matching every other card in the catalog, so this
+            # draw actually lands at the start of the turn - usable during that turn's own
+            # play/attack phases - instead of append_packet's back-of-the-whole-queue behavior,
+            # which used to leave it resolving only after that turn's play/attack phases (and,
+            # via TurnEnd's own push_packet'd cascade, sometimes not until well into the
+            # opponent's turn) were already over, making the card effectively useless on the
+            # turn its own text describes.
+            #
+            # Deferring both the emptiness check and the top-of-deck lookup into a generator -
+            # evaluated only once this packet is actually popped and run, not when it's queued -
+            # still means this always looks at whatever is *currently* on top at that moment, so
+            # there's no double-draw hazard either way: PhasePickCard's own normal draw (also
+            # queued via its own act(), independently) resolves against whatever's on top at
+            # *its* own run time, whichever of the two packets happens to run first.
             def gen() -> list[Event | Generator]:
                 deck = player.card_piles[DeckType.DECK]
                 if len(deck) == 0:
@@ -73,4 +94,4 @@ class AVGEShowcaseSticker(AVGEToolCard):
                 hand = player.card_piles[DeckType.HAND]
                 return [TransferCard(_id, deck.get_top(), deck, hand, env)]
 
-            self.env.append_packet(Packet(_id, [gen]))
+            self.env.push_packet(Packet(_id, [gen]))

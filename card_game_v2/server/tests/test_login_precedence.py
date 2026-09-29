@@ -97,6 +97,40 @@ class LoginPrecedenceIntegrationTests(unittest.TestCase):
                 message = ws1b.receive_json()
                 self.assertEqual(message["type"], "waiting_for_opponent")
 
+    def test_leaving_the_queue_frees_the_account_and_a_relogin_lands_on_home(self):
+        with self.client.websocket_connect("/ws") as raw1:
+            ws1 = QueuedWebSocket(raw1)
+            login_with_deck(self.client, ws1, "alice")
+            ws1.send_json({"type": "join"})
+            ws1.receive_json()  # joined
+            ws1.receive_json()  # waiting_for_opponent
+
+            ws1.send_json({"type": "leave"})
+            self.assertEqual(ws1.receive_json(), {"type": "left"})
+
+            # The same connection is free to queue again, and gets a brand new game.
+            ws1.send_json({"type": "join"})
+            joined = ws1.receive_json()
+            self.assertEqual(joined["type"], "joined")
+            ws1.receive_json()  # waiting_for_opponent
+
+        # A leave that already succeeded must not leave a ghost behind for a later login to
+        # resume: log in fresh, leave again, then reconnect and expect no "joined" resend.
+        with self.client.websocket_connect("/ws") as raw2:
+            ws2 = QueuedWebSocket(raw2)
+            login(ws2, "alice")
+            self.assertEqual(ws2.receive_json()["type"], "joined")
+            ws2.receive_json()  # waiting_for_opponent
+            ws2.send_json({"type": "leave"})
+            self.assertEqual(ws2.receive_json(), {"type": "left"})
+
+        with self.client.websocket_connect("/ws") as raw3:
+            ws3 = QueuedWebSocket(raw3)
+            login(ws3, "alice")
+            ws3.send_json({"type": "leave"})  # nothing to leave: ignored, no crash
+            ws3.send_json({"type": "join"})
+            self.assertEqual(ws3.receive_json()["type"], "joined")
+
 
 if __name__ == "__main__":
     unittest.main()

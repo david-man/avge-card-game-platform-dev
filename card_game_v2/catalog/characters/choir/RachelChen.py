@@ -36,11 +36,9 @@ class RachelChen(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._SATB()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._SATB()}), **({ActionTypes.ACTIVATE_ABILITY: self._ProgramProduction()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.ACTIVATE_ABILITY: self._ProgramProduction()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -57,10 +55,11 @@ class RachelChen(AVGECharacterCard):
             super().__init__(
                 name="Program Production",
                 description="Once per turn, retrieve a Concert Program, Concert Roster, or Concert Ticket from your discard pile and place it on top of your deck.",
-                ability_type=ActionTypes.ACTIVATE_ABILITY,
+                action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            card = action_card
             assert isinstance(card, RachelChen)
             # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
             # constructed (server/io_adapter.py's _deserialize_phase2).
@@ -69,7 +68,8 @@ class RachelChen(AVGECharacterCard):
             discard = card.env.players[card.owner].card_piles[DeckType.DISCARD]
             return any(isinstance(c, (ConcertProgram, ConcertRoster, ConcertTicket)) for c in discard.cards_holding)
 
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, RachelChen)
             env = card.env
             player = env.players[card.owner]
@@ -103,7 +103,7 @@ class RachelChen(AVGECharacterCard):
                 ]
                 env.push_packet(Packet(_id, events))
 
-            await env.broadcast(BroadcastIO(f"{type(card).__name__} used Program Production!", default_timeout))
+            await env.broadcast(BroadcastIO(f"{card} used Program Production!", default_timeout))
 
     # ------------------------------------------------------------------
     # Attacks
@@ -114,15 +114,17 @@ class RachelChen(AVGECharacterCard):
             super().__init__(
                 name="SATB",
                 description="Deal 20 damage to each of a number of chosen opposing characters equal to your own number of CHOIR characters in play (targets may repeat).",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), RachelChen)
+            _id = AVGEEngineID(card, self.action_type, RachelChen)
 
             own_chars: list[AVGECharacterCard] = [
                 c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)

@@ -32,24 +32,24 @@ class ChristmasKim(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Strum(), ActionTypes.ATK_2: self._SurpriseDelivery()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Strum(), ActionTypes.ATK_2: self._SurpriseDelivery()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
     class _Strum(Attack):
         def __init__(self):
-            super().__init__(name="Strum", description="Deal 20 damage to the opposing active.", atk_type=ActionTypes.ATK_1, cost=1)
+            super().__init__(name="Strum", description="Deal 20 damage to the opposing active.", action_type=ActionTypes.ATK_1, cost=1)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), ChristmasKim)
+            _id = AVGEEngineID(card, self.action_type, ChristmasKim)
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.GUITAR, env,
             )]))
@@ -64,17 +64,19 @@ class ChristmasKim(AVGECharacterCard):
             super().__init__(
                 name="Surprise Delivery",
                 description="Peek the top 5 of your deck. Take any revealed GUITAR characters to hand, dealing 20 damage to the opposing active for each one found. If more than 1 non-GUITAR card was among those peeked, choose an order to put them back on top of the deck.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), ChristmasKim)
+            _id = AVGEEngineID(card, self.action_type, ChristmasKim)
 
             n = min(5, len(deck))
             if n == 0:

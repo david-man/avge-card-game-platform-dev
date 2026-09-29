@@ -3,13 +3,13 @@ from __future__ import annotations
 from ..avge_abstracts.AVGEEventListener import AVGEEventListener
 from ..core.CoreListeners import (
     AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
-    AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck, AVGERetreatCostReactor,
-    AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck, AVGEPlayNonCharacterCardValidityCheck,
+    AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
+    AVGEStadiumReplaceReactor, AVGEPlayCardValidityCheck, AVGETransferSourceCheck,
 )
 from ..catalog.status_effects.Goon import (
-    AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
+    AVGEGoonRetreatCostModifier, AVGEGoonStatusChangeReactor,
 )
-from ..catalog.status_effects.Maid import AVGEMaidDamageShieldModifier
+from ..catalog.status_effects.Maid import AVGEMaidDamageShieldRegulator
 from ..catalog.status_effects.Arranger import AVGEArrangerStatusReactor
 
 
@@ -23,9 +23,8 @@ def default_core_listeners() -> list[type[AVGEEventListener]]:
     shared module, consistent with this codebase's established policy elsewhere.'''
     return [
         AVGETokenTransferCheck, AVGEHPChangeCheck, AVGEHPChangeReactor, AVGEWeaknessModifier,
-        AVGEMaidDamageShieldModifier, AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
-        AVGERetreatCostReactor, AVGEStadiumReplaceReactor, AVGEPlayCharacterCardValidityCheck,
-        AVGEPlayNonCharacterCardValidityCheck,
-        AVGEGoonRetreatCostRegulator, AVGEGoonRetreatCostReactor, AVGEGoonStatusChangeReactor,
+        AVGEMaidDamageShieldRegulator, AVGEPlayerAttributeChangeReactor, AVGETransferValidityCheck,
+        AVGEStadiumReplaceReactor, AVGEPlayCardValidityCheck, AVGETransferSourceCheck,
+        AVGEGoonRetreatCostModifier, AVGEGoonStatusChangeReactor,
         AVGEArrangerStatusReactor,
     ]

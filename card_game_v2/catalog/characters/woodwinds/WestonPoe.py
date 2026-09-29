@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -43,11 +43,9 @@ class WestonPoe(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Overblow()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Overblow()}), **({ActionTypes.PASSIVE: self._RightBackAtYouPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._RightBackAtYouPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -57,13 +55,11 @@ class WestonPoe(AVGECharacterCard):
             super().__init__(
                 name="Right Back At You!",
                 description="Reflect any single attack hit of 60+ actual damage back onto the attacker.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, WestonPoe)
             if card._right_back is None:
                 card._right_back = WestonPoe._RightBackAtYouReactor(card, card.env)
@@ -77,7 +73,7 @@ class WestonPoe(AVGECharacterCard):
         def match(self, event: Event) -> bool:
             # No live deck_type/cleanup gate here (unlike most other permanent
             # listeners in this migration): by the time this EXTERNAL_REACTORS
-            # listener sees a *lethal* hit, the engine's own INTERNAL_3 discard flow
+            # listener sees a *lethal* hit, the engine's own INTERNAL_4 discard flow
             # has already moved the owner out of play - gating on "still in play"
             # would wrongly block reflection on the exact hit that KO'd them, which
             # defeats the whole point of a last-stand reflection effect.
@@ -121,15 +117,17 @@ class WestonPoe(AVGECharacterCard):
             super().__init__(
                 name="Overblow",
                 description="Deal 50 damage to the opposing active. Deal 10 recoil damage to yourself.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), WestonPoe)
+            _id = AVGEEngineID(card, self.action_type, WestonPoe)
 
             env.push_packet(Packet(_id, [
                 AVGECardHPChangeEvent(_id, target, 50, AVGEAttributeModifier.SUBSTRACTIVE, CardType.WOODWIND, env),

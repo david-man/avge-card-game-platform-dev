@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
@@ -17,38 +17,53 @@ class VideoCamera(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        discard = player.card_piles[DeckType.DISCARD]
-        deck = player.card_piles[DeckType.DECK]
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        discard_items = [c for c in discard.cards_holding if isinstance(c, AVGEItemCard)]
-        if not discard_items:
-            return
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="VideoCamera",
+                description=VideoCamera.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, VideoCamera)
-        picked = await env.report(CardSelectionQuery(
-            self.owner,
-            "Video Camera: Choose an item in your discard to move to the top of your deck (or None).",
-            1,
-            cast(list[AVGECard], discard_items),
-            list(discard.cards_holding),
-            True,
-            False,
-        ), _id)
-        if not picked:
-            return
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, VideoCamera):
+                raise TypeError("VideoCamera action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            discard = player.card_piles[DeckType.DISCARD]
+            deck = player.card_piles[DeckType.DECK]
 
-        chosen = picked[0]
+            discard_items = [c for c in discard.cards_holding if isinstance(c, AVGEItemCard)]
+            if not discard_items:
+                return
 
-        def _reordering_to_top(deck: AVGEDeck = deck, chosen: AVGECard = chosen):
-            def gen() -> list[AVGECard]:
-                return [chosen] + [c for c in deck.cards_holding if c is not chosen]
-            return gen
+            _id = AVGEEngineID(acting_card, self.action_type, VideoCamera)
+            picked = await env.report(CardSelectionQuery(
+                acting_card.owner,
+                "Video Camera: Choose an item in your discard to move to the top of your deck (or None).",
+                1,
+                cast(list[AVGECard], discard_items),
+                list(discard.cards_holding),
+                True,
+                False,
+            ), _id)
+            if not picked:
+                return
 
-        events: list[Event | Generator] = [
-            TransferCard(_id, chosen, discard, deck, env),
-            ReorderDeck(_id, deck, _reordering_to_top(), env),
-        ]
-        env.push_packet(Packet(_id, events))
+            chosen = picked[0]
+
+            def _reordering_to_top(deck: AVGEDeck = deck, chosen: AVGECard = chosen):
+                def gen() -> list[AVGECard]:
+                    return [chosen] + [c for c in deck.cards_holding if c is not chosen]
+                return gen
+
+            events: list[Event | Generator] = [
+                TransferCard(_id, chosen, discard, deck, env),
+                ReorderDeck(_id, deck, _reordering_to_top(), env),
+            ]
+            env.push_packet(Packet(_id, events))

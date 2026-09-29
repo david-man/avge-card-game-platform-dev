@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -33,11 +33,9 @@ class CavinXue(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._CymbalCrash()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._CymbalCrash()}), **({ActionTypes.PASSIVE: self._WaitNoImNotIntoFemboys()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._WaitNoImNotIntoFemboys()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -47,13 +45,11 @@ class CavinXue(AVGECharacterCard):
             super().__init__(
                 name='"Wait no... I\'m not into femboys-"',
                 description="This character's own attacks deal +20 damage per other character carrying MAID, anywhere in play.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, CavinXue)
             if card._maid_boost is None:
                 card._maid_boost = CavinXue._MaidBoost(card, card.env)
@@ -96,13 +92,15 @@ class CavinXue(AVGECharacterCard):
 
     class _CymbalCrash(Attack):
         def __init__(self):
-            super().__init__(name="Cymbal Crash", description="Deal 20 damage to the opposing active.", atk_type=ActionTypes.ATK_1, cost=1)
+            super().__init__(name="Cymbal Crash", description="Deal 20 damage to the opposing active.", action_type=ActionTypes.ATK_1, cost=1)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), CavinXue)
+            _id = AVGEEngineID(card, self.action_type, CavinXue)
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PERCUSSION, env,
             )]))

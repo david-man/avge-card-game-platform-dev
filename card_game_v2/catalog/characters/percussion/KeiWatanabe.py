@@ -32,20 +32,20 @@ class KeiWatanabe(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Rudiments(), ActionTypes.ATK_2: self._DrumKidWorkshop()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Rudiments(), ActionTypes.ATK_2: self._DrumKidWorkshop()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
     class _Rudiments(Attack):
         def __init__(self):
-            super().__init__(name="Rudiments", description="Deal 10 damage to a chosen opposing character.", atk_type=ActionTypes.ATK_1, cost=1)
+            super().__init__(name="Rudiments", description="Deal 10 damage to a chosen opposing character.", action_type=ActionTypes.ATK_1, cost=1)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             candidates: list[AVGECharacterCard] = [
@@ -53,7 +53,7 @@ class KeiWatanabe(AVGECharacterCard):
             ] + [
                 c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), KeiWatanabe)
+            _id = AVGEEngineID(card, self.action_type, KeiWatanabe)
             picked = await env.report(CardSelectionQuery(
                 card.owner,
                 "Rudiments: 10 damage to one opposing character.",
@@ -74,11 +74,13 @@ class KeiWatanabe(AVGECharacterCard):
             super().__init__(
                 name="Drum Kid Workshop",
                 description="Donate all of your own energy to a chosen own PERCUSSION character in play, then use one of their attacks.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             candidates: list[AVGECharacterCard] = [
@@ -89,7 +91,7 @@ class KeiWatanabe(AVGECharacterCard):
             if not candidates:
                 return
 
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), KeiWatanabe)
+            _id = AVGEEngineID(card, self.action_type, KeiWatanabe)
             picked = await env.report(CardSelectionQuery(
                 card.owner,
                 "Drum Kid Workshop: Choose one of your percussion characters in play whose attack you'd like to use.",
@@ -103,7 +105,7 @@ class KeiWatanabe(AVGECharacterCard):
             assert isinstance(chosen, AVGECharacterCard)
 
             move_options: dict[str, ActionTypes] = {}
-            for action, atk in chosen.attacks.items():
+            for action, atk in chosen.actions.items():
                 if chosen is card and action == ActionTypes.ATK_2:
                     continue
                 move_options[atk.name] = action
@@ -116,8 +118,17 @@ class KeiWatanabe(AVGECharacterCard):
             ), _id)
             action_type = move_options[move_choice[0]]
 
-            events: list[Event | Generator] = [
-                AVGEEnergyTransfer(_id, card, chosen, env) for _ in range(len(card.energy_tokens))
-            ]
-            events.append(PlayCharacterCard(_id, chosen, action_type, chosen.attacks[action_type].cost, env))
-            env.push_packet(Packet(_id, events))
+            # Resolve the borrowed definition first, at no additional attack cost.
+            # Its child packets must finish before we inspect Kei's remaining energy:
+            # copied attacks may spend or otherwise move energy while resolving.
+            env.push_packet(Packet(_id, [
+                PlayCharacterCard(_id, chosen, action_type, 0, env),
+            ]))
+
+            def _transfer_remaining_energy() -> list[Event | Generator]:
+                return [
+                    AVGEEnergyTransfer(_id, card, chosen, env)
+                    for _ in range(len(card.energy_tokens))
+                ]
+
+            env.push_packet(Packet(_id, [_transfer_remaining_energy]))

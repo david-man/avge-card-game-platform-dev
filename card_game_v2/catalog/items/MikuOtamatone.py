@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
@@ -41,23 +41,44 @@ class MikuOtamatone(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, MikuOtamatone)
-        if env.round == 0:
-            await env.report(Notification(
-                self.owner, "Cannot play Miku Otamatone on the first turn.", default_timeout,
-            ), _id)
-            return
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        stadium = env.stadium_cardholder.cards_holding[0] if len(env.stadium_cardholder) > 0 else None
-        if not isinstance(stadium, _PERFORMANCE_HALLS):
-            await env.report(Notification(
-                self.owner, "Miku Otamatone can only be played in performance halls.", default_timeout,
-            ), _id)
-            return
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="MikuOtamatone",
+                description=MikuOtamatone.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        self.add_listener(MikuOtamatone._ThisTurnEnergyDiscount(self.owner, env))
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            env = acting_card.env
+            stadium = env.stadium_cardholder.cards_holding[0] if len(env.stadium_cardholder) > 0 else None
+            return env.round > 0 and isinstance(stadium, _PERFORMANCE_HALLS)
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, MikuOtamatone):
+                raise TypeError("MikuOtamatone action requires its defining card")
+            env = acting_card.env
+            _id = AVGEEngineID(acting_card, self.action_type, MikuOtamatone)
+            if env.round == 0:
+                await env.report(Notification(
+                    acting_card.owner, "Cannot play Miku Otamatone on the first turn.", default_timeout,
+                ), _id)
+                return
+
+            stadium = env.stadium_cardholder.cards_holding[0] if len(env.stadium_cardholder) > 0 else None
+            if not isinstance(stadium, _PERFORMANCE_HALLS):
+                await env.report(Notification(
+                    acting_card.owner, "Miku Otamatone can only be played in performance halls.", default_timeout,
+                ), _id)
+                return
+
+            acting_card.add_listener(MikuOtamatone._ThisTurnEnergyDiscount(acting_card.owner, env))
+
 
     class _ThisTurnEnergyDiscount(AVGEEventModifier):
         '''Same shape as Otamatone's identical -1 discount, independently

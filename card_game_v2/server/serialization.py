@@ -36,6 +36,14 @@ def card_to_wire(card: AVGECard) -> dict[str, Any]:
             ],
             "tools": [card_to_wire(tool) for tool in card.tools_attached.cards_holding],
         })
+    additional = card.additional_wire_state()
+    collisions = wire.keys() & additional.keys()
+    if collisions:
+        raise ValueError(
+            f"{type(card).__name__}.additional_wire_state() overwrote standard fields: "
+            f"{sorted(collisions)}"
+        )
+    wire.update(additional)
     return wire
 
 
@@ -79,13 +87,14 @@ def _player_state(player: AVGEPlayer) -> dict[str, Any]:
     }
 
 
-def snapshot(env: AVGEEnvironment) -> dict[str, Any]:
+def snapshot(env: AVGEEnvironment, usernames: dict[str, str] | None = None) -> dict[str, Any]:
     '''One complete, non-viewer-scoped snapshot of the whole game - both players' actual hand
     contents, exact deck order, everything. Sent once at game_start and once on
     opponent_reconnected/successful rejoin; incremental changes flow separately via the per-event
-    update IOTypes (see core/AVGEIOManager.py).'''
+    update IOTypes (see core/AVGEIOManager.py). `usernames` (seat name -> account username, from
+    GameSession.usernames()) is included only when given - the env alone doesn't know accounts.'''
     stadium_cards = env.stadium_cardholder.cards_holding
-    return {
+    wire: dict[str, Any] = {
         "turn": env.turn.name,
         "round": env.round,
         "stadium": card_to_wire(stadium_cards[0]) if stadium_cards else None,
@@ -98,6 +107,9 @@ def snapshot(env: AVGEEnvironment) -> dict[str, Any]:
         # it without waiting for the next EnergyTransferUpdate.
         "env_energy_remaining": len(env.energy_tokens),
     }
+    if usernames is not None:
+        wire["usernames"] = usernames
+    return wire
 
 
 def resolve_card(env: AVGEEnvironment, card_id: str) -> AVGECard | None:

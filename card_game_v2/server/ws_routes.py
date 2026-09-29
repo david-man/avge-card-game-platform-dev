@@ -91,6 +91,7 @@ async def websocket_endpoint(
         found = matchmaker.find_active_game(account.account_id)
         if found is not None:
             session, user = found
+            session.seats[user].username = account.username
             if not session.attach(user, websocket):
                 # The session finished (game_over already sent, engine task torn down) in the
                 # gap between find_active_game() reading a still-live registry entry and this
@@ -115,7 +116,7 @@ async def websocket_endpoint(
                     # a game_start built from an unprepared (empty) environment.
                     await safe_send(websocket, protocol.WaitingForOpponentMessage().model_dump())
                 else:
-                    snapshot = serialization.snapshot(session.env)
+                    snapshot = serialization.snapshot(session.env, session.usernames())
                     await safe_send(websocket, protocol.GameStartMessage(snapshot=snapshot).model_dump())
 
                     other = session.seats[user.next]
@@ -161,6 +162,7 @@ async def _message_loop(
                     joined_session, joined_user = await matchmaker.join(
                         account.account_id, resolved_deck,
                     )
+                    joined_session.seats[joined_user].username = account.username
                     if not joined_session.attach(joined_user, websocket):
                         # Narrow defense-in-depth window: joined_session.finished could in
                         # principle flip during the earlier `await joined_session.prepare()`
@@ -183,7 +185,9 @@ async def _message_loop(
                         # waiting on an earlier connection, before starting the engine running -
                         # otherwise its own event_update broadcasts could race ahead of game_start
                         # on the wire.
-                        start_message = protocol.GameStartMessage(snapshot=serialization.snapshot(session.env)).model_dump()
+                        start_message = protocol.GameStartMessage(
+                            snapshot=serialization.snapshot(session.env, session.usernames()),
+                        ).model_dump()
                         for seat in session.seats.values():
                             if seat.websocket is not None:
                                 await safe_send(seat.websocket, start_message)
@@ -192,6 +196,12 @@ async def _message_loop(
                 # LoginMessage) is not a valid state - ignore and keep waiting for a join.
                 continue
             assert user is not None  # always set together with session (both come from find_active_game/join)
+
+            if isinstance(message, protocol.LeaveMessage):
+                if matchmaker.leave_waiting(account.account_id):
+                    session, user = None, None
+                    await safe_send(websocket, protocol.LeftMessage().model_dump())
+                continue
 
             if isinstance(message, protocol.ConcedeMessage):
                 await session.force_end(winner=user.next, reason="concede")

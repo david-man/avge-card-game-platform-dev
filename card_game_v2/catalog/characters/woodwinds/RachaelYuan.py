@@ -36,11 +36,9 @@ class RachaelYuan(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._CircularBreathing(), ActionTypes.ATK_2: self._E2Reaction()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._CircularBreathing(), ActionTypes.ATK_2: self._E2Reaction()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,7 +48,7 @@ class RachaelYuan(AVGECharacterCard):
             super().__init__(
                 name="Circular Breathing",
                 description="Deal 10 damage, plus 10 more per consecutive prior turn this attack was used (uncapped).",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
@@ -71,11 +69,13 @@ class RachaelYuan(AVGECharacterCard):
                 chapter_increment += 2
             return streak
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), RachaelYuan)
+            _id = AVGEEngineID(card, self.action_type, RachaelYuan)
 
             streak = self._streak(card)
             damage = 10 + (10 * streak)
@@ -89,16 +89,18 @@ class RachaelYuan(AVGECharacterCard):
             super().__init__(
                 name="E2 Reaction",
                 description="If the opponent has at least 2 benched characters, you may shuffle one into their deck.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             opponent_bench = opponent.card_piles[DeckType.BENCH]
             opponent_deck = opponent.card_piles[DeckType.DECK]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), RachaelYuan)
+            _id = AVGEEngineID(card, self.action_type, RachaelYuan)
 
             bench_candidates = [c for c in opponent_bench.cards_holding if isinstance(c, AVGECharacterCard)]
             if len(bench_candidates) < 2:

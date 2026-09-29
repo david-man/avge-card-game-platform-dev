@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEStadiumCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventRegulator
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -21,11 +21,8 @@ class MainHall(AVGEStadiumCard):
     '''"Small Ensemble Limit": once active, limits each player to 3 non-character
     plays per round (item/tool/stadium/supporter plays, *and* benching a character
     from hand - v1 counts both toward the same pool despite the "non-character" name),
-    starting the round *after* it was played. Can't be played on the first turn -
-    v1 fully cancels its own play in that case; v2's `play_card() -> None` has no
-    "cancel myself" return channel, so this migration just skips registering the
-    effect instead (same simplification already established by Otamatone's identical
-    first-turn restriction) - the stadium still occupies the slot, but does nothing.'''
+    starting the round *after* it was played. It cannot be played on the first turn;
+    the centralized validator rejects that play before the stadium leaves the hand.'''
 
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
         super().__init__(cardID, env, owner, deck_in)
@@ -33,14 +30,33 @@ class MainHall(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        env = self.env
-        if env.round == 0:
-            await env.report(Notification(
-                self.owner, "MainHall cannot be played on the first turn.", default_timeout,
-            ), AVGEEngineID(self, ActionTypes.NONCHAR, MainHall))
-            return
-        self.add_listener(_SmallEnsembleLimitRegulator(self, env, env.round + 1))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="MainHall",
+                description=MainHall.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            return acting_card.env.round > 0
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, MainHall):
+                raise TypeError("MainHall action requires its defining card")
+            env = acting_card.env
+            if env.round == 0:
+                await env.report(Notification(
+                    acting_card.owner, "MainHall cannot be played on the first turn.", default_timeout,
+                ), AVGEEngineID(acting_card, self.action_type, MainHall))
+                return
+            acting_card.add_listener(_SmallEnsembleLimitRegulator(action_card, env, env.round + 1))
+
 
 
 class _SmallEnsembleLimitRegulator(AVGEEventRegulator):

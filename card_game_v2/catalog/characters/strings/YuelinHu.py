@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -40,11 +40,9 @@ class YuelinHu(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._TripleStop()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._TripleStop()}), **({ActionTypes.PASSIVE: self._MusicalCatSummonedPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._MusicalCatSummonedPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -54,13 +52,11 @@ class YuelinHu(AVGECharacterCard):
             super().__init__(
                 name="Musical Cat Summoned!",
                 description="Whenever you draw AVGE Birb from your deck, you may discard it to deal 20 damage to the opposing active.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, YuelinHu)
             if card._birb_reactor is None:
                 card._birb_reactor = YuelinHu._BirbDrawReactor(card, card.env)
@@ -119,11 +115,13 @@ class YuelinHu(AVGECharacterCard):
 
     class _TripleStop(Attack):
         def __init__(self):
-            super().__init__(name="Triple Stop", description="Flip 3 coins. Deal 40 damage to the opposing active per head.", atk_type=ActionTypes.ATK_1, cost=3)
+            super().__init__(name="Triple Stop", description="Flip 3 coins. Deal 40 damage to the opposing active per head.", action_type=ActionTypes.ATK_1, cost=3)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), YuelinHu)
+            _id = AVGEEngineID(card, self.action_type, YuelinHu)
             heads = 0
             for _ in range(3):
                 heads += await env.report(CoinflipData(card.owner, "Triple Stop: Flip 3 coins."), _id)

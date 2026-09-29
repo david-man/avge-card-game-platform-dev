@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGECharacterCard, AVGEStadiumCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventReactor
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -34,10 +34,26 @@ class SteinertBasement(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        env = self.env
-        self.add_listener(_DuoQueueReactor(self, env))
-        self.add_listener(_AttackExtraCostModifier(self, env))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="SteinertBasement",
+                description=SteinertBasement.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, SteinertBasement):
+                raise TypeError("SteinertBasement action requires its defining card")
+            env = acting_card.env
+            acting_card.add_listener(_DuoQueueReactor(action_card, env))
+            acting_card.add_listener(_AttackExtraCostModifier(action_card, env))
+
 
 
 class _DuoQueueReactor(AVGEEventReactor):

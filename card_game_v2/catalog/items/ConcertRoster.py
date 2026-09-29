@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGEToolCard, AVGEStadiumCard
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGEToolCard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
@@ -18,33 +18,48 @@ class ConcertRoster(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        deck = player.card_piles[DeckType.DECK]
-        hand = player.card_piles[DeckType.HAND]
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        considered = list(deck.cards_holding[:3])
-        pick_choices = [c for c in considered if isinstance(c, (AVGEToolCard, AVGEStadiumCard))]
-        if not pick_choices:
-            return
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="ConcertRoster",
+                description=ConcertRoster.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, ConcertRoster)
-        picked = await env.report(CardSelectionQuery(
-            self.owner,
-            "Concert Roster: Choose a tool or stadium from the top 3 to take to hand.",
-            1,
-            cast(list[AVGECard], pick_choices),
-            considered,
-            True,
-            False,
-        ), _id)
-        if not picked:
-            return
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, ConcertRoster):
+                raise TypeError("ConcertRoster action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            deck = player.card_piles[DeckType.DECK]
+            hand = player.card_piles[DeckType.HAND]
 
-        picked_card = picked[0]
-        env.push_packet(Packet(_id, [TransferCard(_id, picked_card, deck, hand, env)]))
-        await env.broadcast(BroadcastIO(
-            f"Concert Roster: revealed and took {type(picked_card).__name__} to hand!",
-            default_timeout,
-        ))
+            considered = list(deck.cards_holding[:3])
+            pick_choices = [c for c in considered if isinstance(c, (AVGEToolCard, AVGEStadiumCard))]
+            if not pick_choices:
+                return
+
+            _id = AVGEEngineID(acting_card, self.action_type, ConcertRoster)
+            picked = await env.report(CardSelectionQuery(
+                acting_card.owner,
+                "Concert Roster: Choose a tool or stadium from the top 3 to take to hand.",
+                1,
+                cast(list[AVGECard], pick_choices),
+                considered,
+                True,
+                False,
+            ), _id)
+            if not picked:
+                return
+
+            picked_card = picked[0]
+            env.push_packet(Packet(_id, [TransferCard(_id, picked_card, deck, hand, env)]))
+            await env.broadcast(BroadcastIO(
+                f"Concert Roster: revealed and took {picked_card} to hand!",
+                default_timeout,
+            ))

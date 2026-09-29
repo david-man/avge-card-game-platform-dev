@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGECharacterCard, AVGEStadiumCard, CardType
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEStadiumCard, CardType, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -23,8 +23,24 @@ class RileyHall(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        self.add_listener(_AttendancePolicyReactor(self, self.env))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="RileyHall",
+                description=RileyHall.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, RileyHall):
+                raise TypeError("RileyHall action requires its defining card")
+            acting_card.add_listener(_AttendancePolicyReactor(action_card, acting_card.env))
+
 
 
 class _AttendancePolicyReactor(AVGEEventReactor):

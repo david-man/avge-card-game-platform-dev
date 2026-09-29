@@ -3,12 +3,12 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGECharacterCard, AVGEStadiumCard, CardType
-from ...avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventRegulator, AVGEPacketReactor
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEStadiumCard, CardType, Ability
+from ...avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEPacketReactor
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
-from ...constants import ActionTypes, EngineGroup, AVGEAttributeModifier, ResponseStatus, StatusEffect
-from ...core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard, PlayCharacterCard
+from ...constants import ActionTypes, EngineGroup, AVGEAttributeModifier, StatusEffect
+from ...core.EventCatalog import AVGECardHPChangeEvent, TransferCard, PlayCharacterCard
 from ...core.AVGEIOManager import RevealCards
 from ...engine.event import Event, Packet
 
@@ -31,11 +31,27 @@ class PetterutiLounge(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        env = self.env
-        self.add_listener(_MaidDamageModifier(self, env))
-        self.add_listener(_MaidRetreatDiscountRegulator(self, env))
-        self.add_packet_listener(_PowerpointNightPacketReactor(self, env))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="PetterutiLounge",
+                description=PetterutiLounge.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, PetterutiLounge):
+                raise TypeError("PetterutiLounge action requires its defining card")
+            env = acting_card.env
+            acting_card.add_listener(_MaidDamageModifier(action_card, env))
+            acting_card.add_listener(_MaidRetreatDiscountModifier(action_card, env))
+            action_card.add_packet_listener(_PowerpointNightPacketReactor(action_card, env))
+
 
 
 class _MaidDamageModifier(AVGEEventModifier):
@@ -67,15 +83,16 @@ class _MaidDamageModifier(AVGEEventModifier):
         event.modify_magnitude(10)
 
 
-class _MaidRetreatDiscountRegulator(AVGEEventRegulator):
-    '''Same "verify the discounted cost, then top up 1 free energy so the base
-    full-price retreat discard still succeeds" trick as KikisHeadband's identical
-    -1-retreat-cost tool - the base retreat-cost reactor always discards a
-    character's full, undiscounted `retreat_cost`, with no awareness of stadium-level
-    discounts.'''
+class _MaidRetreatDiscountModifier(AVGEEventModifier):
+    '''-1 to a MAID-status character's own ACTIVE_CARD -> BENCH retreat leg's cost
+    field (see TransferCard's own cost field and A2's retreat-cost fix) - a plain
+    EXTERNAL_MODIFIERS_1 modifier, replacing the old regulator-plus-top-up-event
+    trick this needed when the only thing available to adjust was the reactor's own
+    always-full-price discard. No internal clamp - see KikisHeadband's identical
+    modifier for why.'''
 
     def __init__(self, owner_card: PetterutiLounge, env: AVGEEnvironment):
-        super().__init__(AVGEEngineID(owner_card, ActionTypes.NONCHAR, PetterutiLounge), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(owner_card, ActionTypes.NONCHAR, PetterutiLounge), env, EngineGroup.EXTERNAL_MODIFIERS_1)
         self.owner_card = owner_card
 
     def match(self, event: Event) -> bool:
@@ -84,7 +101,7 @@ class _MaidRetreatDiscountRegulator(AVGEEventRegulator):
             return False
         if not isinstance(event, TransferCard):
             return False
-        if callable(event.card) or callable(event.deck_from) or callable(event.deck_to):
+        if callable(event.card) or callable(event.deck_from) or callable(event.deck_to) or callable(event.cost):
             return False
         if not isinstance(event.card, AVGECharacterCard):
             return False
@@ -92,17 +109,10 @@ class _MaidRetreatDiscountRegulator(AVGEEventRegulator):
             return False
         return len(event.card.statuses_attached[StatusEffect.MAID]) > 0
 
-    async def respond(self, event: Event) -> ResponseStatus:
+    async def modify(self, event: Event) -> None:
         assert isinstance(event, TransferCard)
-        assert isinstance(event.card, AVGECharacterCard)
-        effective_cost = max(0, event.card.retreat_cost - 1)
-        if len(event.card.energy_tokens) < effective_cost:
-            return ResponseStatus.REGULATE_FAIL
-        if event.card.retreat_cost > 0:
-            event.push_event([AVGEEnergyTransfer(
-                AVGEEngineID(None, ActionTypes.ENV, None), self.env, event.card, self.env,
-            )])
-        return ResponseStatus.REGULATE_PASS
+        assert not callable(event.cost)
+        event.cost -= 1
 
 
 class _PowerpointNightPacketReactor(AVGEPacketReactor):

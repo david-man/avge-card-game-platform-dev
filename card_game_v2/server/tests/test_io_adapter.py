@@ -11,7 +11,9 @@ from ...core.AVGEIOManager import (
     StringSelectionQuery, IntInput, D6Input, CoinflipData, Phase2Finish, Phase2ActivateAbility,
     Phase2CardMovement, Phase2EnergyAttach, Phase2PlayCard, TurnEndUpdate, ActionRejectedUpdate,
 )
-from ...testing.helpers import Dummy, DummyStadium, core_listeners, put_into_play, bench
+from ...testing.helpers import Dummy, DummyStadium, Attacker, core_listeners, put_into_play, bench
+from ...catalog.items.BUOStand import BUOStand
+from ...catalog.items.Camera import Camera
 from .. import protocol
 from .. import serialization
 from ..io_adapter import NetworkIO
@@ -53,6 +55,16 @@ class NetworkIOTestBase(unittest.IsolatedAsyncioTestCase):
 
 
 class SendEnvelopeTests(NetworkIOTestBase):
+    async def test_phase2_payload_only_marks_legal_noncharacter_cards_playable(self):
+        camera = Camera("camera", self.env, User.PLAYER_1, DeckType.HAND)
+        stand = BUOStand("stand", self.env, User.PLAYER_1, DeckType.HAND)
+        self.p1.card_piles[DeckType.HAND].cards_holding.extend([camera, stand])
+
+        payload = self.io.build_request_payload(Phase2IO(User.PLAYER_1))
+
+        self.assertIn(camera.cardID, payload["playable_noncharacter_card_ids"])
+        self.assertNotIn(stand.cardID, payload["playable_noncharacter_card_ids"])
+
     async def test_broadcast_envelope_shape(self):
         await self.io.send(User.PLAYER_1, BroadcastIO("hi", 5))
         self.assertEqual(len(self.transport.sent), 1)
@@ -270,11 +282,11 @@ class DecisionRoundtripTests(NetworkIOTestBase):
             })
 
     async def test_atk_phase_skip(self):
-        result = await self._roundtrip(AtkPhaseIO(User.PLAYER_1), {"action": "SKIP"})
+        result = await self._roundtrip(AtkPhaseIO(User.PLAYER_1, [ActionTypes.SKIP]), {"action": "SKIP"})
         self.assertEqual(result, ActionTypes.SKIP)
 
     async def test_atk_phase_invalid_action_raises_and_retries(self):
-        task = asyncio.ensure_future(self.env.report(AtkPhaseIO(User.PLAYER_1), _id()))
+        task = asyncio.ensure_future(self.env.report(AtkPhaseIO(User.PLAYER_1, [ActionTypes.SKIP]), _id()))
         await asyncio.sleep(0)
         await self.io.receive(User.PLAYER_1, {"action": "NOT_REAL"})
         # bad input triggers retry(), not a resolved future - answer correctly this time
@@ -282,10 +294,20 @@ class DecisionRoundtripTests(NetworkIOTestBase):
         result = await asyncio.wait_for(task, timeout=1.0)
         self.assertEqual(result, ActionTypes.SKIP)
 
+    async def test_atk_phase_unavailable_action_raises_instead_of_crashing_atkphase(self):
+        # Regression test: previously the deserializer only checked that `action` was
+        # *a* valid ActionTypes value, never cross-referenced against the active
+        # card's actual attacks - a raw {"action": "ATK_2"} for a one-attack character
+        # sailed through deserialization and crashed AtkPhase.act()'s bare dict index
+        # instead of being rejected here, cleanly, before AtkPhase ever sees it.
+        io_obj = AtkPhaseIO(User.PLAYER_1, [ActionTypes.SKIP, ActionTypes.ATK_1])
+        with self.assertRaises(IOException):
+            self.io.deserialize(io_obj, {"action": "ATK_2"})
+
     async def test_retry_message_validates_against_the_protocol_schema_and_carries_the_error(self):
         # The regression test for the io_request/retry_reason schema drift: retry()'s emitted
         # message must actually be (not just resemble) a valid protocol.IoRequestMessage.
-        task = asyncio.ensure_future(self.env.report(AtkPhaseIO(User.PLAYER_1), _id()))
+        task = asyncio.ensure_future(self.env.report(AtkPhaseIO(User.PLAYER_1, [ActionTypes.SKIP]), _id()))
         await asyncio.sleep(0)
         await self.io.receive(User.PLAYER_1, {"action": "NOT_REAL"})
         _, retry_message = self.transport.sent[-1]
@@ -329,6 +351,49 @@ class DecisionRoundtripTests(NetworkIOTestBase):
         io_obj = CardSelectionQuery(User.PLAYER_1, "pick one", 1, [self.active], [self.active], True, False)
         result = self.io.deserialize(io_obj, {"selected_ids": []})
         self.assertEqual(result, [])
+
+    async def test_card_selection_requires_exactly_n_when_not_optional(self):
+        # "Choose 2" (allows_none=False) means exactly 2 - a single pick used to be accepted and
+        # then crash card code that reorders/indexes off the answer (e.g. AndreaCR's ReorderDeck).
+        both = [self.active, self.benched]
+        io_obj = CardSelectionQuery(User.PLAYER_1, "pick two", 2, both, both, False, False)
+        with self.assertRaises(IOException):
+            self.io.deserialize(io_obj, {"selected_ids": [self.active.cardID]})
+        result = self.io.deserialize(io_obj, {"selected_ids": [self.benched.cardID, self.active.cardID]})
+        self.assertEqual(result, [self.benched, self.active])  # submission order is preserved
+
+    async def test_card_selection_allows_fewer_than_n_when_optional(self):
+        both = [self.active, self.benched]
+        io_obj = CardSelectionQuery(User.PLAYER_1, "up to two", 2, both, both, True, False)
+        self.assertEqual(self.io.deserialize(io_obj, {"selected_ids": []}), [])
+        self.assertEqual(self.io.deserialize(io_obj, {"selected_ids": [self.active.cardID]}), [self.active])
+        with self.assertRaises(IOException):
+            self.io.deserialize(io_obj, {"selected_ids": [self.active.cardID] * 3})
+
+    async def test_card_selection_repeats_only_when_allowed(self):
+        one = [self.active]
+        repeat_ok = CardSelectionQuery(User.PLAYER_1, "same twice", 2, one, one, False, True)
+        self.assertEqual(
+            self.io.deserialize(repeat_ok, {"selected_ids": [self.active.cardID, self.active.cardID]}),
+            [self.active, self.active],
+        )
+        no_repeat = CardSelectionQuery(User.PLAYER_1, "distinct", 2, one, one, False, False)
+        # Only one distinct option exists, so "exactly 2" clamps to 1 rather than being unanswerable.
+        self.assertEqual(self.io.deserialize(no_repeat, {"selected_ids": [self.active.cardID]}), [self.active])
+        with self.assertRaises(IOException):
+            self.io.deserialize(no_repeat, {"selected_ids": [self.active.cardID, self.active.cardID]})
+
+    async def test_string_selection_requires_exactly_n_when_not_optional(self):
+        io_obj = StringSelectionQuery(User.PLAYER_1, "pick two", 2, ["a", "b", "c"], ["a", "b", "c"], False, False)
+        with self.assertRaises(IOException):
+            self.io.deserialize(io_obj, {"selected": ["a"]})
+        self.assertEqual(self.io.deserialize(io_obj, {"selected": ["c", "a"]}), ["c", "a"])
+
+    async def test_string_selection_repeat_and_optional(self):
+        repeat_ok = StringSelectionQuery(User.PLAYER_1, "twice", 2, ["a"], ["a"], False, True)
+        self.assertEqual(self.io.deserialize(repeat_ok, {"selected": ["a", "a"]}), ["a", "a"])
+        optional = StringSelectionQuery(User.PLAYER_1, "up to two", 2, ["a", "b"], ["a", "b"], True, False)
+        self.assertEqual(self.io.deserialize(optional, {"selected": []}), [])
 
     async def test_string_selection_query(self):
         io_obj = StringSelectionQuery(User.PLAYER_1, "pick", 1, ["a", "b"], ["a", "b"], False, False)

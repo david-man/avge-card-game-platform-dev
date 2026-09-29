@@ -53,13 +53,15 @@ class RetreatCostTests(unittest.IsolatedAsyncioTestCase):
     def _retreat_packet(self) -> Packet:
         '''The exact two-TransferCard shape core/EventCatalog.py's Phase2CardMovement case builds
         for a BENCH -> ACTIVE_CARD move: the incoming bench card swaps in, the outgoing active
-        card swaps out to bench, both tagged PLAYER_CHOICE in one packet.'''
+        card swaps out to bench (carrying its own retreat_cost as that leg's cost - see
+        TransferCard's own cost field and A2's retreat-cost fix), both tagged PLAYER_CHOICE in
+        one packet.'''
         bench_deck = self.player.card_piles[DeckType.BENCH]
         active_deck = self.player.card_piles[DeckType.ACTIVE_CARD]
         _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
         return Packet(_id, [
             TransferCard(_id, self.incoming, bench_deck, active_deck, self.env),
-            TransferCard(_id, self.active, active_deck, bench_deck, self.env),
+            TransferCard(_id, self.active, active_deck, bench_deck, self.env, self.active.retreat_cost),
         ])
 
     async def test_retreat_charges_the_outgoing_active_cards_own_cost(self):

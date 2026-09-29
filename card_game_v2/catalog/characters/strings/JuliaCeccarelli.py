@@ -36,11 +36,9 @@ class JuliaCeccarelli(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Photograph(), ActionTypes.ATK_2: self._Ricochet()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Photograph(), ActionTypes.ATK_2: self._Ricochet()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,16 +48,18 @@ class JuliaCeccarelli(AVGECharacterCard):
             super().__init__(
                 name="Photograph",
                 description="Reveal the opponent's hand. You may choose one of their item cards to play as this attack.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             opp_hand = opponent.card_piles[DeckType.HAND]
             items = [c for c in opp_hand.cards_holding if isinstance(c, AVGEItemCard)]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JuliaCeccarelli)
+            _id = AVGEEngineID(card, self.action_type, JuliaCeccarelli)
 
             await env.report(RevealCards(card.owner, list(opp_hand.cards_holding)), _id)
             picked = await env.report(CardSelectionQuery(
@@ -76,24 +76,25 @@ class JuliaCeccarelli(AVGECharacterCard):
                 return
             chosen = picked[0]
             if isinstance(chosen, AVGEItemCard) and chosen in opp_hand.cards_holding:
-                env.push_packet(Packet(_id, [PlayNonCharacterCard(_id, chosen, ActionTypes.ATK_1, env)]))
+                env.push_packet(Packet(_id, [PlayNonCharacterCard(_id, chosen, env)]))
 
     class _Ricochet(Attack):
         def __init__(self):
             super().__init__(
                 name="Ricochet",
                 description="Deal 50 damage to the opposing active. Each knockout dealt this way splashes 30 damage to every remaining opposing bench character, recursively.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JuliaCeccarelli)
+            _id = AVGEEngineID(card, self.action_type, JuliaCeccarelli)
 
-            assert isinstance(card, JuliaCeccarelli)
             card.add_listener(JuliaCeccarelli._KnockoutChainReactor(card, env, 1))
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 50, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env,
@@ -106,7 +107,7 @@ class JuliaCeccarelli(AVGECharacterCard):
         whenever one of those hits is a knockout - so a KO chain can cascade through
         the whole opposing bench. Self-removes once no pending hits remain.'''
 
-        def __init__(self, owner_card: JuliaCeccarelli, env: AVGEEnvironment, pending_hits: int):
+        def __init__(self, owner_card: AVGECharacterCard, env: AVGEEnvironment, pending_hits: int):
             super().__init__(AVGEEngineID(owner_card, ActionTypes.ATK_2, JuliaCeccarelli), env, EngineGroup.EXTERNAL_REACTORS)
             self.owner_card = owner_card
             self.pending_hits = pending_hits
@@ -138,7 +139,7 @@ class JuliaCeccarelli(AVGECharacterCard):
 
             # Use the snapshot taken at CORE-time (`final_change`), not the live
             # `.hp` - by the time this EXTERNAL_REACTORS-group reactor runs, the
-            # engine's own INTERNAL_3 discard-and-replace flow has already discarded
+            # engine's own INTERNAL_4 discard-and-replace flow has already discarded
             # a KO'd character and reset its HP back to max as part of cleanup.
             if event.final_change == 0:
                 opponent = env.get_opponent(owner.owner)

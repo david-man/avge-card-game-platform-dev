@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEStadiumCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventRegulator
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -23,7 +23,7 @@ class SteinertPracticeRoom(AVGEStadiumCard):
     and adds +1 energy cost to every ATK_1/ATK_2 (regardless of who/what triggered it -
     confirmed against v1 source, this modifier has no `PLAYER_CHOICE` gate, unlike
     SteinertBasement's otherwise-identical cost modifier, so a borrowed/forced attack
-    still gets the surcharge here). v2's `play_card()` being a single async coroutine
+    still gets the surcharge here). The NONCHAR action being a single async coroutine
     lets the two sequential discard-selections just `await` in a row, dramatically
     simpler than v1's cache-based re-entrant resolution. See SteinertBasement's
     `_AttackExtraCostModifier` docstring for the DemiLu constrainer-compatibility note
@@ -35,39 +35,55 @@ class SteinertPracticeRoom(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        env = self.env
-        owner_player = env.players[self.owner]
-        opponent_player = env.get_opponent(self.owner)
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, SteinertPracticeRoom)
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        for target_player in (owner_player, opponent_player):
-            bench: list[AVGECharacterCard] = [
-                c for c in target_player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
-            ]
-            extra = max(0, len(bench) - 2)
-            if extra == 0:
-                continue
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="SteinertPracticeRoom",
+                description=SteinertPracticeRoom.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-            picked = await env.report(CardSelectionQuery(
-                target_player.id,
-                "Steinert Practice Room: Choose benched character(s) to discard down to 2.",
-                extra,
-                cast(list[AVGECard], bench),
-                cast(list[AVGECard], bench),
-                False,
-                False,
-            ), _id)
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, SteinertPracticeRoom):
+                raise TypeError("SteinertPracticeRoom action requires its defining card")
+            env = acting_card.env
+            owner_player = env.players[acting_card.owner]
+            opponent_player = env.get_opponent(acting_card.owner)
+            _id = AVGEEngineID(acting_card, self.action_type, SteinertPracticeRoom)
 
-            events: list[Event | Generator] = [
-                TransferCard(_id, chosen, target_player.card_piles[DeckType.BENCH], target_player.card_piles[DeckType.DISCARD], env)
-                for chosen in picked
-            ]
-            if events:
-                env.push_packet(Packet(_id, events))
+            for target_player in (owner_player, opponent_player):
+                bench: list[AVGECharacterCard] = [
+                    c for c in target_player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
+                ]
+                extra = max(0, len(bench) - 2)
+                if extra == 0:
+                    continue
 
-        self.add_listener(_BenchCapRegulator(self, env))
-        self.add_listener(_AttackExtraCostModifier(self, env))
+                picked = await env.report(CardSelectionQuery(
+                    target_player.id,
+                    "Steinert Practice Room: Choose benched character(s) to discard down to 2.",
+                    extra,
+                    cast(list[AVGECard], bench),
+                    cast(list[AVGECard], bench),
+                    False,
+                    False,
+                ), _id)
+
+                events: list[Event | Generator] = [
+                    TransferCard(_id, chosen, target_player.card_piles[DeckType.BENCH], target_player.card_piles[DeckType.DISCARD], env)
+                    for chosen in picked
+                ]
+                if events:
+                    env.push_packet(Packet(_id, events))
+
+            acting_card.add_listener(_BenchCapRegulator(action_card, env))
+            acting_card.add_listener(_AttackExtraCostModifier(action_card, env))
+
 
 
 class _BenchCapRegulator(AVGEEventRegulator):

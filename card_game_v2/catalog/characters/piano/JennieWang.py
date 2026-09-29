@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....constants import ActionTypes, AVGEAttributeModifier
@@ -45,11 +45,9 @@ class JennieWang(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._SmallEnsembleCommittee(), ActionTypes.ATK_2: self._GrandPiano()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._SmallEnsembleCommittee(), ActionTypes.ATK_2: self._GrandPiano()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -59,14 +57,16 @@ class JennieWang(AVGECharacterCard):
             super().__init__(
                 name="Small Ensemble Committee",
                 description="Deal 10 damage (max 30) to every opposing in-play character, once per each David Man, Evelyn Wu, Bokai Bi, Roberto Gonzales, or Luke Xu in play on either side.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JennieWang)
+            _id = AVGEEngineID(card, self.action_type, JennieWang)
 
             def _in_play(player: AVGEPlayer) -> list[AVGECharacterCard]:
                 return [
@@ -93,14 +93,16 @@ class JennieWang(AVGECharacterCard):
             super().__init__(
                 name="Grand Piano",
                 description="Deal 60 damage to the opposing active (80 instead if AlumnaeHall, SalomonDECI, RileyHall, or MainHall is active).",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), JennieWang)
+            _id = AVGEEngineID(card, self.action_type, JennieWang)
 
             stadium = env.stadium_cardholder.cards_holding[0] if len(env.stadium_cardholder) > 0 else None
             dmg = 80 if isinstance(stadium, _BOOSTED_HALLS) else 60

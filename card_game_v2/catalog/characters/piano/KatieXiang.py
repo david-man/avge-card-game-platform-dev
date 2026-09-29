@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -33,11 +33,9 @@ class KatieXiang(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Rubato()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Rubato()}), **({ActionTypes.PASSIVE: self._UndyingHeartbeatPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._UndyingHeartbeatPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -47,13 +45,11 @@ class KatieXiang(AVGECharacterCard):
             super().__init__(
                 name="Nausicaa's Undying Heartbeat",
                 description="Whenever the opponent's turn ends, if this character is below 50 HP, heal your whole team 20.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, KatieXiang)
             if card._heartbeat is None:
                 card._heartbeat = KatieXiang._UndyingHeartbeat(card, card.env)
@@ -97,15 +93,17 @@ class KatieXiang(AVGECharacterCard):
             super().__init__(
                 name="Rubato",
                 description="Deal 20 damage to the opposing active now, and 30 more at the end of your own next turn.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), KatieXiang)
+            _id = AVGEEngineID(card, self.action_type, KatieXiang)
 
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
@@ -117,12 +115,13 @@ class KatieXiang(AVGECharacterCard):
             # before EXTERNAL_REACTORS runs, and Katie targets the TurnEnd that ends
             # the owner's *own* next turn, one full turn-boundary later than
             # PascalKim's "opponent's next turn" target.
-            env.add_listener(KatieXiang._RubatoDelayed(card.owner, env.round + 3, env))
+            env.add_listener(KatieXiang._RubatoDelayed(card, env.round + 3, env))
 
     class _RubatoDelayed(AVGEEventReactor):
-        def __init__(self, owner: User, round_active: int, env: AVGEEnvironment):
+        def __init__(self, attacker: AVGECharacterCard, round_active: int, env: AVGEEnvironment):
             super().__init__(AVGEEngineID(None, ActionTypes.ATK_1, KatieXiang), env, EngineGroup.EXTERNAL_REACTORS)
-            self.owner = owner
+            self.attacker = attacker
+            self.owner = attacker.owner
             self.round_active = round_active
 
         def match(self, event: Event) -> bool:
@@ -135,7 +134,10 @@ class KatieXiang(AVGECharacterCard):
             self.cleanup()
             opponent = self.env.get_opponent(self.owner)
             target = self.env.get_player_active(opponent)
-            _id = AVGEEngineID(None, ActionTypes.ATK_1, KatieXiang)
+            # calling_card=self.attacker (not None) so AVGEWeaknessModifier's own
+            # isinstance(event.id.calling_card, AVGECharacterCard) check offers the
+            # crit coinflip for this delayed hit too, same as the initial 20 damage did.
+            _id = AVGEEngineID(self.attacker, ActionTypes.ATK_1, KatieXiang)
             await self.env.broadcast(BroadcastIO("Rubato: 30 damage", default_timeout))
             event.push_event([AVGECardHPChangeEvent(
                 _id, target, 30, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, self.env,

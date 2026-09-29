@@ -35,11 +35,9 @@ class AnaliseJia(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._ReedReplenishment(), ActionTypes.ATK_2: self._BananaBreadForEveryone()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._ReedReplenishment(), ActionTypes.ATK_2: self._BananaBreadForEveryone()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -49,7 +47,7 @@ class AnaliseJia(AVGECharacterCard):
             super().__init__(
                 name="Reed Replenishment",
                 description="Deal 10 damage to the opposing active. You may put an Item card you played this turn into your hand.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
@@ -75,12 +73,14 @@ class AnaliseJia(AVGECharacterCard):
                 played.append(event.target_card)
             return played
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AnaliseJia)
+            _id = AVGEEngineID(card, self.action_type, AnaliseJia)
 
             played = self._played_items_this_turn(card)
             retrievable = [i for i in played if i.deck_type != DeckType.HAND]
@@ -115,14 +115,16 @@ class AnaliseJia(AVGECharacterCard):
             super().__init__(
                 name="Banana Bread for Everyone!",
                 description="Heal your whole team +30. Discard 1 of your own energy, if you have any.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AnaliseJia)
+            _id = AVGEEngineID(card, self.action_type, AnaliseJia)
 
             own_chars: list[AVGECharacterCard] = [
                 c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)

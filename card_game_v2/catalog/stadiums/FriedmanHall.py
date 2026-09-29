@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGECard, AVGEStadiumCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -39,8 +39,24 @@ class FriedmanHall(AVGEStadiumCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self) -> None:
-        self.add_listener(_ChoosyDrawReactor(self, self.env))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="FriedmanHall",
+                description=FriedmanHall.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, FriedmanHall):
+                raise TypeError("FriedmanHall action requires its defining card")
+            acting_card.add_listener(_ChoosyDrawReactor(action_card, acting_card.env))
+
 
 
 class _ChoosyDrawReactor(AVGEEventReactor):

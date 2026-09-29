@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 from ..avge_abstracts.AVGECard import AVGECharacterCard
 from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEID import AVGEEngineID
-from ..constants import ActionTypes, INITIAL_HAND_SIZE
+from ..constants import ActionTypes, INITIAL_HAND_SIZE, NO_STARTING_ACTIVE_CARDS
 from ..core.EventCatalog import TransferCard
 from ..engine.event import Packet
 from . import event_broadcasting
@@ -24,18 +24,23 @@ async def _deal_starting_hand(env: AVGEEnvironment, player: AVGEPlayer) -> None:
     _id = AVGEEngineID(None, ActionTypes.ENV, None)
 
     # The deck's own order is already fully shuffled by whoever built it (server/decks.py's
-    # build_preset_decks/build_game_deck) before it ever reaches here - so "the first character
-    # found from the top" is a uniformly random character selection, not necessarily (and, once
-    # decks can contain non-character cards, not safely assumable to be) deck.cards_holding[0].
+    # build_preset_decks/build_game_deck) before it ever reaches here - so "the first eligible
+    # character found from the top" is a uniformly random selection among the characters allowed to
+    # start (constants.NO_STARTING_ACTIVE_CARDS are skipped), not necessarily (and, once decks can
+    # contain non-character cards, not safely assumable to be) deck.cards_holding[0].
     # deck.transfer_card removes by identity (list.remove), not index, so pulling a card from the
     # middle of the pile is no different from pulling the top one.
     active_card = next(
-        (c for c in deck.cards_holding if isinstance(c, AVGECharacterCard)), None,
+        (
+            c for c in deck.cards_holding
+            if isinstance(c, AVGECharacterCard) and type(c).__name__ not in NO_STARTING_ACTIVE_CARDS
+        ),
+        None,
     )
     if active_card is None:
         raise ValueError(
-            f"{player.id.name}'s deck contains no character card to start with - this should be "
-            "unreachable for any deck that passed deck_rules.validate_deck_cards()."
+            f"{player.id.name}'s deck contains no character that can start in the active slot - "
+            "this should be unreachable for any deck that passed deck_rules.validate_deck_cards()."
         )
     events: list[Event | Generator] = [TransferCard(_id, active_card, deck, active, env)]
     for _ in range(INITIAL_HAND_SIZE):

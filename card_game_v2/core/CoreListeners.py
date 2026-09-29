@@ -1,8 +1,12 @@
+import logging
+
 from ..avge_abstracts.AVGEEventListener import *
 from ..avge_abstracts.AVGECard import *
 from .EventCatalog import *
 from ..constants import ResponseStatus
 from ..engine.event import Event
+
+logger = logging.getLogger(__name__)
 
 
 def _reject(event: Event, reason: str) -> ResponseStatus:
@@ -25,7 +29,19 @@ class AVGETokenTransferCheck(AVGEEventRegulator):
         assert isinstance(event, AVGEEnergyTransfer)
         assert not callable(event.token_from)
         if (len(event.token_from.energy_tokens) == 0):
-            return _reject(event, "No energy left on that card to move.")
+            # REGULATE_IGNORE (no act, no history/commit, no rollback, rest of the
+            # packet still runs), not REGULATE_FAIL: a source that's legitimately
+            # already out of energy by the time this specific transfer runs is a
+            # no-op, not a failure - the same "thing to move is no longer there"
+            # shape AVGETransferSourceCheck already treats this way. REGULATE_FAIL
+            # here used to roll back the *whole* packet, which broke any card
+            # packeting an energy-strip together with something else irreversible in
+            # the same packet - e.g. AndreaCR's/MaggieLi's Snap Pizz, when the chosen
+            # strip target is the same character a KO already resolved against, or
+            # DressRehearsalRoster repeat-picking an already-drained character - both
+            # of which only ever want "discard less than the full amount," not "undo
+            # everything else in this packet too."
+            return ResponseStatus.REGULATE_IGNORE
         if (event.id.calling_action == ActionTypes.PLAYER_CHOICE):
             if (isinstance(event.token_to, AVGECharacterCard)):
                 if (self.env.players[event.token_to.owner].attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
@@ -50,7 +66,7 @@ class AVGEHPChangeCheck(AVGEEventRegulator):
 
 class AVGEHPChangeReactor(AVGEEventReactor):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_4)
     def match(self, event: Event) -> bool:
         return isinstance(event, AVGECardHPChangeEvent)
 
@@ -160,7 +176,7 @@ class AVGEWeaknessModifier(AVGEEventModifier):
 
 class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_4)
     def match(self, event: Event) -> bool:
         '''Resolves whether the listener matches an event '''
         return isinstance(event, AVGEPlayerAttributeChange)
@@ -183,6 +199,31 @@ class AVGEPlayerAttributeChangeReactor(AVGEEventReactor):
                     )
                 )
                 return ResponseStatus.REACTOR_SKIP
+
+
+class AVGETransferSourceCheck(AVGEEventRegulator):
+    '''Skips (REGULATE_IGNORE - no act, no history/commit, no rollback, rest of the packet still
+    runs) any TransferCard whose card is no longer in deck_from. Without this, TransferCard.act()'s
+    deck_from.cards_holding.remove(card) raises ValueError and ends the whole match with
+    reason="server_error" - e.g. a player's move arriving after an effect already moved that card,
+    or two effects racing to move the same card. Runs in EXTERNAL_MODIFIERS_1 (before every
+    INTERNAL_1 precheck, which never runs once a regulator returns anything but REGULATE_PASS).'''
+    def __init__(self, env : AVGEEnvironment):
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.EXTERNAL_MODIFIERS_1)
+    def match(self, event: Event) -> bool:
+        return isinstance(event, TransferCard)
+
+    async def respond(self, event: Event) -> ResponseStatus:
+        assert isinstance(event, TransferCard)
+        assert not callable(event.deck_from)
+        assert not callable(event.card)
+        if event.card not in event.deck_from.cards_holding:
+            logger.warning(
+                "Skipping TransferCard: card %s is no longer in %s",
+                event.card.cardID, event.deck_from.deck_type.name,
+            )
+            return ResponseStatus.REGULATE_IGNORE
+        return ResponseStatus.REGULATE_PASS
 
 
 class AVGETransferValidityCheck(AVGEEventRegulator):
@@ -225,10 +266,16 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
             return _reject(event, "Your bench is already full.")
         elif (event.deck_from.deck_type == DeckType.BENCH and event.deck_to.deck_type == DeckType.ACTIVE_CARD and self.env.players[event.card.owner].attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
             return _reject(event, "You've already swapped your active character this turn.")
-        # retreat_cost belongs to the card actually leaving the active slot (the current active
-        # card), never the incoming bench card in event.card - AVGERetreatCostReactor (below)
-        # charges the outgoing card's own cost, so this check must match that.
-        elif (isinstance(event.card, AVGECharacterCard) and event.deck_from.deck_type == DeckType.BENCH and event.deck_to.deck_type == DeckType.ACTIVE_CARD and len((active := self.env.get_player_active(event.card.owner)).energy_tokens) < active.retreat_cost):
+        # Retreat cost: this is the ACTIVE_CARD -> BENCH leg (the outgoing character's
+        # own event.card and event.cost - see TransferCard's own cost field and A2's
+        # retreat-cost fix), not the BENCH -> ACTIVE_CARD swap-in leg. event.cost is
+        # already fully resolved by this point (set at construction from the outgoing
+        # card's base retreat_cost, then adjusted by whichever EXTERNAL_MODIFIERS_1
+        # modifiers matched - Kiki's tool, GOON's status, Petteruti's stadium), so this
+        # is the single, authoritative affordability gate for a retreat, discount or
+        # surcharge included - not just the undiscounted base cost the swap-in leg
+        # used to check instead, which could never see any of those modifiers.
+        elif (isinstance(event.card, AVGECharacterCard) and event.deck_from.deck_type == DeckType.ACTIVE_CARD and event.deck_to.deck_type == DeckType.BENCH and not callable(event.cost) and len(event.card.energy_tokens) < max(0, event.cost)):
             return _reject(event, "Your active character doesn't have enough energy attached to retreat.")
         # No server-side cap existed at all before this - the frontend's own noExistingTool guard
         # (useGestureLegality.ts) was the only thing preventing a second tool attach, which a raw
@@ -239,30 +286,6 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
             return ResponseStatus.REGULATE_PASS
 
 
-class AVGERetreatCostReactor(AVGEEventReactor):
-    def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
-    def match(self, event: Event) -> bool:
-        '''Resolves whether the listener matches an event '''
-        return isinstance(event, TransferCard) and \
-            not callable(event.deck_from) and \
-                not callable(event.deck_to) and \
-                    event.id.calling_action == ActionTypes.PLAYER_CHOICE and \
-                        isinstance(event.card, AVGECharacterCard) and \
-                            event.deck_to.deck_type == DeckType.BENCH and \
-                                event.deck_from.deck_type == DeckType.ACTIVE_CARD
-
-    async def react(self, event: Event):
-        assert isinstance(event, TransferCard)
-        assert isinstance(event.card, AVGECharacterCard)
-        event.push_event([AVGEEnergyTransfer(
-            AVGEEngineID(None, ActionTypes.ENV, None),
-            event.card,
-            self.env,
-            self.env
-        ) for _ in range(event.card.retreat_cost)])
-
-
 class AVGEStadiumReplaceReactor(AVGEEventReactor):
     '''Playing a new stadium replaces whichever one is already in play, discarding the outgoing
     one to its own owner's discard pile - the same thing BAIEmail's bespoke effect
@@ -270,12 +293,12 @@ class AVGEStadiumReplaceReactor(AVGEEventReactor):
     card gets it for free instead of every card having to reimplement it, and so a stadium can
     never simply stack with the previous one.
 
-    EngineGroup.CORE (7) runs before INTERNAL_3 (8) - by the time this reactor fires, the
+    EngineGroup.CORE (8) runs before INTERNAL_4 (9) - by the time this reactor fires, the
     triggering TransferCard's own act() has already appended the new stadium to
     stadium_cardholder, so "was one already there" means len() > 1 here, not > 0, and the card to
     discard is index 0 (the original occupant), not whichever one is newest.'''
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_4)
 
     def match(self, event: Event) -> bool:
         return isinstance(event, TransferCard) and \
@@ -297,48 +320,42 @@ class AVGEStadiumReplaceReactor(AVGEEventReactor):
         )])
 
 
-class AVGEPlayCharacterCardValidityCheck(AVGEEventRegulator):
+class AVGEPlayCardValidityCheck(AVGEEventRegulator):
     def __init__(self, env : AVGEEnvironment):
         super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
     def match(self, event: Event) -> bool:
-        '''Resolves whether the listener matches an event '''
-        return isinstance(event, PlayCharacterCard)
+        return isinstance(event, (PlayCharacterCard, PlayNonCharacterCard))
 
     async def respond(self, event: Event) -> ResponseStatus:
-        assert(isinstance(event, PlayCharacterCard))
+        assert isinstance(event, (PlayCharacterCard, PlayNonCharacterCard))
         assert not callable(event.target_card)
-        assert not callable(event.cost)
-        if(event.cost > len(event.target_card.energy_tokens)):
-            return _reject(event, "Not enough energy attached to use that.")
-        match event.action:
-            case ActionTypes.ATK_1:
-                if(event.target_card.attacks.get(ActionTypes.ATK_1) is None):
-                    return _reject(event, "That character doesn't have this attack.")
-            case ActionTypes.ATK_2:
-                if(event.target_card.attacks.get(ActionTypes.ATK_2) is None):
-                    return _reject(event, "That character doesn't have this attack.")
-            case ActionTypes.PASSIVE:
-                if(event.target_card.abilities.get(ActionTypes.PASSIVE) is None):
-                    return _reject(event, "That character doesn't have this ability.")
-            case ActionTypes.ACTIVATE_ABILITY:
-                if(event.target_card.abilities.get(ActionTypes.ACTIVATE_ABILITY, None) is None
-                   or not event.target_card.abilities[ActionTypes.ACTIVATE_ABILITY].can_play(event.target_card)):
-                    return _reject(event, "That ability can't be used right now.")
-            case _:
-                raise Exception("No clue how you got here...")
-        return ResponseStatus.REGULATE_PASS
-        
+        assert not callable(event.action)
+        acting_card = (
+            event.id.calling_card
+            if isinstance(event.id.calling_card, AVGECard)
+            else event.target_card
+        )
+        action = event.target_card.actions.get(event.action)
+        reason: str | None = None
+        if action is None:
+            reason = "That card doesn't have this action."
+        elif not action.can_play(event.target_card, acting_card):
+            reason = "That action can't be used right now."
+        elif isinstance(event, PlayCharacterCard) and isinstance(action, Attack):
+            assert not callable(event.cost)
+            if event.cost > len(event.target_card.energy_tokens):
+                reason = "Not enough energy attached to use that."
+        elif (
+            isinstance(event.target_card, AVGESupporterCard)
+            and event.id.calling_action == ActionTypes.PLAYER_CHOICE
+            and self.env.players[acting_card.owner].attributes[
+                AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN
+            ] == 0
+        ):
+            reason = "You've already played a supporter card this turn."
 
-
-class AVGEPlayNonCharacterCardValidityCheck(AVGEEventRegulator):
-    def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
-    def match(self, event: Event) -> bool:
-        '''Resolves whether the listener matches an event '''
-        return isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard) and event.id.calling_action == ActionTypes.PLAYER_CHOICE
-
-    async def respond(self, event: Event) -> ResponseStatus:
-        assert isinstance(event, PlayNonCharacterCard) and isinstance(event.target_card, AVGESupporterCard)
-        if(self.env.players[event.target_card.owner].attributes[AVGEPlayerAttribute.SUPPORTER_USES_REMAINING_IN_TURN] == 0):
-            return _reject(event, "You've already played a supporter card this turn.")
-        return ResponseStatus.REGULATE_PASS
+        if reason is None:
+            return ResponseStatus.REGULATE_PASS
+        if event.id.calling_action == ActionTypes.PLAYER_CHOICE:
+            return _reject(event, reason)
+        return ResponseStatus.REGULATE_IGNORE

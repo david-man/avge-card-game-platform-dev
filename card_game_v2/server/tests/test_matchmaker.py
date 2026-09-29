@@ -102,6 +102,30 @@ class MatchmakerTests(unittest.IsolatedAsyncioTestCase):
         await session.force_end(winner=user_a, reason="concede")
         self.assertIsNone(self.mm.find_active_game("acct-1"))
 
+    async def test_leave_waiting_removes_the_queued_session_and_frees_the_account(self):
+        session, _ = await self._join("acct-1")
+        self.assertTrue(self.mm.leave_waiting("acct-1"))
+        self.assertNotIn(session.id, self.mm.sessions)
+        self.assertIsNone(self.mm.find_active_game("acct-1"))
+        # The next joiner starts a fresh queue rather than pairing into the abandoned session.
+        session_b, user_b = await self._join("acct-2")
+        self.assertIsNot(session_b, session)
+        self.assertEqual(user_b, User.PLAYER_1)
+
+    async def test_leave_waiting_is_a_no_op_once_an_opponent_has_paired_in(self):
+        session, _ = await self._join("acct-1")
+        await self._join("acct-2")
+        self.assertFalse(self.mm.leave_waiting("acct-1"))
+        self.assertFalse(self.mm.leave_waiting("acct-2"))
+        self.assertIn(session.id, self.mm.sessions)
+        self.assertIsNotNone(self.mm.find_active_game("acct-1"))
+
+    async def test_leave_waiting_with_nobody_queued_or_a_different_account_does_nothing(self):
+        self.assertFalse(self.mm.leave_waiting("acct-1"))
+        session, _ = await self._join("acct-1")
+        self.assertFalse(self.mm.leave_waiting("acct-2"))
+        self.assertIn(session.id, self.mm.sessions)
+
     async def test_each_players_own_deck_survives_pairing_with_no_crossover(self):
         # Regression guard for a seat/deck mixup: pair two players with deliberately different
         # decks and confirm each one's active/hand/deck ends up built only from their OWN classes,

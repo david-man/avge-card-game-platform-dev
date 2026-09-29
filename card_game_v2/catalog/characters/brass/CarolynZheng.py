@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import DeckType
@@ -36,11 +36,9 @@ class CarolynZheng(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Blast()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Blast()}), **({ActionTypes.PASSIVE: self._Procrastinate()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._Procrastinate()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         # Entering play is handled globally by TransferCard's own passive-trigger special case.
@@ -117,13 +115,11 @@ class CarolynZheng(AVGECharacterCard):
             super().__init__(
                 name="Procrastinate",
                 description="If Carolyn Zheng did not attack during her last turn, her attack deals 30 more damage.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, CarolynZheng)
             if card._attack_modifier is None:
                 card._attack_modifier = CarolynZheng._AttackModifier(card)
@@ -138,15 +134,17 @@ class CarolynZheng(AVGECharacterCard):
             super().__init__(
                 name="Blast",
                 description="Deal 70 damage to the opposing active character.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), CarolynZheng)
+            _id = AVGEEngineID(card, self.action_type, CarolynZheng)
 
             events: list[Event | Generator] = [
                 AVGECardHPChangeEvent(

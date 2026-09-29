@@ -6,9 +6,12 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 from ..avge_abstracts.AVGEDeck import AVGEToolHolder, DeckType
 from ..avge_abstracts.AVGECard import (
-    AVGECard, AVGECharacterCard, AVGEItemCard, AVGESupporterCard, AVGEToolCard, AVGEStadiumCard,
+    AVGECard, AVGECharacterCard, AVGEItemCard, AVGENonCharacterCard, AVGESupporterCard,
+    AVGEToolCard, AVGEStadiumCard,
 )
+from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..avge_abstracts.AVGEPlayer import AVGEPlayer
+from ..avge_abstracts.labels import label_for
 from ..constants import ActionTypes, User
 from ..core.AVGEIOManager import (
     AVGEIO, BroadcastIO, Phase2IO, AtkPhaseIO, GameEndIO, Notification, EndOfTurn, RevealCards,
@@ -20,6 +23,7 @@ from ..core.AVGEIOManager import (
     ActionRejectedUpdate,
 )
 from ..engine.engine_io import IOException, IOType, ListenerReorderIO, IOListenerReorderIO
+from ..engine.listener import EventListener, IOListener
 from . import config
 from . import protocol
 from . import serialization
@@ -76,6 +80,23 @@ def _wire_deck_ref(deck: AVGEDeck) -> dict[str, Any]:
         # deck_owner alone can't say which character, so the wire ref also carries which one.
         wire["parent_card_id"] = deck.parent_card.cardID
     return wire
+
+
+def _label_for_listener(listener: EventListener | IOListener) -> str:
+    '''Best-effort human-readable label for a ListenerReorderIO/IOListenerReorderIO entry - every
+    listener carries an id (AVGEEngineID), but not every listener names a card explicitly
+    (core/engine-level listeners often use calling_card=None, caller_class=None). caller_class is
+    preferred when present since it's the class whose ability/passive registered this listener
+    (e.g. AVGEEngineID(owner_card, ActionTypes.PASSIVE, DemiLu)); calling_card is the fallback for
+    listeners that only set that. Without this, the reorder prompt could only ever show "Item N",
+    leaving the player unable to make an informed choice about resolution order.'''
+    if not isinstance(listener.id, AVGEEngineID):
+        return "Unknown effect"
+    if listener.id.caller_class is not None:
+        return label_for(listener.id.caller_class.__name__)
+    if isinstance(listener.id.calling_card, AVGECard):
+        return str(listener.id.calling_card)
+    return "Unknown effect"
 
 
 class NetworkIO(AVGEIO):
@@ -248,20 +269,37 @@ class NetworkIO(AVGEIO):
             activatable_ability_card_ids = [
                 card.cardID
                 for card in serialization.characters_in_play(player)
-                for ability in card.abilities.values()
-                if ability.ability_type == ActionTypes.ACTIVATE_ABILITY and ability.can_play(card)
+                for ability in card.actions.values()
+                if (
+                    ability.action_type == ActionTypes.ACTIVATE_ABILITY
+                    and ability.can_play(card, card)
+                )
             ]
-            return {"activatable_ability_card_ids": activatable_ability_card_ids}
+            playable_noncharacter_card_ids = [
+                card.cardID
+                for card in player.card_piles[DeckType.HAND]
+                if (
+                    isinstance(card, AVGENonCharacterCard)
+                    and (action := card.actions.get(ActionTypes.NONCHAR)) is not None
+                    and action.can_play(card, card)
+                )
+            ]
+            return {
+                "activatable_ability_card_ids": activatable_ability_card_ids,
+                "playable_noncharacter_card_ids": playable_noncharacter_card_ids,
+            }
         if isinstance(io, AtkPhaseIO):
-            assert self.env is not None
-            active = serialization.active_card(self.env.players[io.user_for])
             # Which attack buttons the board should draw next to the active card - a character
-            # missing ATK_2 (see AVGECharacterCard.base_attacks()) simply never gets that key, so
+            # missing ATK_2 simply never gets that action key, so
             # this list is 1 or 2 entries long, never a fixed 2. SKIP isn't included: it's always
             # legal regardless of the active card, so the board shows it unconditionally instead.
-            available_attacks = (
-                [action.value for action in active.attacks] if active is not None else []
-            )
+            # Reads io.allowed_actions (set where AtkPhaseIO is constructed, from the active
+            # card's own actions map - see EventCatalog.py's AtkPhase.act()) instead of
+            # independently recomputing it here, so there's one source of truth for both this
+            # hint and deserialize()'s validation of the eventual response below.
+            available_attacks = [
+                action.value for action in io.allowed_actions if action != ActionTypes.SKIP
+            ]
             return {"available_attacks": available_attacks}
         if isinstance(io, CardSelectionQuery):
             return {
@@ -288,7 +326,10 @@ class NetworkIO(AVGEIO):
         if isinstance(io, CoinflipData):
             return {"header_msg": io.header_msg}
         if isinstance(io, (ListenerReorderIO, IOListenerReorderIO)):
-            return {"count": len(io.listeners)}
+            return {
+                "count": len(io.listeners),
+                "labels": [_label_for_listener(listener) for listener in io.listeners],
+            }
 
         if isinstance(io, HPChangeUpdate):
             return {
@@ -399,7 +440,15 @@ class NetworkIO(AVGEIO):
 
         if isinstance(io, AtkPhaseIO):
             action = data.get("action")
-            if action not in (ActionTypes.ATK_1.value, ActionTypes.ATK_2.value, ActionTypes.SKIP.value):
+            allowed_values = {a.value for a in io.allowed_actions}
+            # Previously only checked that `action` was *a* valid ActionTypes value at
+            # all, never cross-referenced against the active card's actual attacks - a
+            # raw {"action": "ATK_2"} for a character with no second attack sailed
+            # through deserialization and crashed AtkPhase's own dict index instead of
+            # being rejected cleanly here. allowed_actions (see AtkPhaseIO's own
+            # docstring) is exactly the same data the request payload above is built
+            # from, so this can't drift out of sync with what the board actually offers.
+            if action not in allowed_values:
                 raise IOException(f"Invalid AtkPhaseIO action: {action!r}")
             return ActionTypes(action)  # type: ignore[return-value]
 
@@ -575,6 +624,24 @@ class NetworkIO(AVGEIO):
         except KeyError as exc:
             raise IOException(f"Invalid deck reference: {raw!r}") from exc
 
+    @staticmethod
+    def _check_selection_count(
+        io: CardSelectionQuery | StringSelectionQuery, count: int, distinct_allowed: int,
+    ) -> None:
+        '''A selection with allows_none=False means "answer with exactly num_selections" (every
+        such call site in the catalog - "choose 2", "reorder these 2", "discard until hand sizes
+        match" - relies on that; a short answer used to reach card code that indexes or reorders
+        off it). With allows_none=True any count from 0..num_selections is fine. Without
+        allows_repeat only distinct options can be chosen, so the requirement is clamped to how
+        many distinct options exist rather than becoming unanswerable.'''
+        if count > io.num_selections:
+            raise IOException(f"Too many selections: {count} > {io.num_selections}")
+        if io.allows_none:
+            return
+        required = io.num_selections if io.allows_repeat else min(io.num_selections, distinct_allowed)
+        if count != required:
+            raise IOException(f"Exactly {required} selection(s) required, got {count}")
+
     def _deserialize_card_selection(self, env: AVGEEnvironment, io: CardSelectionQuery, data: dict[str, Any]) -> list[AVGECard]:
         raw_ids_obj = data.get("selected_ids")
         if not isinstance(raw_ids_obj, list):
@@ -583,13 +650,10 @@ class NetworkIO(AVGEIO):
         if not all(isinstance(r, str) for r in raw_ids_any):
             raise IOException("selected_ids must contain only card id strings")
         raw_ids = cast("list[str]", raw_ids_any)
-        if len(raw_ids) == 0 and not io.allows_none:
-            raise IOException("This selection does not allow an empty response")
-        if len(raw_ids) > io.num_selections:
-            raise IOException(f"Too many selections: {len(raw_ids)} > {io.num_selections}")
+        allowed_ids = {c.cardID for c in io.allowed_selections}
+        self._check_selection_count(io, len(raw_ids), len(allowed_ids))
         if not io.allows_repeat and len(set(raw_ids)) != len(raw_ids):
             raise IOException("Duplicate selections are not allowed here")
-        allowed_ids = {c.cardID for c in io.allowed_selections}
         resolved: list[AVGECard] = []
         for raw_id in raw_ids:
             if raw_id not in allowed_ids:
@@ -608,10 +672,7 @@ class NetworkIO(AVGEIO):
         if not all(isinstance(item, str) for item in raw_any):
             raise IOException("selected must be a list of strings")
         raw = cast("list[str]", raw_any)
-        if len(raw) == 0 and not io.allows_none:
-            raise IOException("This selection does not allow an empty response")
-        if len(raw) > io.num_selections:
-            raise IOException(f"Too many selections: {len(raw)} > {io.num_selections}")
+        self._check_selection_count(io, len(raw), len(set(io.allowed_selections)))
         if not io.allows_repeat and len(set(raw)) != len(raw):
             raise IOException("Duplicate selections are not allowed here")
         if not all(item in io.allowed_selections for item in raw):

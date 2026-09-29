@@ -37,11 +37,9 @@ class DavidMan(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._ThreeHandTechnique()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._ThreeHandTechnique()}), **({ActionTypes.ACTIVATE_ABILITY: self._ReverseHeist()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.ACTIVATE_ABILITY: self._ReverseHeist()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -51,10 +49,11 @@ class DavidMan(AVGECharacterCard):
             super().__init__(
                 name="Reverse Heist",
                 description="Once per turn, reveal a random discard card (to yourself only) and shuffle it into your deck.",
-                ability_type=ActionTypes.ACTIVATE_ABILITY,
+                action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            card = action_card
             assert isinstance(card, DavidMan)
             # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
             # constructed (server/io_adapter.py's _deserialize_phase2) - can_play() only needs to
@@ -64,7 +63,8 @@ class DavidMan(AVGECharacterCard):
                 return False
             return card._reverse_heist_last_used_round != card.env.round
 
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, DavidMan)
             env = card.env
             player = env.players[card.owner]
@@ -92,13 +92,15 @@ class DavidMan(AVGECharacterCard):
 
     class _ThreeHandTechnique(Attack):
         def __init__(self):
-            super().__init__(name="Three Hand Technique", description="Deal 20 damage to the opposing active, 3 times.", atk_type=ActionTypes.ATK_1, cost=3)
+            super().__init__(name="Three Hand Technique", description="Deal 20 damage to the opposing active, 3 times.", action_type=ActionTypes.ATK_1, cost=3)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), DavidMan)
+            _id = AVGEEngineID(card, self.action_type, DavidMan)
             events: list[Event | Generator] = [
                 AVGECardHPChangeEvent(_id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env)
                 for _ in range(3)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
@@ -33,11 +33,9 @@ class AshleyToby(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._SealAttack()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._SealAttack()}), **({ActionTypes.PASSIVE: self._InstagramViralPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._InstagramViralPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -47,13 +45,11 @@ class AshleyToby(AVGECharacterCard):
             super().__init__(
                 name="Instagram Viral",
                 description="Doubles this character's own attack damage while both benches are completely full.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, AshleyToby)
             if card._instagram_viral is None:
                 card._instagram_viral = AshleyToby._InstagramViral(card, card.env)
@@ -87,13 +83,15 @@ class AshleyToby(AVGECharacterCard):
 
     class _SealAttack(Attack):
         def __init__(self):
-            super().__init__(name="Code Gyu: Seal Attack", description="Deal 40 damage to the opposing active.", atk_type=ActionTypes.ATK_1, cost=2)
+            super().__init__(name="Code Gyu: Seal Attack", description="Deal 40 damage to the opposing active.", action_type=ActionTypes.ATK_1, cost=2)
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AshleyToby)
+            _id = AVGEEngineID(card, self.action_type, AshleyToby)
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 40, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env,
             )]))

@@ -33,11 +33,9 @@ class MasonYu(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Arrangement(), ActionTypes.ATK_2: self._WePlayGod()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Arrangement(), ActionTypes.ATK_2: self._WePlayGod()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -47,17 +45,19 @@ class MasonYu(AVGECharacterCard):
             super().__init__(
                 name="Arrangement",
                 description="Choose one of your benched characters to give the ARRANGER status.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             bench: list[AVGECharacterCard] = [
                 c for c in player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), MasonYu)
+            _id = AVGEEngineID(card, self.action_type, MasonYu)
             if not bench:
                 await env.report(Notification(
                     card.owner,
@@ -94,13 +94,15 @@ class MasonYu(AVGECharacterCard):
             super().__init__(
                 name="We Play God",
                 description="Discard 1 of your own energy. Choose any two characters in play - one is randomly swapped into their controller's active slot, the other is forced to use one of its own attacks (acting as you).",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), MasonYu)
+            _id = AVGEEngineID(card, self.action_type, MasonYu)
 
             if len(card.energy_tokens) == 0:
                 await env.report(Notification(
@@ -135,7 +137,7 @@ class MasonYu(AVGECharacterCard):
             other = chosen_2 if random_selected is chosen_1 else chosen_1
 
             available_names = [
-                other.attacks[a].name for a in (ActionTypes.ATK_1, ActionTypes.ATK_2) if a in other.attacks
+                other.actions[a].name for a in (ActionTypes.ATK_1, ActionTypes.ATK_2) if a in other.actions
             ]
             if not available_names:
                 return
@@ -151,7 +153,7 @@ class MasonYu(AVGECharacterCard):
             ), _id))[0]
             action_type = (
                 ActionTypes.ATK_1
-                if ActionTypes.ATK_1 in other.attacks and other.attacks[ActionTypes.ATK_1].name == attack_choice
+                if ActionTypes.ATK_1 in other.actions and other.actions[ActionTypes.ATK_1].name == attack_choice
                 else ActionTypes.ATK_2
             )
 
@@ -170,7 +172,7 @@ class MasonYu(AVGECharacterCard):
             events: list[Event | Generator] = [
                 AVGEEnergyTransfer(_id, card, env, env),
                 gen_swap,
-                # cost=0, not other.attacks[action_type].cost: v1 calls this with no
+                # cost=0, not other.actions[action_type].cost: v1 calls this with no
                 # `energy_requirement` (defaults to 0), deliberately bypassing the
                 # normal "does the acting character have enough energy" gate - Mason's
                 # own energy discard above is the entire cost for this maneuver, and

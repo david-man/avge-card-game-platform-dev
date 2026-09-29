@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from ...constants import CARDS_PER_DECK
+from ...constants import CARDS_PER_DECK, NO_STARTING_ACTIVE_CARDS
 from .. import deck_rules
 from ..app import create_app
 
@@ -40,7 +40,7 @@ class CatalogRouteTests(DeckRoutesTestBase):
         response = self.client.get("/api/catalog")
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(len(body["cards"]), 121)
+        self.assertEqual(len(body["cards"]), 123)
         for card in body["cards"]:
             self.assertIn(card["kind"], {"character", "item", "tool", "stadium", "supporter"})
 
@@ -51,6 +51,7 @@ class CatalogRouteTests(DeckRoutesTestBase):
         self.assertEqual(rules["max_decks"], deck_rules.MAX_DECKS_PER_ACCOUNT)
         self.assertEqual(rules["max_copies_item_or_tool"], deck_rules.MAX_COPIES_ITEM_OR_TOOL)
         self.assertEqual(rules["max_copies_default"], deck_rules.MAX_COPIES_DEFAULT)
+        self.assertEqual(rules["no_starting_active"], sorted(NO_STARTING_ACTIVE_CARDS))
 
 
 class AuthTests(DeckRoutesTestBase):

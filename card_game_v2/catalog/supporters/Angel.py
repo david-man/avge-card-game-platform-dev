@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGESupporterCard
+from ...avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGESupporterCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes, StatusEffect, AVGEStatusModifier
@@ -15,31 +15,46 @@ class Angel(AVGESupporterCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        env = self.env
-        player = env.players[self.owner]
-        opponent = env.get_opponent(self.owner)
-        opponent_discard = opponent.card_piles[DeckType.DISCARD]
-        _id = AVGEEngineID(self, ActionTypes.NONCHAR, Angel)
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
 
-        own_chars: list[AVGECharacterCard] = [
-            c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
-        ] + [
-            c for c in player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
-        ]
-        opp_chars: list[AVGECharacterCard] = [
-            c for c in opponent.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
-        ] + [
-            c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
-        ]
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="Angel",
+                description=Angel.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
 
-        events: list[Event | Generator] = [
-            AVGECardStatusChange(_id, character, self, StatusEffect.GOON, AVGEStatusModifier.ADD, env)
-            for character in own_chars
-        ]
-        for character in opp_chars:
-            for tool in list(character.tools_attached.cards_holding):
-                events.append(TransferCard(_id, tool, character.tools_attached, opponent_discard, env))
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, Angel):
+                raise TypeError("Angel action requires its defining card")
+            env = acting_card.env
+            player = env.players[acting_card.owner]
+            opponent = env.get_opponent(acting_card.owner)
+            opponent_discard = opponent.card_piles[DeckType.DISCARD]
+            _id = AVGEEngineID(acting_card, self.action_type, Angel)
 
-        if events:
-            env.push_packet(Packet(_id, events))
+            own_chars: list[AVGECharacterCard] = [
+                c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
+            ] + [
+                c for c in player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
+            ]
+            opp_chars: list[AVGECharacterCard] = [
+                c for c in opponent.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
+            ] + [
+                c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
+            ]
+
+            events: list[Event | Generator] = [
+                AVGECardStatusChange(_id, character, action_card, StatusEffect.GOON, AVGEStatusModifier.ADD, env)
+                for character in own_chars
+            ]
+            for character in opp_chars:
+                for tool in list(character.tools_attached.cards_holding):
+                    events.append(TransferCard(_id, tool, character.tools_attached, opponent_discard, env))
+
+            if events:
+                env.push_packet(Packet(_id, events))

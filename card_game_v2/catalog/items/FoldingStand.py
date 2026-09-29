@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, CardType
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, CardType, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
@@ -23,8 +23,24 @@ class FoldingStand(AVGEItemCard):
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
 
-    async def play_card(self, card: AVGECard, caller_action: ActionTypes) -> None:
-        self.add_listener(FoldingStand._FirstAttackDamageBuff(self.owner, self.env))
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {ActionTypes.NONCHAR: self._PlayAction()}
+
+    class _PlayAction(Ability):
+        def __init__(self):
+            super().__init__(
+                name="FoldingStand",
+                description=FoldingStand.__doc__ or "",
+                action_type=ActionTypes.NONCHAR,
+            )
+
+        async def __call__(
+            self, action_card: AVGECard, acting_card: AVGECard,
+        ) -> None:
+            if not isinstance(action_card, FoldingStand):
+                raise TypeError("FoldingStand action requires its defining card")
+            acting_card.add_listener(FoldingStand._FirstAttackDamageBuff(acting_card.owner, acting_card.env))
+
 
     class _FirstAttackDamageBuff(AVGEEventModifier):
         def __init__(self, owner: User, env: AVGEEnvironment):

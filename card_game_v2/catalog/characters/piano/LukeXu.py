@@ -3,9 +3,9 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEConstrainer import AVGEConstrainer
-from ....avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventReactor
+from ....avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventReactor, AVGEPacketReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User, default_timeout
@@ -40,11 +40,9 @@ class LukeXu(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._DamperPedal()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._DamperPedal()}), **({ActionTypes.PASSIVE: self._NullifyPassive()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._NullifyPassive()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -60,13 +58,11 @@ class LukeXu(AVGECharacterCard):
             super().__init__(
                 name="Nullify",
                 description="While active on your own turn, opposing characters' passive/active abilities have no effect for the rest of this turn.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, LukeXu)
             if card._nullify_reactor is None:
                 card._nullify_reactor = LukeXu._NullifyTransferReactor(card, card.env)
@@ -133,25 +129,36 @@ class LukeXu(AVGECharacterCard):
             super().__init__(
                 name="Damper Pedal",
                 description="Deal 20 damage to the opposing active. Halve (round up) the opponent's next attack, whenever it lands.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), LukeXu)
+            _id = AVGEEngineID(card, self.action_type, LukeXu)
 
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
             )]))
-            card.add_listener(LukeXu._NextAttackHalved(card.owner, env))
+            modifier = LukeXu._NextAttackHalved(card.owner, env)
+            card.add_listener(modifier)
+            card.add_packet_listener(LukeXu._NextAttackHalvedPacketReactor(modifier, env))
 
     class _NextAttackHalved(AVGEEventModifier):
+        '''Cleans itself up via the companion `_NextAttackHalvedPacketReactor` below (once that
+        attack's whole packet completes), not synchronously on its own first match - a
+        multi-target attack (e.g. an active+bench hit in one packet) fires this modifier's
+        match()/modify() once per qualifying event in that same packet, and cleaning up
+        immediately after the first would leave every later hit in that same packet unhalved.'''
+
         def __init__(self, owner: User, env: AVGEEnvironment):
             super().__init__(AVGEEngineID(None, ActionTypes.ATK_1, LukeXu), env, EngineGroup.EXTERNAL_MODIFIERS_2)
             self.owner = owner
+            self.fired = False
 
         def match(self, event: Event) -> bool:
             if not isinstance(event, AVGECardHPChangeEvent):
@@ -173,5 +180,21 @@ class LukeXu(AVGECharacterCard):
             assert isinstance(event, AVGECardHPChangeEvent)
             assert not callable(event.magnitude)
             event.modify_magnitude(-math.floor(event.magnitude / 2))
-            self.cleanup()
+            self.fired = True
             await self.env.broadcast(BroadcastIO("Damper Pedal: Incoming damage halved.", default_timeout))
+
+    class _NextAttackHalvedPacketReactor(AVGEPacketReactor):
+        '''Cleans up `_NextAttackHalved` (and itself) once the packet it fired in has fully
+        completed, so it halves every qualifying event within that one packet - not just the
+        first - while still only ever affecting a single attack overall.'''
+
+        def __init__(self, modifier: LukeXu._NextAttackHalved, env: AVGEEnvironment):
+            super().__init__(AVGEEngineID(None, ActionTypes.ATK_1, LukeXu), env)
+            self.modifier = modifier
+
+        def match(self, packet: Packet) -> bool:
+            return self.modifier.fired
+
+        async def react(self, packet: Packet) -> None:
+            self.modifier.cleanup()
+            self.cleanup()

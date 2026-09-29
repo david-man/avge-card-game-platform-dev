@@ -37,11 +37,9 @@ class RossWilliams(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 2
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._RossAttack()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._RossAttack()}), **({ActionTypes.PASSIVE: self._IAmBecomeRoss()})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {ActionTypes.PASSIVE: self._IAmBecomeRoss()}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         # Entering play is handled globally by TransferCard's own passive-trigger special case.
@@ -121,7 +119,7 @@ class RossWilliams(AVGECharacterCard):
 
             self.env.push_packet(Packet(_id, events))
             await self.env.broadcast(BroadcastIO(
-                f"{type(active).__name__} used Ross's attack!",
+                f"{active} used Ross's attack!",
                 default_timeout,
             ))
             # Skip AtkPhase's own core (the normal attack-choice prompt) entirely - our
@@ -137,13 +135,11 @@ class RossWilliams(AVGECharacterCard):
             super().__init__(
                 name="I Am Become Ross",
                 description="While Ross Williams is benched, the player about to attack may use his attack instead, for free.",
-                ability_type=ActionTypes.PASSIVE,
+                action_type=ActionTypes.PASSIVE,
             )
 
-        def can_play(self, card: AVGECharacterCard) -> bool:
-            return True
-
-        async def __call__(self, card: AVGECharacterCard) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = action_card
             assert isinstance(card, RossWilliams)
             if card._hijack_regulator is None:
                 card._hijack_regulator = RossWilliams._AttackHijack(card)
@@ -158,11 +154,13 @@ class RossWilliams(AVGECharacterCard):
             super().__init__(
                 name="Ross Attack!",
                 description="If your bench has a Ross Williams, retrieve a card from your discard. Otherwise, if the opponent's bench has one, deal 20 damage to a character of your choice.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=2,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
@@ -172,8 +170,7 @@ class RossWilliams(AVGECharacterCard):
             opp_has = any(isinstance(c, RossWilliams)
                           for c in opponent.card_piles[DeckType.BENCH])
 
-            _id = AVGEEngineID(card, self.resolve_caller(
-                caller_action), RossWilliams)
+            _id = AVGEEngineID(card, self.action_type, RossWilliams)
 
             if player_has and opp_has:
                 await env.report(Notification(

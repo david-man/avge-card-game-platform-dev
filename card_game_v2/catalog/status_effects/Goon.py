@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from ...avge_abstracts.AVGEEventListener import *
 from ...avge_abstracts.AVGECard import *
-from ...constants import ResponseStatus
 from ...engine.event import Event
 from ...core.EventCatalog import *
 
 
-class AVGEGoonRetreatCostRegulator(AVGEEventRegulator):
-    '''GOON status: retreating (active -> bench) costs 1 additional energy on top of the
-    card's own retreat_cost. Checked independently against the retreating card's own
-    energy/cost, so it doesn't depend on however the base retreat-cost validity check
-    is wired.'''
+class AVGEGoonRetreatCostModifier(AVGEEventModifier):
+    '''GOON status: +1 to the retreating character's own ACTIVE_CARD -> BENCH retreat
+    leg's cost field (see TransferCard's own cost field and A2's retreat-cost fix) -
+    a plain EXTERNAL_MODIFIERS_1 modifier, replacing the old regulator-plus-reactor
+    pair this needed when the only things available were an independent affordability
+    re-check and a reactor discarding a flat extra token on top of the base reactor's
+    own always-full-price discard. No internal clamp needed (this only ever adds) -
+    see KikisHeadband's identical -1 modifier for the general reasoning.'''
     def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_1)
+        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.EXTERNAL_MODIFIERS_1)
 
     def match(self, event: Event) -> bool:
         return (
@@ -21,6 +23,7 @@ class AVGEGoonRetreatCostRegulator(AVGEEventRegulator):
             and not callable(event.card)
             and not callable(event.deck_from)
             and not callable(event.deck_to)
+            and not callable(event.cost)
             and event.id.calling_action == ActionTypes.PLAYER_CHOICE
             and isinstance(event.card, AVGECharacterCard)
             and event.deck_from.deck_type == DeckType.ACTIVE_CARD
@@ -28,42 +31,10 @@ class AVGEGoonRetreatCostRegulator(AVGEEventRegulator):
             and len(event.card.statuses_attached[StatusEffect.GOON]) > 0
         )
 
-    async def respond(self, event: Event) -> ResponseStatus:
+    async def modify(self, event: Event) -> None:
         assert isinstance(event, TransferCard)
-        assert isinstance(event.card, AVGECharacterCard)
-        if len(event.card.energy_tokens) < event.card.retreat_cost + 1:
-            return ResponseStatus.REGULATE_FAIL
-        return ResponseStatus.REGULATE_PASS
-
-
-class AVGEGoonRetreatCostReactor(AVGEEventReactor):
-    '''GOON status: discards 1 additional energy on top of whatever the base retreat
-    reactor already discards, for the same retreat.'''
-    def __init__(self, env : AVGEEnvironment):
-        super().__init__(AVGEEngineID(None, ActionTypes.ENV, None), env, EngineGroup.INTERNAL_3)
-
-    def match(self, event: Event) -> bool:
-        return (
-            isinstance(event, TransferCard)
-            and not callable(event.card)
-            and not callable(event.deck_from)
-            and not callable(event.deck_to)
-            and event.id.calling_action == ActionTypes.PLAYER_CHOICE
-            and isinstance(event.card, AVGECharacterCard)
-            and event.deck_from.deck_type == DeckType.ACTIVE_CARD
-            and event.deck_to.deck_type == DeckType.BENCH
-            and len(event.card.statuses_attached[StatusEffect.GOON]) > 0
-        )
-
-    async def react(self, event: Event):
-        assert isinstance(event, TransferCard)
-        assert isinstance(event.card, AVGECharacterCard)
-        event.push_event([AVGEEnergyTransfer(
-            AVGEEngineID(None, ActionTypes.ENV, None),
-            event.card,
-            self.env,
-            self.env,
-        )])
+        assert not callable(event.cost)
+        event.cost += 1
 
 
 class AVGEGoonStatusChangeReactor(AVGEEventReactor):

@@ -32,11 +32,9 @@ class AndreaCR(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._Foresight(), ActionTypes.ATK_2: self._SnapPizz()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._Foresight(), ActionTypes.ATK_2: self._SnapPizz()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,15 +48,17 @@ class AndreaCR(AVGECharacterCard):
             super().__init__(
                 name="Foresight",
                 description="Peek the top 3 cards of the opponent's deck and choose how to reorder them.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             opponent_deck = opponent.card_piles[DeckType.DECK]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AndreaCR)
+            _id = AVGEEngineID(card, self.action_type, AndreaCR)
 
             consider_count = min(3, len(opponent_deck))
             if consider_count <= 1:
@@ -125,11 +125,13 @@ class AndreaCR(AVGECharacterCard):
             super().__init__(
                 name="Snap Pizz",
                 description="Deal 20 damage to the opposing active. Strip up to 2 energy from a chosen opposing character.",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=3,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
@@ -138,7 +140,7 @@ class AndreaCR(AVGECharacterCard):
             ] + [
                 c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), AndreaCR)
+            _id = AVGEEngineID(card, self.action_type, AndreaCR)
             if not targets:
                 await env.report(Notification(
                     card.owner, "Snap Pizz failed: no opposing characters are in play.", default_timeout,

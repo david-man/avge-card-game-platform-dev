@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....avge_abstracts.AVGECard import AVGECharacterCard, AVGEItemCard, Attack, Ability, CardType
+from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, AVGEItemCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....constants import ActionTypes, AVGEAttributeModifier
@@ -36,11 +36,9 @@ class MichelleKim(AVGECharacterCard):
     def base_retreat_cost(self) -> int:
         return 1
 
-    def base_attacks(self) -> dict[ActionTypes, Attack]:
-        return {ActionTypes.ATK_1: self._OpenStrings(), ActionTypes.ATK_2: self._VocaRock()}
+    def base_actions(self) -> dict[ActionTypes, Ability]:
+        return {**({ActionTypes.ATK_1: self._OpenStrings(), ActionTypes.ATK_2: self._VocaRock()}), **({})}
 
-    def base_abilities(self) -> dict[ActionTypes, Ability]:
-        return {}
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -50,11 +48,13 @@ class MichelleKim(AVGECharacterCard):
             super().__init__(
                 name="Open Strings",
                 description="Deal 10 damage to the opposing active. Draw a card - if it's an item, play it immediately and discard it.",
-                atk_type=ActionTypes.ATK_1,
+                action_type=ActionTypes.ATK_1,
                 cost=1,
             )
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             player = env.players[card.owner]
             opponent = env.get_opponent(card.owner)
@@ -62,7 +62,7 @@ class MichelleKim(AVGECharacterCard):
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
             discard = player.card_piles[DeckType.DISCARD]
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), MichelleKim)
+            _id = AVGEEngineID(card, self.action_type, MichelleKim)
 
             def draw_and_maybe_play_item() -> list[Event | Generator]:
                 if len(deck) == 0:
@@ -70,7 +70,7 @@ class MichelleKim(AVGECharacterCard):
                 top = deck.get_top()
                 events: list[Event | Generator] = [TransferCard(_id, top, deck, hand, env)]
                 if isinstance(top, AVGEItemCard):
-                    events.append(PlayNonCharacterCard(_id, top, ActionTypes.ATK_1, env))
+                    events.append(PlayNonCharacterCard(_id, top, env))
                     events.append(TransferCard(_id, top, hand, discard, env))
                 return events
 
@@ -85,7 +85,7 @@ class MichelleKim(AVGECharacterCard):
             super().__init__(
                 name="VocaRock!!",
                 description="Deal 30 damage to the opposing active (80 instead if you played Miku Otamatone earlier this turn).",
-                atk_type=ActionTypes.ATK_2,
+                action_type=ActionTypes.ATK_2,
                 cost=2,
             )
 
@@ -102,10 +102,12 @@ class MichelleKim(AVGECharacterCard):
                     return True
                 index += 1
 
-        async def __call__(self, card: AVGECharacterCard, caller_action: ActionTypes) -> None:
+        async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
+            card = acting_card
+            assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
-            _id = AVGEEngineID(card, self.resolve_caller(caller_action), MichelleKim)
+            _id = AVGEEngineID(card, self.action_type, MichelleKim)
 
             dmg = 80 if self._miku_used_this_turn(card) else 30
             target = env.get_player_active(opponent)
