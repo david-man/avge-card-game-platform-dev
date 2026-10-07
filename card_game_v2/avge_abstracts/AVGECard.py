@@ -131,6 +131,10 @@ class Ability(ABC):
         '''Whether this action is intrinsically legal. This must be side-effect-free.'''
         return True
 
+    def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+        '''Optional player-facing reason when can_play() is false.'''
+        return None
+
 
 @dataclass
 class Attack(Ability):

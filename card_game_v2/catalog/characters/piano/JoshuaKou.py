@@ -3,12 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
-from ....avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
-from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User
+from ....constants import ActionTypes, AVGEAttributeModifier, User
 from ....engine.event import Event, Packet
-from ....core.EventCatalog import AVGECardHPChangeEvent, PhasePickCard, TransferCard
+from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard
 from ....core.AVGEIOManager import StringSelectionQuery
 
 if TYPE_CHECKING:
@@ -27,7 +26,6 @@ class JoshuaKou(AVGECharacterCard):
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
         super().__init__(cardID, env, owner, deck_in)
         self._last_used_round: int | None = None
-        self._category_theory: JoshuaKou._CategoryTheory | None = None
 
     def base_hp(self) -> int:
         return 90
@@ -46,44 +44,40 @@ class JoshuaKou(AVGECharacterCard):
 
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
-        return
+        if (
+            deck_from.deck_type == DeckType.HAND
+            and deck_to.deck_type == DeckType.BENCH
+            and transfer_event.id.calling_action == ActionTypes.PLAYER_CHOICE
+        ):
+            _id = AVGEEngineID(self, ActionTypes.PASSIVE, JoshuaKou)
+            # on_transfer runs before the physical move. A child packet resolves
+            # after it, so the draw count sees the hand without Joshua in it.
+            self.env.push_packet(Packet(_id, [self._CategoryTheoryResolve(_id, self)]))
 
     class _CategoryTheoryPassive(Ability):
         def __init__(self):
             super().__init__(
                 name="Category Theory",
-                description="At the start of your turn, if you have fewer than 4 cards in hand, may draw up to 4.",
+                description="When played from your hand to your bench, you may draw until you have four cards in hand.",
                 action_type=ActionTypes.PASSIVE,
             )
 
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
-            card = action_card
-            assert isinstance(card, JoshuaKou)
-            if card._category_theory is None:
-                card._category_theory = JoshuaKou._CategoryTheory(card, card.env)
-                card.add_listener(card._category_theory)
+            return
 
-    class _CategoryTheory(AVGEEventReactor):
-        def __init__(self, owner_card: JoshuaKou, env: AVGEEnvironment):
-            super().__init__(AVGEEngineID(owner_card, ActionTypes.PASSIVE, JoshuaKou), env, EngineGroup.EXTERNAL_REACTORS)
+    class _CategoryTheoryResolve(Event):
+        def __init__(self, event_id: AVGEEngineID, owner_card: JoshuaKou):
+            super().__init__(event_id)
             self.owner_card = owner_card
 
-        def match(self, event: Event) -> bool:
-            if not isinstance(event, PhasePickCard):
-                return False
-            if self.owner_card.deck_type not in (DeckType.ACTIVE_CARD, DeckType.BENCH):
-                return False
-            if self.env.turn != self.owner_card.owner:
-                return False
-            player = self.env.players[self.owner_card.owner]
-            if len(player.card_piles[DeckType.HAND]) >= 4:
-                return False
-            return len(player.card_piles[DeckType.DECK]) > 0
-
-        async def react(self, event: Event) -> None:
-            player = self.env.players[self.owner_card.owner]
-            _id = AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, JoshuaKou)
-            choice = await self.env.report(StringSelectionQuery(
+        async def act(self) -> None:
+            env = self.owner_card.env
+            player = env.players[self.owner_card.owner]
+            hand = player.card_piles[DeckType.HAND]
+            deck = player.card_piles[DeckType.DECK]
+            if self.owner_card.deck_type != DeckType.BENCH or len(hand) >= 4 or not deck:
+                return
+            choice = await env.report(StringSelectionQuery(
                 self.owner_card.owner,
                 "Category Theory: Draw until you have four cards in hand?",
                 1,
@@ -91,16 +85,16 @@ class JoshuaKou(AVGECharacterCard):
                 ["Yes", "No"],
                 False,
                 False,
-            ), _id)
+            ), self.id)
             if choice[0] != "Yes":
                 return
 
-            hand = player.card_piles[DeckType.HAND]
-            deck = player.card_piles[DeckType.DECK]
             draws = min(4 - len(hand), len(deck))
-            if draws <= 0:
-                return
-            event.push_event([TransferCard(_id, lambda: deck.get_top(), deck, hand, self.env) for _ in range(draws)])
+            if draws > 0:
+                self.push_event([TransferCard(self.id, lambda: deck.get_top(), deck, hand, env) for _ in range(draws)])
+
+        def rollback(self) -> None:
+            return
 
     class _SeparateHands(Attack):
         def __init__(self):

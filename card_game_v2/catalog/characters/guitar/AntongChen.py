@@ -55,6 +55,12 @@ class AntongChen(AVGECharacterCard):
                 cost=2,
             )
 
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            return isinstance(action_card, AntongChen) and action_card._last_atk2_round != acting_card.env.round - 2
+
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            return "Fingerstyle cannot be used on the turn after Power Chord."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = acting_card
             assert isinstance(card, AVGECharacterCard)

@@ -1,11 +1,12 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
 
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import User, ActionTypes, WinReasons
-from ...engine.engine_io import IOException
+from ...engine.engine_io import IOException, ListenerReorderIO
 from ...core.AVGEIOManager import (
     BroadcastIO, Phase2IO, AtkPhaseIO, GameEndIO, Notification, CardSelectionQuery,
     StringSelectionQuery, IntInput, D6Input, CoinflipData, Phase2Finish, Phase2ActivateAbility,
@@ -14,6 +15,8 @@ from ...core.AVGEIOManager import (
 from ...testing.helpers import Dummy, DummyStadium, Attacker, core_listeners, put_into_play, bench
 from ...catalog.items.BUOStand import BUOStand
 from ...catalog.items.Camera import Camera
+from ...catalog.characters.choir.HappyRuthJara import HappyRuthJara
+from ...catalog.status_effects.Maid import AVGEMaidDamageShieldRegulator
 from .. import protocol
 from .. import serialization
 from ..io_adapter import NetworkIO
@@ -55,7 +58,7 @@ class NetworkIOTestBase(unittest.IsolatedAsyncioTestCase):
 
 
 class SendEnvelopeTests(NetworkIOTestBase):
-    async def test_phase2_payload_only_marks_legal_noncharacter_cards_playable(self):
+    async def test_phase2_payload_lists_structural_noncharacter_actions_even_when_unavailable(self):
         camera = Camera("camera", self.env, User.PLAYER_1, DeckType.HAND)
         stand = BUOStand("stand", self.env, User.PLAYER_1, DeckType.HAND)
         self.p1.card_piles[DeckType.HAND].cards_holding.extend([camera, stand])
@@ -63,7 +66,29 @@ class SendEnvelopeTests(NetworkIOTestBase):
         payload = self.io.build_request_payload(Phase2IO(User.PLAYER_1))
 
         self.assertIn(camera.cardID, payload["playable_noncharacter_card_ids"])
-        self.assertNotIn(stand.cardID, payload["playable_noncharacter_card_ids"])
+        self.assertIn(stand.cardID, payload["playable_noncharacter_card_ids"])
+
+    async def test_phase2_payload_lists_temporarily_unusable_ability(self):
+        ruth = HappyRuthJara("ruth", self.env, User.PLAYER_1, DeckType.ACTIVE_CARD)
+        self.p1.card_piles[DeckType.ACTIVE_CARD].cards_holding = [ruth]
+        self.assertFalse(ruth.actions[ActionTypes.ACTIVATE_ABILITY].can_play(ruth, ruth))
+
+        payload = self.io.build_request_payload(Phase2IO(User.PLAYER_1))
+
+        self.assertIn(ruth.cardID, payload["activatable_ability_card_ids"])
+
+    async def test_order_labels_identify_duplicate_cards_and_status_source(self):
+        first = SimpleNamespace(id=AVGEEngineID(self.active, ActionTypes.PASSIVE, Dummy))
+        second = SimpleNamespace(id=AVGEEngineID(self.benched, ActionTypes.PASSIVE, Dummy))
+        status = AVGEMaidDamageShieldRegulator(self.env)
+
+        payload = self.io.build_request_payload(ListenerReorderIO([first, second, status]))
+
+        self.assertEqual(payload["count"], 3)
+        self.assertEqual(payload["labels"][:2], [
+            "Dummy (active)", "Dummy (bench 1)",
+        ])
+        self.assertEqual(payload["labels"][2], "Maid Damage Shield")
 
     async def test_broadcast_envelope_shape(self):
         await self.io.send(User.PLAYER_1, BroadcastIO("hi", 5))

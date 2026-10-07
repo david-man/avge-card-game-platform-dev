@@ -61,6 +61,9 @@ class IzzyChen(AVGECharacterCard):
             # constructed (server/io_adapter.py's _deserialize_phase2).
             return card._wrangler_last_used_round != card.env.round
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            return "Izzy Chen has already used Wrangler this turn."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card
             assert isinstance(card, IzzyChen)

@@ -87,7 +87,8 @@ class DanielYang(AVGECharacterCard):
                 return False
             if event.id.calling_card is not self.owner_card:
                 return False
-            return not self._any_brass_in_play()
+            snapshot = getattr(event.id, "delicate_ears_active", None)
+            return snapshot if snapshot is not None else not self._any_brass_in_play()
 
         async def modify(self, event: Event) -> None:
             assert isinstance(event, AVGECardHPChangeEvent)
@@ -111,6 +112,12 @@ class DanielYang(AVGECharacterCard):
             opponent = env.get_opponent(card.owner)
             target = env.get_player_active(opponent)
             _id = AVGEEngineID(card, self.action_type, DanielYang)
+            _id.delicate_ears_active = not any(
+                isinstance(c, AVGECharacterCard) and c.card_type == CardType.BRASS
+                for p in env.players.values()
+                for pile in (DeckType.ACTIVE_CARD, DeckType.BENCH)
+                for c in p.card_piles[pile]
+            )
 
             piano_count = sum(
                 1 for c in player.card_piles[DeckType.BENCH]

@@ -9,7 +9,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, TurnEnd
-from ....core.AVGEIOManager import CardSelectionQuery, BroadcastIO
+from ....core.AVGEIOManager import CardSelectionQuery, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -98,10 +98,20 @@ class AliceWang(AVGECharacterCard):
             events: list[Event | Generator] = [
                 TransferCard(_id, c, opponent_hand, opponent_discard, self.env) for c in picked
             ]
-            await self.env.broadcast(BroadcastIO(
-                "Euclidean Algorithm: Opponent discarded until hand sizes match.", default_timeout,
-            ))
-            event.push_event(events)
+            # Resolve these transfers now, before another Alice listener checks
+            # the hand sizes and before either player's notice opens. The order
+            # prompt still appears for the two eligible listeners.
+            await event.interrupt(events)
+            await self.env.report(Notification(
+                player.id,
+                "Euclidean Algorithm: Your opponent discarded until your hand sizes matched.",
+                default_timeout,
+            ), _id)
+            await self.env.report(Notification(
+                opponent.id,
+                "Euclidean Algorithm: You discarded until your hand sizes matched.",
+                default_timeout,
+            ), _id)
 
     class _Vibrato(Attack):
         def __init__(self):

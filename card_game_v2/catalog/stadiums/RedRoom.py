@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 
 
 class RedRoom(AVGEStadiumCard):
-    '''+10 damage for GUITAR/PIANO/CHOIR/PERCUSSION attackers, -10 for WOODWIND/BRASS.
-    STRING attackers are entirely unaffected - confirmed against v1 source, which
-    gates the whole modifier to a 6-of-7-types allowlist that omits STRING.'''
+    '''+10 damage for GUITAR/PIANO/CHOIR/PERCUSSION attackers, -10 for WOODWIND/BRASS/STRING.'''
 
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
         super().__init__(cardID, env, owner, deck_in)
@@ -51,7 +49,7 @@ class RedRoom(AVGEStadiumCard):
 class _AmpDiffModifier(AVGEEventModifier):
     _SUPPORTED_TYPES = (
         CardType.GUITAR, CardType.PIANO, CardType.CHOIR,
-        CardType.PERCUSSION, CardType.WOODWIND, CardType.BRASS,
+        CardType.PERCUSSION, CardType.WOODWIND, CardType.BRASS, CardType.STRING,
     )
 
     def __init__(self, owner_card: RedRoom, env: AVGEEnvironment):
@@ -82,7 +80,7 @@ class _AmpDiffModifier(AVGEEventModifier):
         attacker = event.id.calling_card
         assert isinstance(attacker, AVGECharacterCard)
 
-        if attacker.card_type in (CardType.WOODWIND, CardType.BRASS):
+        if attacker.card_type in (CardType.WOODWIND, CardType.BRASS, CardType.STRING):
             event.modify_magnitude(-10)
         else:
             event.modify_magnitude(10)

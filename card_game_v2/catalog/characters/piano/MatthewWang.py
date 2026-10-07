@@ -44,7 +44,7 @@ class MatthewWang(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Pot of Greed",
-                description="At the start of your turn, flip a coin; on heads, may draw 1 extra card.",
+                description="While Active: At the start of your turn, flip a coin. If heads, you may draw two cards instead of one.",
                 action_type=ActionTypes.PASSIVE,
             )
 

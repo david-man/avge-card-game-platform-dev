@@ -45,7 +45,7 @@ class EvelynWu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Circular Breathing",
-                description="Deal 10 damage, plus 10 more per consecutive prior turn this attack was used (capped at +40).",
+                description="Deal 10 damage, plus 10 damage for every consecutive use after the first, up to +40.",
                 action_type=ActionTypes.ATK_1,
                 cost=1,
             )
@@ -89,7 +89,7 @@ class EvelynWu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Small Ensemble Lord",
-                description="Heal all damaged opposing bench characters to full, then deal the total healed as damage to the opposing active.",
+                description="Transfer all existing damage from your opponent's Bench to their Active character.",
                 action_type=ActionTypes.ATK_2,
                 cost=2,
             )

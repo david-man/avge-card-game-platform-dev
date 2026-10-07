@@ -114,7 +114,7 @@ class AnaliseJia(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Banana Bread for Everyone!",
-                description="Heal your whole team +30. Discard 1 of your own energy, if you have any.",
+                description="Heal each of your characters in play by 30. Remove 1 energy from this character, if it has any.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

@@ -39,6 +39,9 @@ class BUOStand(AVGEItemCard):
             active = acting_card.env.get_player_active(acting_card.owner)
             return len(active.energy_tokens) > 0
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            return "Your active character needs at least one attached energy to play BUO Stand."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:

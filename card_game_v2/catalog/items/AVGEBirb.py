@@ -18,20 +18,8 @@ if TYPE_CHECKING:
 
 class AVGEBirb(AVGEItemCard):
     '''Strips every tool and status effect off all of the opponent's characters in play,
-    then curses the player's OWN active character with +20 damage on the next attack it
-    takes (confirmed by the event_match logic, the notification text "Your active takes
-    +20 damage", and the class name itself - a risk/reward tradeoff, not a typo).
-
-    v1 gated that curse with a round-number check (`round_id == player.get_next_turn()`),
-    but `get_next_turn()` returns the round when it's the OWNER's own turn again (2 rounds
-    out, since the item is always played on the owner's own turn) - and incoming attack
-    damage against the owner can only ever land on the OPPONENT's turn (1 round out). So
-    the round the curse waited for never coincided with an actual hit, and it could never
-    fire under normal play. Fixed here by keeping the same "scoped to one specific
-    upcoming turn, then expires" shape (see the `env.round`-based self-expiry idiom in
-    Section 6, item 6 of the plan doc) but computing the right round: `env.round + 1`,
-    the opponent's very next turn - the only round an incoming attack against the owner
-    can actually land, since Birb is always played on the owner's own turn.'''
+    then makes the owner's active take +20 damage from the first attack that hits it
+    during the owner's next turn.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -79,7 +67,7 @@ class AVGEBirb(AVGEItemCard):
 
     class _NextAttackDamageCurse(AVGEEventModifier):
         '''Adds +20 to the first qualifying ATK damage the owner's active character
-        takes during the opponent's very next turn, then self-invalidates - either by
+        takes during the owner's next turn, then self-invalidates - either by
         firing once, or by the turn passing without a hit. Re-resolves the owner's
         active card at match time (rather than pinning a fixed card), matching v1's own
         dynamic `get_active_card()` re-check - the curse follows the owner's active
@@ -88,7 +76,7 @@ class AVGEBirb(AVGEItemCard):
         def __init__(self, owner: User, env: AVGEEnvironment):
             super().__init__(AVGEEngineID(None, ActionTypes.NONCHAR, AVGEBirb), env, EngineGroup.EXTERNAL_MODIFIERS_2)
             self.owner = owner
-            self.round_active = env.round + 1
+            self.round_active = env.round + 2
 
         def match(self, event: Event) -> bool:
             if self.env.round > self.round_active:

@@ -37,8 +37,16 @@ class Engine:
 
         self.terminate_flag : bool = False #When terminate_flag is set, the game engine will finish the current event before terminating.
 
+        # Called just after CORE act(), before a post-core listener can open a
+        # prompt. The packet may still roll back, so clients must resync on reject.
+        self.on_event_acted: Callable[[Event], Awaitable[None]] | None = None
         self.on_event_committed: Callable[[Event], Awaitable[None]] | None = None
         self.on_packet_failed: Callable[[Packet], Awaitable[None]] | None = None
+        # A game may need to ask for its next decision only after every packet
+        # produced by the previous decision has finished. In particular, a main
+        # phase prompt queued ahead of a card's own TurnEnd would belong to the
+        # wrong player. The hook runs only when the queue is truly idle.
+        self.on_idle: Callable[[], Packet | None] | None = None
 
     def add_listener(self, listener: EventListener):
         '''Adds an event listener to the engine'''
@@ -114,7 +122,13 @@ class Engine:
     async def flush(self, new_chapter_condition : Callable[[], bool]):
         # bootstraps any preexisting proposed buffered changes; required for seeding starting packets
         self._flush_buffer()
-        while self._packet_queue and not self.terminate_flag:
+        while not self.terminate_flag:
+            if not self._packet_queue:
+                next_packet = self.on_idle() if self.on_idle is not None else None
+                if next_packet is None:
+                    break
+                next_packet.set_engine(self)
+                self._packet_queue.append(next_packet)
             self.current_packet = self._packet_queue.popleft()
 
             ## Checkpoint listeners, constrainers, etc.

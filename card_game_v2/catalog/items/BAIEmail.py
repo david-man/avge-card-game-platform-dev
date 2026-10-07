@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class BAIEmail(AVGEItemCard):
-    '''Discard the active stadium (if any), then optionally search your deck for a
+    '''Discard the active stadium (if any), then search your deck for a
     stadium to add to hand; either way, locks out ANY player from playing a stadium
     until the owner's own next turn.
 
@@ -81,7 +81,7 @@ class BAIEmail(AVGEItemCard):
                     1,
                     cast(list[AVGECard], stadiums_in_deck),
                     list(deck.cards_holding),
-                    True,
+                    False,
                     False,
                 ), _id)
                 if picked:

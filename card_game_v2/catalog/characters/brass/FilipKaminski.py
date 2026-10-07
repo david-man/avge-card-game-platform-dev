@@ -112,7 +112,7 @@ class FilipKaminski(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Intense Echo",
-                description="Deal 50 damage to the opposing active character. If you have a stadium in play, also deal 20 damage to each of the opponent's benched characters.",
+                description="Deal 50 damage to the opposing active character. If the stadium in play was placed by you, also deal 20 damage to each opposing benched character.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

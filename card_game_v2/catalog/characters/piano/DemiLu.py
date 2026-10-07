@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
-from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
+from ....avge_abstracts.AVGEEventListener import AVGEEventModifier, AVGEEventRegulator
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
-from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, default_timeout
+from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, ResponseStatus, default_timeout
 from ....engine.event import Event, Generator, Packet
-from ....core.EventCatalog import AVGECardHPChangeEvent, PlayCharacterCard, TransferCard
+from ....core.EventCatalog import AVGECardHPChangeEvent, AVGECardMaxHPChangeEvent, AVGECardTypeChange, AVGECardStatusChange, AVGEEnergyTransfer, PlayCharacterCard, TransferCard
 from ....core.AVGEIOManager import BroadcastIO
 from ....catalog.stadiums.SteinertBasement import SteinertBasement
 from ....catalog.stadiums.SteinertPracticeRoom import SteinertPracticeRoom
@@ -21,9 +21,8 @@ if TYPE_CHECKING:
 
 class DemiLu(AVGECharacterCard):
     '''"Steinert Warrior": while benched under either Steinert stadium, immune to
-    opponent attack damage, and exempt from that stadium's own +1 attack-energy-cost
-    surcharge (relevant only for a forced/borrowed attack while benched - a normal
-    player-chosen attack always comes from the active slot). v2's `AVGEConstrainer`
+    opposing attack effects, and while active exempt from that stadium's own +1
+    attack-energy-cost surcharge. v2's `AVGEConstrainer`
     can't see per-event "which event is this attached to" context the way v1's could
     (confirmed via LukeXu's `_NullifyConstraint` precedent, flagged in
     SteinertBasement/SteinertPracticeRoom's `_AttackExtraCostModifier` docstrings), so
@@ -78,7 +77,7 @@ class DemiLu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Steinert Warrior",
-                description="While benched under a Steinert stadium, immune to opponent attack damage and exempt from that stadium's attack-cost surcharge.",
+                description="While benched under a Steinert stadium, immune to attacks. While active, unaffected by 15 Minute Walk.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -92,23 +91,16 @@ class DemiLu(AVGECharacterCard):
                 card._cost_exemption = DemiLu._CostExemptionModifier(card, card.env)
                 card.add_listener(card._cost_exemption)
 
-    class _DamageBlockModifier(AVGEEventModifier):
+    class _DamageBlockModifier(AVGEEventRegulator):
         def __init__(self, owner_card: DemiLu, env: AVGEEnvironment):
-            super().__init__(AVGEEngineID(owner_card, ActionTypes.PASSIVE, DemiLu), env, EngineGroup.EXTERNAL_PRECHECK_1)
+            super().__init__(AVGEEngineID(owner_card, ActionTypes.PASSIVE, DemiLu), env, EngineGroup.EXTERNAL_MODIFIERS_1)
             self.owner_card = owner_card
 
         def match(self, event: Event) -> bool:
             if self.owner_card.deck_type != DeckType.BENCH:
                 return False
-            if not isinstance(event, AVGECardHPChangeEvent):
+            if not isinstance(event.id, AVGEEngineID):
                 return False
-            if callable(event.target_card) or callable(event.modifier_type) or callable(event.magnitude):
-                return False
-            if event.target_card is not self.owner_card:
-                return False
-            if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
-                return False
-            assert isinstance(event.id, AVGEEngineID)
             if event.id.calling_action not in (ActionTypes.ATK_1, ActionTypes.ATK_2):
                 return False
             attacker = event.id.calling_card
@@ -116,15 +108,24 @@ class DemiLu(AVGECharacterCard):
                 return False
             if attacker.owner == self.owner_card.owner:
                 return False
-            return DemiLu._steinert_stadium(self.env) is not None
+            if DemiLu._steinert_stadium(self.env) is None:
+                return False
+            if isinstance(event, (AVGECardHPChangeEvent, AVGECardMaxHPChangeEvent)):
+                return not callable(event.target_card) and event.target_card is self.owner_card
+            if isinstance(event, (AVGECardTypeChange, AVGECardStatusChange)):
+                return not callable(event.target) and event.target is self.owner_card
+            if isinstance(event, AVGEEnergyTransfer):
+                return ((not callable(event.token_from) and event.token_from is self.owner_card)
+                        or (not callable(event.token_to) and event.token_to is self.owner_card))
+            if isinstance(event, TransferCard):
+                return not callable(event.card) and event.card is self.owner_card
+            return False
 
-        async def modify(self, event: Event) -> None:
-            assert isinstance(event, AVGECardHPChangeEvent)
-            assert not callable(event.magnitude)
-            event.modify_magnitude(-event.magnitude)
+        async def respond(self, event: Event) -> ResponseStatus:
             await self.env.broadcast(BroadcastIO(
                 "Steinert Warrior: Demi Lu is immune to this attack.", default_timeout,
             ))
+            return ResponseStatus.REGULATE_IGNORE
 
     class _CostExemptionModifier(AVGEEventModifier):
         '''Deliberately shares `EXTERNAL_MODIFIERS_1` with the Steinert stadiums' own

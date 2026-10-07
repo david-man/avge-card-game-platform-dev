@@ -5,14 +5,14 @@ from typing import cast
 from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes
+from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import TransferCard, ReorderDeck
-from ...core.AVGEIOManager import CardSelectionQuery
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
 class VideoCamera(AVGEItemCard):
-    '''Optionally move a chosen own discard item to the very top of the deck.'''
+    '''Move a chosen own discard item to the very top of the deck when one is available.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -40,16 +40,21 @@ class VideoCamera(AVGEItemCard):
 
             discard_items = [c for c in discard.cards_holding if isinstance(c, AVGEItemCard)]
             if not discard_items:
+                await env.report(Notification(
+                    acting_card.owner,
+                    "Video Camera found no Item in your discard to move.",
+                    default_timeout,
+                ), AVGEEngineID(acting_card, self.action_type, VideoCamera))
                 return
 
             _id = AVGEEngineID(acting_card, self.action_type, VideoCamera)
             picked = await env.report(CardSelectionQuery(
                 acting_card.owner,
-                "Video Camera: Choose an item in your discard to move to the top of your deck (or None).",
+                "Video Camera: Choose an item in your discard to move to the top of your deck.",
                 1,
                 cast(list[AVGECard], discard_items),
                 list(discard.cards_holding),
-                True,
+                False,
                 False,
             ), _id)
             if not picked:

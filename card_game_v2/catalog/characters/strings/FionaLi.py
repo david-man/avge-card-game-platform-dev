@@ -59,6 +59,8 @@ class FionaLi(AVGECharacterCard):
                 return
             env = card.env
             active = env.get_player_active(card.owner)
+            if card in active.statuses_attached[StatusEffect.MAID]:
+                return
             _id = AVGEEngineID(card, ActionTypes.PASSIVE, FionaLi)
             await env.broadcast(BroadcastIO("Getting Dressed: Active card gets the MAID status.", default_timeout))
             env.push_packet(Packet(_id, [AVGECardStatusChange(
@@ -114,6 +116,11 @@ class FionaLi(AVGECharacterCard):
 
             moved_to_bench, moved_from_bench = self._own_bench_move(event)
             if moved_to_bench:
+                # Entry from hand/deck/discard schedules the passive, which adds MAID.
+                # This reactor remains registered after Fiona leaves play, so handling
+                # the same entry here would apply the status and notice twice.
+                if event.deck_from.deck_type not in (DeckType.ACTIVE_CARD, DeckType.BENCH):
+                    return
                 active = env.get_player_active(owner.owner)
                 await env.broadcast(BroadcastIO("Getting Dressed: Active card gets the MAID status.", default_timeout))
                 event.push_event([AVGECardStatusChange(

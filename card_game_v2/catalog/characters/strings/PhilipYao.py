@@ -59,7 +59,7 @@ class PhilipYao(AVGECharacterCard):
     class _Rotation(Ability):
         def __init__(self):
             super().__init__(
-                name="Rotation",
+                name="Rotation!",
                 description="After a successful incoming energy transfer, turn this card upside down or upright.",
                 action_type=ActionTypes.PASSIVE,
             )

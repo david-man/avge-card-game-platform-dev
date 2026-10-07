@@ -61,7 +61,10 @@ class JuliaCeccarelli(AVGECharacterCard):
             items = [c for c in opp_hand.cards_holding if isinstance(c, AVGEItemCard)]
             _id = AVGEEngineID(card, self.action_type, JuliaCeccarelli)
 
-            await env.report(RevealCards(card.owner, list(opp_hand.cards_holding)), _id)
+            if opp_hand.cards_holding:
+                await env.report(RevealCards(card.owner, list(opp_hand.cards_holding)), _id)
+            if not items:
+                return
             picked = await env.report(CardSelectionQuery(
                 card.owner,
                 "Photograph: Choose an item to copy as this attack (or None).",

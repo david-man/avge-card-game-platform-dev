@@ -13,14 +13,8 @@ from ...engine.event import Event, Generator, Packet
 
 
 class DressRehearsalRoster(AVGEItemCard):
-    '''Discard 1 energy each from 2 (not necessarily distinct) own in-play characters,
-    then reshuffle up to 4 random discard cards into the deck at random positions.
-    Requires at least 2 total energy among your in-play characters. Unlike v1, which
-    re-prompts on an invalid combination (e.g. picking the same character twice without
-    it having 2 energy), v2 has no retry loop for `CardSelectionQuery` - instead this
-    just trusts the picks and relies on `AVGEEnergyTransfer`'s own built-in no-op-if-
-    empty behavior, so an under-resourced pick simply discards less than 2 total energy
-    rather than being rejected.'''
+    '''Discard 1 energy from one of your in-play characters, then shuffle up to
+    3 random discard cards into your deck.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -52,31 +46,31 @@ class DressRehearsalRoster(AVGEItemCard):
                 c for c in player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
             _id = AVGEEngineID(acting_card, self.action_type, DressRehearsalRoster)
-            total_energy = sum(len(c.energy_tokens) for c in in_play)
-            if total_energy < 2:
+            charged = [c for c in in_play if c.energy_tokens]
+            if not charged:
                 await env.report(Notification(
                     acting_card.owner,
-                    "Not enough total energy in play for Dress Rehearsal Roster...", default_timeout,
+                    "Dress Rehearsal Roster needs at least 1 energy in play.", default_timeout,
                 ), _id)
                 return
             selected = await env.report(CardSelectionQuery(
                 acting_card.owner,
-                "Dress Rehearsal Roster: Choose 2 (not necessarily distinct) characters to discard energy from.",
-                2,
-                cast(list[AVGECard], in_play),
+                "Dress Rehearsal Roster: Choose a character to discard 1 energy from.",
+                1,
+                cast(list[AVGECard], charged),
                 cast(list[AVGECard], in_play),
                 False,
-                True,
+                False,
             ), _id)
 
             events: list[Event | Generator] = []
-            for chosen in selected:
-                assert isinstance(chosen, AVGECharacterCard)
-                events.append(AVGEEnergyTransfer(_id, chosen, env, env))
+            chosen = selected[0]
+            assert isinstance(chosen, AVGECharacterCard)
+            events.append(AVGEEnergyTransfer(_id, chosen, env, env))
 
             cards_to_shuffle = list(discard.cards_holding)
-            if len(cards_to_shuffle) > 4:
-                cards_to_shuffle = random.sample(cards_to_shuffle, 4)
+            if len(cards_to_shuffle) > 3:
+                cards_to_shuffle = random.sample(cards_to_shuffle, 3)
 
             for card_to_shuffle in cards_to_shuffle:
                 events.append(TransferCard(_id, card_to_shuffle, discard, deck, env))

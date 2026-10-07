@@ -47,7 +47,7 @@ class AndreaCR(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Foresight",
-                description="Peek the top 3 cards of the opponent's deck and choose how to reorder them.",
+                description="Peek at the top 3 cards of the opponent's deck. You may put one on the bottom, then reorder the others.",
                 action_type=ActionTypes.ATK_1,
                 cost=1,
             )
@@ -96,26 +96,26 @@ class AndreaCR(AVGECharacterCard):
                 1,
                 top_cards,
                 top_cards,
-                False,
+                True,
                 False,
             ), _id)
-            bottom_card = bottom_pick[0]
-            remaining_top_cards = [c for c in top_cards if c != bottom_card]
+            bottom_card = bottom_pick[0] if bottom_pick else None
+            remaining_top_cards = [c for c in top_cards if c is not bottom_card]
 
             chosen_order = await env.report(CardSelectionQuery(
                 card.owner,
-                "Foresight: Reorder the remaining 2 cards.",
-                2,
+                "Foresight: Reorder the remaining top cards.",
+                len(remaining_top_cards),
                 remaining_top_cards,
                 remaining_top_cards,
                 False,
                 False,
             ), _id)
 
-            def _make_order3(deck: AVGEDeck = opponent_deck, top: tuple[AVGECard, ...] = tuple(top_cards), chosen: tuple[AVGECard, ...] = tuple(chosen_order), bottom: AVGECard = bottom_card):
+            def _make_order3(deck: AVGEDeck = opponent_deck, top: tuple[AVGECard, ...] = tuple(top_cards), chosen: tuple[AVGECard, ...] = tuple(chosen_order), bottom: AVGECard | None = bottom_card):
                 def gen() -> list[AVGECard]:
                     rest = [c for c in deck.cards_holding if c not in top]
-                    return list(chosen) + rest + [bottom]
+                    return list(chosen) + rest + ([bottom] if bottom is not None else [])
                 return gen
 
             env.push_packet(Packet(_id, [ReorderDeck(_id, opponent_deck, _make_order3(), env)]))

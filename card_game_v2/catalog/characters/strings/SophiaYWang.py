@@ -66,20 +66,25 @@ class SophiaYWang(AVGECharacterCard):
             card = acting_card
             assert isinstance(card, AVGECharacterCard)
             env = card.env
+            _id = AVGEEngineID(card, self.action_type, SophiaYWang)
+            env.push_packet(Packet(_id, [SophiaYWang._GachaLoop(_id, card, env)]))
+
+    class _GachaLoop(Event):
+        def __init__(self, event_id: AVGEEngineID, card: AVGECharacterCard, env: AVGEEnvironment):
+            super().__init__(event_id)
+            self.card = card
+            self.env = env
+
+        async def act(self) -> None:
+            card = self.card
+            env = self.env
             player = env.players[card.owner]
             deck = player.card_piles[DeckType.DECK]
             hand = player.card_piles[DeckType.HAND]
-            _id = AVGEEngineID(card, self.action_type, SophiaYWang)
-
-            remaining_deck = list(deck.cards_holding)
-            running_hp = card.hp
-            draws: list[tuple[AVGECard, int]] = []
+            drawn_cards: list[AVGECard] = []
             hit_birb = False
-            birb_card: AVGECard | None = None
 
-            while True:
-                if len(remaining_deck) == 0 or running_hp <= 20:
-                    break
+            while deck.cards_holding and card.hp > 20:
                 choice = await env.report(StringSelectionQuery(
                     card.owner,
                     "Gacha Gaming: Draw a card and take 20 fixed damage? (You cannot self-KO.)",
@@ -88,42 +93,42 @@ class SophiaYWang(AVGECharacterCard):
                     ["Yes", "No"],
                     False,
                     False,
-                ), _id)
+                ), self.id)
                 if choice[0] != "Yes":
                     break
-                next_card = remaining_deck.pop(0)
+                next_card = deck.cards_holding[0]
                 if isinstance(next_card, AVGEBirb):
                     hit_birb = True
-                    birb_card = next_card
+                    await self.interrupt([
+                        TransferCard(self.id, next_card, deck, hand, env),
+                        AVGECardHPChangeEvent(
+                            self.id, card, card.max_hp, AVGEAttributeModifier.SET_STATE, CardType.STRING, env,
+                        ),
+                    ])
                     break
-                running_hp = max(1, running_hp - 20)
-                draws.append((next_card, running_hp))
+                drawn_cards.append(next_card)
+                await self.interrupt([
+                    TransferCard(self.id, next_card, deck, hand, env),
+                    AVGECardHPChangeEvent(
+                        self.id, card, max(1, card.hp - 20),
+                        AVGEAttributeModifier.SET_STATE, CardType.STRING, env,
+                    ),
+                ])
 
-            events: list[Event | Generator] = []
-            for drawn, hp_after in draws:
-                events.append(TransferCard(_id, drawn, deck, hand, env))
-                events.append(AVGECardHPChangeEvent(
-                    _id, card, hp_after, AVGEAttributeModifier.SET_STATE, CardType.STRING, env,
-                ))
-
-            if hit_birb:
-                assert birb_card is not None
-                events.append(TransferCard(_id, birb_card, deck, hand, env))
-                events.append(AVGECardHPChangeEvent(
-                    _id, card, card.max_hp, AVGEAttributeModifier.SET_STATE, CardType.STRING, env,
-                ))
-            elif draws:
-                for drawn, _ in draws:
-                    events.append(TransferCard(_id, drawn, hand, deck, env))
+            if drawn_cards and not hit_birb:
+                events: list[Event | Generator] = [
+                    TransferCard(self.id, drawn, hand, deck, env) for drawn in drawn_cards
+                ]
 
                 def _make_shuffle(deck: AVGEDeck = deck):
                     def gen() -> list[AVGECard]:
                         return random.sample(deck.cards_holding, len(deck.cards_holding))
                     return gen
-                events.append(ReorderDeck(_id, deck, _make_shuffle(), env))
+                events.append(ReorderDeck(self.id, deck, _make_shuffle(), env))
+                await self.interrupt(events)
 
-            if events:
-                env.push_packet(Packet(_id, events))
+        def rollback(self) -> None:
+            return
 
     class _Ricochet(Attack):
         def __init__(self):

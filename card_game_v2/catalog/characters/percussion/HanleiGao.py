@@ -110,10 +110,10 @@ class HanleiGao(AVGECharacterCard):
             events: list[Event | Generator] = []
             for c in opposing_chars:
                 if len(c.tools_attached.cards_holding) > 0:
+                    for tool in list(c.tools_attached.cards_holding):
+                        events.append(TransferCard(_id, tool, c.tools_attached, opponent_hand, env))
                     events.append(AVGECardHPChangeEvent(
                         _id, c, 50, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PERCUSSION, env,
                     ))
-                for tool in list(c.tools_attached.cards_holding):
-                    events.append(TransferCard(_id, tool, c.tools_attached, opponent_hand, env))
 
             env.push_packet(Packet(_id, events))

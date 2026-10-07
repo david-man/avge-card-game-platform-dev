@@ -9,7 +9,7 @@ from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...constants import ActionTypes, EngineGroup, AVGEAttributeModifier, StatusEffect
 from ...core.EventCatalog import AVGECardHPChangeEvent, TransferCard, PlayCharacterCard
-from ...core.AVGEIOManager import RevealCards
+from ...core.AVGEIOManager import RevealCards, StringSelectionQuery
 from ...engine.event import Event, Packet
 
 if TYPE_CHECKING:
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 class PetterutiLounge(AVGEStadiumCard):
     '''"Matcha Maid Cafe": while active, MAID attackers deal +10 damage and MAID
     characters retreat for 1 less energy. "Powerpoint Night": after any attack,
-    privately reveal a random card from the attacker's opponent's hand to the
-    attacker. This is the first stadium (and first card in this migration) to use
+    the attacker may privately reveal a random card from the opponent's hand.
+    This is the first stadium (and first card in this migration) to use
     the packet-level `AVGEPacketReactor` API, per Open Question / cross-cutting note.'''
 
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
@@ -139,12 +139,37 @@ class _PowerpointNightPacketReactor(AVGEPacketReactor):
     async def react(self, packet: Packet) -> None:
         attacker = self._attacking_character(packet)
         assert attacker is not None
-        env = self.env
-        opponent = env.get_opponent(attacker.owner)
+        _id = AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PetterutiLounge)
+        # The attack may have queued its damage in a child packet. Queue this
+        # prompt after those packets so the reveal appears after the hit.
+        self.env.push_packet(Packet(_id, [_PowerpointNightReveal(_id, attacker, self.env)]))
+
+
+class _PowerpointNightReveal(Event):
+    def __init__(self, event_id: AVGEEngineID, attacker: AVGECharacterCard, env: AVGEEnvironment):
+        super().__init__(event_id)
+        self.attacker = attacker
+        self.env = env
+
+    async def act(self) -> None:
+        opponent = self.env.get_opponent(self.attacker.owner)
         opponent_hand = opponent.card_piles[DeckType.HAND]
         if not opponent_hand.cards_holding:
             return
+        choice = await self.env.report(StringSelectionQuery(
+            self.attacker.owner,
+            "Petteruti Lounge: Reveal a random card from your opponent's hand?",
+            1,
+            ["Yes", "No"],
+            ["Yes", "No"],
+            False,
+            False,
+        ), self.id)
+        if choice[0] == "Yes":
+            revealed = random.choice(opponent_hand.cards_holding)
+            await self.env.report(RevealCards(
+                self.attacker.owner, [revealed], "Petteruti Lounge: Powerpoint Night",
+            ), self.id)
 
-        revealed = random.choice(opponent_hand.cards_holding)
-        _id = AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, PetterutiLounge)
-        await env.report(RevealCards(attacker.owner, [revealed]), _id)
+    def rollback(self) -> None:
+        return

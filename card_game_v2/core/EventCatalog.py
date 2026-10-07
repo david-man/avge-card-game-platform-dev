@@ -576,26 +576,14 @@ class PhasePickCard(Event):
                 hand,
                 self.env)]
 
-        # Queuing both packets unconditionally (rather than only when the deck is
+        # Queue the draw unconditionally (rather than only when the deck is
         # non-empty) means a player whose deck is already empty at turn start simply
-        # skips the draw - draw_top_card() above already no-ops on an empty deck - and
-        # still reaches Phase2 normally. Previously, an empty deck here queued nothing
-        # at all: no draw, no Phase2, no way to ever act again - a silent, permanent
-        # freeze for that player.
+        # skips the draw, then reaches Phase2 through the engine's idle hook.
+        # The prompt must wait for this draw and all of its triggered effects.
+        self.env.phase = "main"
         self.env.append_packet(Packet(
             AVGEEngineID(None, ActionTypes.ENV, None),
             [draw_top_card]))
-        self.env.append_packet(Packet(
-            AVGEEngineID(
-                None, ActionTypes.ENV, None),
-            [
-                Phase2(
-                    AVGEEngineID(
-                        None, ActionTypes.ENV, None),
-                    self.env
-                )
-            ]
-        ))
 
     def rollback(self):
         return
@@ -608,19 +596,9 @@ class Phase2(Event):
         self.env = env
 
     async def act(self):
+        self.env.phase = "main"
         io_obj = Phase2IO(self.env.turn)
         res = await self.env.report(io_obj, self.id)
-        return_to_phase_2 = Packet(
-            AVGEEngineID(
-                None, ActionTypes.ENV, None),
-            [
-                Phase2(
-                    AVGEEngineID(
-                        None, ActionTypes.ENV, None),
-                    self.env
-                )
-            ]
-        )
         match res:
             case Phase2PlayCard():
                 match res.card:
@@ -646,7 +624,6 @@ class Phase2(Event):
                                 )
                             ]
                         ))
-                        self.env.append_packet(return_to_phase_2)
                     case AVGESupporterCard():
                         player = self.env.get_current_player()
                         self.env.push_packet(Packet(
@@ -678,7 +655,6 @@ class Phase2(Event):
                                 )
                             ]
                         ))
-                        self.env.append_packet(return_to_phase_2)
             case Phase2ActivateAbility():
                 self.env.push_packet(Packet(
                     AVGEEngineID(
@@ -694,7 +670,6 @@ class Phase2(Event):
                         )
                     ]
                 ))
-                self.env.append_packet(return_to_phase_2)
             case Phase2CardMovement():
                 events: list[Event | Generator] = [
                     TransferCard(
@@ -710,7 +685,10 @@ class Phase2(Event):
                     # implements the swap
                     outgoing_active = self.env.get_current_player().card_piles[DeckType.ACTIVE_CARD][0]
                     assert isinstance(outgoing_active, AVGECharacterCard)
-                    events.append(TransferCard(
+                    # Resolve retreat cost and its orderable modifiers while
+                    # both characters are still in their original slots. An
+                    # order prompt on this leg must not expose a halfway swap.
+                    events.insert(0, TransferCard(
                         AVGEEngineID(
                             None, ActionTypes.PLAYER_CHOICE, None),
                         outgoing_active,
@@ -739,7 +717,6 @@ class Phase2(Event):
                         None, ActionTypes.PLAYER_CHOICE, None),
                     events
                 ))
-                self.env.append_packet(return_to_phase_2)
             case Phase2EnergyAttach():
                 energy_events: list[Event | Generator] = [
                     AVGEEnergyTransfer(
@@ -770,8 +747,8 @@ class Phase2(Event):
                         None, ActionTypes.PLAYER_CHOICE, None),
                     energy_events
                 ))
-                self.env.append_packet(return_to_phase_2)
             case Phase2Finish():
+                self.env.phase = "attack" if self.env.round > 0 else "turn_end"
                 self.env.push_packet(Packet(
                     AVGEEngineID(
                         None, ActionTypes.ENV, None),
@@ -800,6 +777,7 @@ class AtkPhase(Event):
         self.env = env
 
     async def act(self):
+        self.env.phase = "attack"
         # get_player_active() indexes into the active pile directly and raises if it's
         # empty - previously never reached here unless res != SKIP (see below), so a
         # turn with no active card at all (a test-harness-only situation today, but not
@@ -817,7 +795,6 @@ class AtkPhase(Event):
                 if (
                     (action := active_card.actions.get(action_type)) is not None
                     and isinstance(action, Attack)
-                    and action.can_play(active_card, active_card)
                 )
             ]
         res = await (self.env.report(AtkPhaseIO(self.env.turn, allowed_actions), self.id))
@@ -827,7 +804,13 @@ class AtkPhase(Event):
                            ActionTypes.PLAYER_CHOICE,
                            None)
 
+        attacking_turn = self.env.turn
+
         def _attack_switch() -> list[Event | Generator]:
+            # An attack effect may itself advance the turn. Its old continuation
+            # must not open an attack prompt for the new player.
+            if self.env.phase != "attack" or self.env.turn != attacking_turn:
+                return []
             if (self.env.get_current_player().attributes[AVGEPlayerAttribute.ATTACKS_LEFT] != 0):
                 return [
                     AtkPhase(AVGEEngineID(
@@ -839,14 +822,15 @@ class AtkPhase(Event):
                         None, ActionTypes.ENV, None
                     ), self.env)
                 ]
-        base_packet: list[Event | Generator] = [AVGEPlayerAttributeChange(
+        attack_use = AVGEPlayerAttributeChange(
             _id,
             self.env.get_current_player(),
             AVGEPlayerAttribute.ATTACKS_LEFT,
             AVGEAttributeModifier.SUBSTRACTIVE,
             1,
             self.env
-        )]
+        )
+        base_packet: list[Event | Generator] = []
         if (res != ActionTypes.SKIP):
             active_card = self.env.get_player_active(self.env.turn)
             action = active_card.actions.get(res)
@@ -861,6 +845,10 @@ class AtkPhase(Event):
                     self.env
                 ),
             ]
+        # Validate the attack before broadcasting its allowance change. If a
+        # cost or card lock rejects it, the packet rolls back without a false
+        # "ATTACKS_LEFT -> 0" entry in the player's event log.
+        base_packet.append(attack_use)
         self.env.push_packet(Packet(
             _id,
             base_packet))
@@ -879,6 +867,7 @@ class TurnEnd(Event):
 
     async def act(self):
         self._last_turn = self.env.turn
+        self.env.phase = "draw"
         self.env.turn = self.env.turn.next
         _id = AVGEEngineID(None,
                            ActionTypes.ENV,

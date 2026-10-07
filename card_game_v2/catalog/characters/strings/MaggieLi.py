@@ -71,9 +71,14 @@ class MaggieLi(AVGECharacterCard):
 
         async def react(self, event: Event) -> None:
             _id = AVGEEngineID(self.owner_card, ActionTypes.PASSIVE, MaggieLi)
+            location = "active"
+            if self.owner_card.deck_type == DeckType.BENCH:
+                bench = self.env.players[self.owner_card.owner].card_piles[DeckType.BENCH]
+                if self.owner_card in bench.cards_holding:
+                    location = f"bench {bench.cards_holding.index(self.owner_card) + 1}"
             choice = await self.env.report(StringSelectionQuery(
                 self.owner_card.owner,
-                "Midday Nap: Heal 10 damage from this character?",
+                f"Midday Nap: Heal 10 damage from Maggie Li ({location})?",
                 1,
                 ["Yes", "No"],
                 ["Yes", "No"],

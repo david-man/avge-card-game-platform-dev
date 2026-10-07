@@ -84,6 +84,7 @@ class EndOfTurn(UserIOType[None]):
 @dataclass
 class RevealCards(UserIOType[None]):
     cards_to_reveal: list[AVGECard]
+    title: str = "Cards revealed"
 
 
 @dataclass

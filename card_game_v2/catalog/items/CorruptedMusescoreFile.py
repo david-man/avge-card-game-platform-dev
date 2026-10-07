@@ -5,17 +5,15 @@ from typing import cast
 from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes
+from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
 class CorruptedMusescoreFile(AVGEItemCard):
-    '''Optionally discard a tool from one of your own characters; if you do, and your
-    deck has any item in it, also take a chosen item from deck to hand. Declining the
-    tool discard (or having no eligible character to begin with) ends the card there -
-    no item search happens without first discarding a tool.'''
+    '''Discard a tool from one of your own characters, then search the deck for
+    a non-item card to take to hand.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -49,6 +47,11 @@ class CorruptedMusescoreFile(AVGEItemCard):
             ]
             tool_targets = [c for c in own_chars if len(c.tools_attached.cards_holding) > 0]
             if not tool_targets:
+                await env.report(Notification(
+                    acting_card.owner,
+                    "Corrupted Musescore File found no tool to discard, so its search has no effect.",
+                    default_timeout,
+                ), AVGEEngineID(acting_card, self.action_type, CorruptedMusescoreFile))
                 return
 
             _id = AVGEEngineID(acting_card, self.action_type, CorruptedMusescoreFile)
@@ -58,7 +61,7 @@ class CorruptedMusescoreFile(AVGEItemCard):
                 1,
                 cast(list[AVGECard], tool_targets),
                 cast(list[AVGECard], own_chars),
-                True,
+                False,
                 False,
             ), _id)
             if not source_pick:
@@ -72,13 +75,13 @@ class CorruptedMusescoreFile(AVGEItemCard):
                 TransferCard(_id, tool_choice, source.tools_attached, discard, env),
             ]
 
-            item_choices = [c for c in deck.cards_holding if isinstance(c, AVGEItemCard)]
-            if item_choices:
+            nonitem_choices = [c for c in deck.cards_holding if not isinstance(c, AVGEItemCard)]
+            if nonitem_choices:
                 deck_pick = await env.report(CardSelectionQuery(
                     acting_card.owner,
-                    "Corrupted Musescore File: Choose an item from your deck to put into your hand.",
+                    "Corrupted Musescore File: Choose a non-item from your deck to put into your hand.",
                     1,
-                    cast(list[AVGECard], item_choices),
+                    cast(list[AVGECard], nonitem_choices),
                     list(deck.cards_holding),
                     False,
                     False,

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, cast
 from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
-from ....constants import ActionTypes, AVGEAttributeModifier, AVGEPlayerAttribute
+from ....constants import ActionTypes, AVGEAttributeModifier
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard
 from ....core.AVGEIOManager import CardSelectionQuery
@@ -67,7 +67,7 @@ class EugeniaAmpofo(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Fermentation",
-                description="Once per turn, after your normal energy attach, attach 1 more free energy to a different in-play character.",
+                description="While active, you may attach one extra energy to a different character once per turn.",
                 action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
@@ -80,21 +80,27 @@ class EugeniaAmpofo(AVGECharacterCard):
             if card.deck_type != DeckType.ACTIVE_CARD:
                 return False
             player = env.players[card.owner]
-            if player.attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] != 0:
-                return False
             if len(env.energy_tokens) <= 0:
                 return False
             if card._fermentation_last_used_round == env.round:
                 return False
             first_attached = card._first_attached_character_this_turn()
-            if first_attached is None:
-                return False
             own_chars: list[AVGECharacterCard] = [
                 c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
             ] + [
                 c for c in player.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
             ]
-            return any(c is not first_attached for c in own_chars)
+            return len(own_chars) >= 2 and any(c is not first_attached for c in own_chars)
+
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            assert isinstance(action_card, EugeniaAmpofo)
+            if action_card.deck_type != DeckType.ACTIVE_CARD:
+                return "Fermentation works only while Eugenia is active."
+            if not action_card.env.energy_tokens:
+                return "Fermentation needs energy in the bank."
+            if action_card._fermentation_last_used_round == action_card.env.round:
+                return "Fermentation can only be used once per turn."
+            return "Fermentation needs a different friendly character in play."
 
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card
@@ -102,8 +108,6 @@ class EugeniaAmpofo(AVGECharacterCard):
             env = card.env
             player = env.players[card.owner]
             first_attached = card._first_attached_character_this_turn()
-            if first_attached is None:
-                return
             own_chars: list[AVGECharacterCard] = [
                 c for c in player.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
             ] + [
@@ -116,7 +120,7 @@ class EugeniaAmpofo(AVGECharacterCard):
             _id = AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EugeniaAmpofo)
             picked = await env.report(CardSelectionQuery(
                 card.owner,
-                "Fermentation: Choose another in-play character to attach an extra energy.",
+                "Fermentation: Choose a character different from your normal energy target, if any.",
                 1,
                 cast(list[AVGECard], candidates),
                 cast(list[AVGECard], candidates),

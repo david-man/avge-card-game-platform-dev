@@ -201,7 +201,13 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         event = Phase2(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
         await self._flush_single_event_no_cascade(event)
         update = event_to_update_io(event)
-        self.assertEqual(update, PhaseChangedUpdate(phase="main"))
+        self.assertIsNone(update)
+
+    async def test_phase2_finish_leaves_attack_phase_update_to_atk_phase(self):
+        self.env.round = 1
+        event = Phase2(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
+        await self._flush_single_event_no_cascade(event)
+        self.assertIsNone(event_to_update_io(event))
 
     async def test_atk_phase_update(self):
         self.env.round = 1  # AtkPhase only makes sense past turn 0

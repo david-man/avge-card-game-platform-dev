@@ -44,7 +44,7 @@ class MasonYu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Arrangement",
-                description="Choose one of your benched characters to give the ARRANGER status.",
+                description="Give one benched character Arranger status.",
                 action_type=ActionTypes.ATK_1,
                 cost=1,
             )
@@ -93,7 +93,7 @@ class MasonYu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="We Play God",
-                description="Discard 1 of your own energy. Choose any two characters in play - one is randomly swapped into their controller's active slot, the other is forced to use one of its own attacks (acting as you).",
+                description="Discard an energy from this character. Choose any two characters in play. Randomly select one to move to their side's active slot, then choose an attack from the other to use as this attack.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

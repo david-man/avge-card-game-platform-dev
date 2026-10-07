@@ -97,7 +97,10 @@ def event_to_update_io(event: Event) -> IOType[None] | None:
         return PhaseChangedUpdate(phase="draw")
 
     if isinstance(event, Phase2):
-        return PhaseChangedUpdate(phase="main")
+        # Phase2 finishes its own prompt before this update is emitted. When the
+        # player finishes main phase, AtkPhase will announce attack separately;
+        # sending it here too produces a duplicate attack-phase log entry.
+        return PhaseChangedUpdate(phase="main") if event.env.phase == "main" else None
 
     if isinstance(event, AtkPhase):
         return PhaseChangedUpdate(phase="attack")

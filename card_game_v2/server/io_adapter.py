@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections import Counter, defaultdict
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 from ..avge_abstracts.AVGEDeck import AVGEToolHolder, DeckType
@@ -82,21 +83,72 @@ def _wire_deck_ref(deck: AVGEDeck) -> dict[str, Any]:
     return wire
 
 
+def _listener_source_card(listener: EventListener | IOListener) -> AVGECard | None:
+    if isinstance(listener.id, AVGEEngineID) and isinstance(listener.id.calling_card, AVGECard):
+        return listener.id.calling_card
+    for field in ("owner_card", "source_card", "attached_card", "tool", "card"):
+        card = getattr(listener, field, None)
+        if isinstance(card, AVGECard):
+            return card
+    return None
+
+
 def _label_for_listener(listener: EventListener | IOListener) -> str:
-    '''Best-effort human-readable label for a ListenerReorderIO/IOListenerReorderIO entry - every
-    listener carries an id (AVGEEngineID), but not every listener names a card explicitly
-    (core/engine-level listeners often use calling_card=None, caller_class=None). caller_class is
-    preferred when present since it's the class whose ability/passive registered this listener
-    (e.g. AVGEEngineID(owner_card, ActionTypes.PASSIVE, DemiLu)); calling_card is the fallback for
-    listeners that only set that. Without this, the reorder prompt could only ever show "Item N",
-    leaving the player unable to make an informed choice about resolution order.'''
-    if not isinstance(listener.id, AVGEEngineID):
-        return "Unknown effect"
-    if listener.id.caller_class is not None:
-        return label_for(listener.id.caller_class.__name__)
-    if isinstance(listener.id.calling_card, AVGECard):
-        return str(listener.id.calling_card)
-    return "Unknown effect"
+    '''Name the source of an ordering choice, even for engine/status listeners without a card ID.'''
+    if isinstance(listener.id, AVGEEngineID):
+        if listener.id.caller_class is not None:
+            return label_for(listener.id.caller_class.__name__)
+        card = _listener_source_card(listener)
+        if card is not None:
+            return str(card)
+    # Nested listener classes identify their catalog card in their qualified name.
+    owner_name = type(listener).__qualname__.split(".", 1)[0]
+    if not owner_name.startswith("_") and owner_name != type(listener).__name__:
+        return label_for(owner_name)
+    # Core/status listeners may have no owner card at all. Their concrete class
+    # still names the effect, and is more useful than an anonymous placeholder.
+    name = type(listener).__name__.lstrip("_")
+    if name.startswith("AVGE"):
+        name = name[4:]
+    for suffix in ("Modifier", "Regulator", "Reactor", "Listener"):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+    return label_for(name or type(listener).__name__)
+
+
+def _labels_for_listeners(listeners: list[EventListener] | list[IOListener]) -> list[str]:
+    base = [_label_for_listener(listener) for listener in listeners]
+    repeated = Counter(base)
+    ordinals: defaultdict[str, int] = defaultdict(int)
+    labels: list[str] = []
+    for listener, name in zip(listeners, base):
+        if repeated[name] == 1:
+            labels.append(name)
+            continue
+        ordinals[name] += 1
+        card = _listener_source_card(listener)
+        suffix = f"copy {ordinals[name]}"
+        if card is not None:
+            if card.deck_type == DeckType.ACTIVE_CARD:
+                suffix = "active"
+            elif card.deck_type == DeckType.BENCH:
+                bench = card.env.players[card.owner].card_piles[DeckType.BENCH]
+                if card in bench.cards_holding:
+                    suffix = f"bench {bench.cards_holding.index(card) + 1}"
+            elif card.deck_type == DeckType.STADIUM:
+                suffix = "stadium"
+        labels.append(f"{name} ({suffix})")
+    # A single card can register multiple listeners in the same group. Distinguish
+    # those too without changing which ordering choices the engine offers.
+    duplicate_labels = Counter(labels)
+    if any(count > 1 for count in duplicate_labels.values()):
+        seen: defaultdict[str, int] = defaultdict(int)
+        for i, label in enumerate(labels):
+            if duplicate_labels[label] > 1:
+                seen[label] += 1
+                labels[i] = f"{label}, effect {seen[label]}"
+    return labels
 
 
 class NetworkIO(AVGEIO):
@@ -256,23 +308,21 @@ class NetworkIO(AVGEIO):
         if isinstance(io, EndOfTurn):
             return {}
         if isinstance(io, RevealCards):
-            return {"cards": [serialization.card_to_wire(c) for c in io.cards_to_reveal]}
+            return {"cards": [serialization.card_to_wire(c) for c in io.cards_to_reveal], "title": io.title}
         if isinstance(io, ShowBoxedStrings):
             return {"strings": io.strings_to_show}
         if isinstance(io, Phase2IO):
             assert self.env is not None
             player = self.env.players[io.user_for]
-            # Drives the board's per-card "Activate Ability" button (see board/hud/CardView.tsx) -
-            # can_play() is the exact same legality check PlayCharacterCard will run when the
-            # response actually resolves (see EventCatalog.py's Phase2ActivateAbility branch), so
-            # this hint can't drift out of sync with what the server will actually accept.
+            # Advertise every action the card structurally has. A temporary
+            # can_play() failure is checked on attempted use by the engine, which
+            # returns a rejection and then offers the main-phase prompt again.
             activatable_ability_card_ids = [
                 card.cardID
                 for card in serialization.characters_in_play(player)
                 for ability in card.actions.values()
                 if (
                     ability.action_type == ActionTypes.ACTIVATE_ABILITY
-                    and ability.can_play(card, card)
                 )
             ]
             playable_noncharacter_card_ids = [
@@ -281,7 +331,6 @@ class NetworkIO(AVGEIO):
                 if (
                     isinstance(card, AVGENonCharacterCard)
                     and (action := card.actions.get(ActionTypes.NONCHAR)) is not None
-                    and action.can_play(card, card)
                 )
             ]
             return {
@@ -328,7 +377,7 @@ class NetworkIO(AVGEIO):
         if isinstance(io, (ListenerReorderIO, IOListenerReorderIO)):
             return {
                 "count": len(io.listeners),
-                "labels": [_label_for_listener(listener) for listener in io.listeners],
+                "labels": _labels_for_listeners(io.listeners),
             }
 
         if isinstance(io, HPChangeUpdate):

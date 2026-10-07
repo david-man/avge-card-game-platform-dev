@@ -12,6 +12,7 @@ from ....catalog.stadiums.AlumnaeHall import AlumnaeHall
 from ....catalog.stadiums.SalomonDECI import SalomonDECI
 from ....catalog.stadiums.RileyHall import RileyHall
 from ....catalog.stadiums.MainHall import MainHall
+from ....catalog.stadiums.FriedmanHall import FriedmanHall
 from ....catalog.characters.piano.DavidMan import DavidMan
 from ....catalog.characters.piano.LukeXu import LukeXu
 from ....catalog.characters.woodwinds.EvelynWu import EvelynWu
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from ....constants import User
 
 
-_BOOSTED_HALLS = (AlumnaeHall, SalomonDECI, RileyHall, MainHall)
+_BOOSTED_HALLS = (AlumnaeHall, FriedmanHall, SalomonDECI, RileyHall, MainHall)
 _TARGET_CLASSES = (DavidMan, EvelynWu, BokaiBi, RobertoGonzales, LukeXu)
 
 
@@ -56,7 +57,7 @@ class JennieWang(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Small Ensemble Committee",
-                description="Deal 10 damage (max 30) to every opposing in-play character, once per each David Man, Evelyn Wu, Bokai Bi, Roberto Gonzales, or Luke Xu in play on either side.",
+                description="Deal 10 damage to each opposing character per other Small Ensemble Committee member in play, up to 30 damage each.",
                 action_type=ActionTypes.ATK_1,
                 cost=2,
             )
@@ -92,7 +93,7 @@ class JennieWang(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Grand Piano",
-                description="Deal 60 damage to the opposing active (80 instead if AlumnaeHall, SalomonDECI, RileyHall, or MainHall is active).",
+                description="Deal 60 damage to the opposing active (80 instead if a performance hall is active).",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

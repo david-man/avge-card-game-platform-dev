@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, cast
 from ....avge_abstracts.AVGECard import AVGECard, AVGECharacterCard, Attack, Ability, CardType
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
-from ....constants import ActionTypes, AVGEAttributeModifier
+from ....avge_abstracts.AVGEEventListener import AVGEEventModifier
+from ....constants import ActionTypes, AVGEAttributeModifier, EngineGroup
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, PlayCharacterCard, TransferCard
 from ....core.AVGEIOManager import CardSelectionQuery, StringSelectionQuery
@@ -73,7 +74,7 @@ class KeiWatanabe(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Drum Kid Workshop",
-                description="Donate all of your own energy to a chosen own PERCUSSION character in play, then use one of their attacks.",
+                description="Use an attack of a chosen own PERCUSSION character in play, then move all remaining energy from this character to that character.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )
@@ -106,6 +107,8 @@ class KeiWatanabe(AVGECharacterCard):
 
             move_options: dict[str, ActionTypes] = {}
             for action, atk in chosen.actions.items():
+                if action not in (ActionTypes.ATK_1, ActionTypes.ATK_2):
+                    continue
                 if chosen is card and action == ActionTypes.ATK_2:
                     continue
                 move_options[atk.name] = action
@@ -118,6 +121,14 @@ class KeiWatanabe(AVGECharacterCard):
             ), _id)
             action_type = move_options[move_choice[0]]
 
+            # A borrowed attack can move Kei out of play. TransferCard returns a
+            # departing character's energy to the bank before its transfer acts,
+            # so keep the remaining energy with the selected character just before
+            # that cleanup runs. Ordinary borrowed attacks still use the follow-up
+            # packet below, after their effects have resolved.
+            leaving_play = KeiWatanabe._WorkshopLeaveTransfer(card, chosen, env)
+            env.add_listener(leaving_play)
+
             # Resolve the borrowed definition first, at no additional attack cost.
             # Its child packets must finish before we inspect Kei's remaining energy:
             # copied attacks may spend or otherwise move energy while resolving.
@@ -126,9 +137,36 @@ class KeiWatanabe(AVGECharacterCard):
             ]))
 
             def _transfer_remaining_energy() -> list[Event | Generator]:
+                leaving_play.cleanup()
                 return [
                     AVGEEnergyTransfer(_id, card, chosen, env)
                     for _ in range(len(card.energy_tokens))
                 ]
 
             env.push_packet(Packet(_id, [_transfer_remaining_energy]))
+
+    class _WorkshopLeaveTransfer(AVGEEventModifier):
+        def __init__(self, source: AVGECharacterCard, target: AVGECharacterCard, env: AVGEEnvironment):
+            super().__init__(
+                AVGEEngineID(source, ActionTypes.ATK_2, KeiWatanabe),
+                env,
+                EngineGroup.EXTERNAL_MODIFIERS_2,
+            )
+            self.source = source
+            self.target = target
+
+        def match(self, event: Event) -> bool:
+            return (
+                isinstance(event, TransferCard)
+                and event.card is self.source
+                and event.deck_from.deck_type in (DeckType.ACTIVE_CARD, DeckType.BENCH)
+                and event.deck_to.deck_type in (DeckType.HAND, DeckType.DECK, DeckType.DISCARD)
+            )
+
+        async def modify(self, event: Event) -> None:
+            self.cleanup()
+            assert isinstance(event, TransferCard)
+            await event.interrupt([
+                AVGEEnergyTransfer(self.id, self.source, self.target, self.env)
+                for _ in range(len(self.source.energy_tokens))
+            ])

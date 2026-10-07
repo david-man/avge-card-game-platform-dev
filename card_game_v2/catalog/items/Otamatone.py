@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
-from ...avge_abstracts.AVGEDeck import AVGEDeck
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard, Ability
+from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes, EngineGroup, User, default_timeout
+from ...constants import ActionTypes, EngineGroup, default_timeout
 from ...core.EventCatalog import PlayCharacterCard, TransferCard
 from ...core.AVGEIOManager import BroadcastIO, Notification
 from ...engine.event import Event
@@ -16,12 +16,9 @@ if TYPE_CHECKING:
 
 
 class Otamatone(AVGEItemCard):
-    '''Reduces the energy cost of the owner's active character's next attack by 1, for
-    the rest of this turn. Cannot be played on the first turn. Unlike AVGEBirb's
-    one-shot curse, this doesn't self-invalidate after a single use within the same
-    turn - it stays live (and would discount every qualifying attack) until the turn
-    actually ends, matching v1's own `update_status`/`event_match` split (no
-    `on_packet_completion` invalidation here, unlike AVGEBirb's curse).'''
+    '''The character active when played has one extra effective energy for attacks
+    and retreat this turn, implemented as two cost modifiers without creating a token.
+    Cannot be played on the first turn.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -40,6 +37,9 @@ class Otamatone(AVGEItemCard):
         def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
             return acting_card.env.round > 0
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            return "Otamatone cannot be played on the first turn."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:
@@ -52,7 +52,9 @@ class Otamatone(AVGEItemCard):
                 ), AVGEEngineID(acting_card, self.action_type, Otamatone))
                 return
 
-            acting_card.add_listener(Otamatone._ThisTurnEnergyDiscount(acting_card.owner, env))
+            active = env.get_player_active(acting_card.owner)
+            acting_card.add_listener(Otamatone._ThisTurnEnergyDiscount(active, env))
+            acting_card.add_listener(Otamatone._ThisTurnRetreatDiscount(active, env))
 
 
     class _ThisTurnEnergyDiscount(AVGEEventModifier):
@@ -60,9 +62,9 @@ class Otamatone(AVGEItemCard):
         qualifying attack played by the owner's active character during the same round
         Otamatone was played, then self-invalidates once the round moves on.'''
 
-        def __init__(self, owner: User, env: AVGEEnvironment):
+        def __init__(self, active: AVGECharacterCard, env: AVGEEnvironment):
             super().__init__(AVGEEngineID(None, ActionTypes.NONCHAR, Otamatone), env, EngineGroup.EXTERNAL_MODIFIERS_1)
-            self.owner = owner
+            self.active = active
             self.round_played = env.round
 
         def match(self, event: Event) -> bool:
@@ -79,14 +81,38 @@ class Otamatone(AVGEItemCard):
                 return False
             if event.action not in (ActionTypes.ATK_1, ActionTypes.ATK_2):
                 return False
-            if event.cost <= 0:
-                return False
-            return event.target_card is self.env.get_player_active(self.owner)
+            return event.target_card is self.active and self.active.deck_type == DeckType.ACTIVE_CARD
 
         async def modify(self, event: Event) -> None:
             assert isinstance(event, PlayCharacterCard)
             assert not callable(event.cost)
-            event.cost = max(0, event.cost - 1)
+            event.cost -= 1
             await self.env.broadcast(BroadcastIO(
-                "Otamatone: Active has +1 effective energy this turn.", default_timeout,
+                "Otamatone reduces this character's attack cost by 1 this turn.", default_timeout,
             ))
+
+    class _ThisTurnRetreatDiscount(AVGEEventModifier):
+        def __init__(self, active: AVGECharacterCard, env: AVGEEnvironment):
+            super().__init__(AVGEEngineID(None, ActionTypes.NONCHAR, Otamatone), env, EngineGroup.EXTERNAL_MODIFIERS_1)
+            self.active = active
+            self.round_played = env.round
+
+        def match(self, event: Event) -> bool:
+            if self.env.round > self.round_played:
+                self.cleanup()
+                return False
+            if self.env.round != self.round_played or not isinstance(event, TransferCard):
+                return False
+            if callable(event.card) or callable(event.deck_from) or callable(event.deck_to) or callable(event.cost):
+                return False
+            return (
+                event.id.calling_action == ActionTypes.PLAYER_CHOICE
+                and event.card is self.active
+                and event.deck_from.deck_type == DeckType.ACTIVE_CARD
+                and event.deck_to.deck_type == DeckType.BENCH
+            )
+
+        async def modify(self, event: Event) -> None:
+            assert isinstance(event, TransferCard)
+            assert not callable(event.cost)
+            event.cost -= 1

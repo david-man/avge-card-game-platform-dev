@@ -63,6 +63,13 @@ class DavidMan(AVGECharacterCard):
                 return False
             return card._reverse_heist_last_used_round != card.env.round
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            card = action_card
+            assert isinstance(card, DavidMan)
+            if len(card.env.players[card.owner].card_piles[DeckType.DISCARD]) == 0:
+                return "Reverse Heist needs a card in your discard pile."
+            return "David Man has already used Reverse Heist this turn."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card
             assert isinstance(card, DavidMan)

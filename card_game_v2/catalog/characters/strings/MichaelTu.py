@@ -14,6 +14,7 @@ from ....catalog.stadiums.AlumnaeHall import AlumnaeHall
 from ....catalog.stadiums.SalomonDECI import SalomonDECI
 from ....catalog.stadiums.RileyHall import RileyHall
 from ....catalog.stadiums.MainHall import MainHall
+from ....catalog.stadiums.FriedmanHall import FriedmanHall
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
     from ....constants import User
 
 
-_BOOSTED_HALLS = (AlumnaeHall, SalomonDECI, RileyHall, MainHall)
+_BOOSTED_HALLS = (AlumnaeHall, FriedmanHall, SalomonDECI, RileyHall, MainHall)
 
 
 class MichaelTu(AVGECharacterCard):
@@ -51,7 +52,7 @@ class MichaelTu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Synchro Summon",
-                description="Reveal cards from the top of your deck until a character is found (or the deck runs out). If that character isn't STRING-typed, take it to hand and deal 30 damage to the opposing active. Then shuffle your deck.",
+                description="Reveal cards from the top of your deck until a character is found (or the deck runs out). If that character isn't STRING-typed, deal 30 damage to the opposing active, then take it to hand. Then shuffle your deck.",
                 action_type=ActionTypes.ATK_1,
                 cost=2,
             )
@@ -78,10 +79,10 @@ class MichaelTu(AVGECharacterCard):
 
             events: list[Event | Generator] = []
             if first_char is not None and first_char.card_type != CardType.STRING:
-                events.append(TransferCard(_id, first_char, deck, hand, env))
                 events.append(AVGECardHPChangeEvent(
                     _id, env.get_player_active(opponent), 30, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env,
                 ))
+                events.append(TransferCard(_id, first_char, deck, hand, env))
 
             def gen() -> list[Event | Generator]:
                 if len(deck.cards_holding) <= 1:
@@ -95,7 +96,7 @@ class MichaelTu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Electric Cello",
-                description="Deal 60 damage to the opposing active (80 instead if AlumnaeHall, SalomonDECI, RileyHall, or MainHall is active).",
+                description="Deal 60 damage to the opposing active (80 instead if a performance hall is active).",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

@@ -238,6 +238,21 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
         assert not callable(event.deck_from)
         assert not callable(event.card)
         assert not callable(event.deck_to)
+        # Stadium plays begin as a hand-to-stadium transfer. Check the card's
+        # play restriction before that transfer commits, so a rejected attempt
+        # cannot publish a misleading move that is later rolled back.
+        if (
+            isinstance(event.card, AVGEStadiumCard)
+            and event.deck_from.deck_type == DeckType.HAND
+            and event.deck_to.deck_type == DeckType.STADIUM
+        ):
+            action = event.card.actions.get(ActionTypes.NONCHAR)
+            if action is not None and not action.can_play(event.card, event.card):
+                return _reject(
+                    event,
+                    action.unavailable_reason(event.card, event.card)
+                    or "That stadium cannot be played right now.",
+                )
         # Was comparing deck_to against DeckType.DECK (the draw pile) instead of DeckType.BENCH -
         # HAND -> DECK never happens in real play, so the bench-size cap was completely
         # unenforced; a client could bench unlimited characters via the real HAND -> BENCH path.
@@ -340,7 +355,7 @@ class AVGEPlayCardValidityCheck(AVGEEventRegulator):
         if action is None:
             reason = "That card doesn't have this action."
         elif not action.can_play(event.target_card, acting_card):
-            reason = "That action can't be used right now."
+            reason = action.unavailable_reason(event.target_card, acting_card) or "That action can't be used right now."
         elif isinstance(event, PlayCharacterCard) and isinstance(action, Attack):
             assert not callable(event.cost)
             if event.cost > len(event.target_card.energy_tokens):

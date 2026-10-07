@@ -31,7 +31,7 @@ class JaydenBrown(AVGECharacterCard):
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
         super().__init__(cardID, env, owner, deck_in)
         self._four_leaf_clover: JaydenBrown._FourLeafCloverListener | None = None
-        self._four_leaf_clover_last_used_round: int | None = None
+        self._four_leaf_clover_last_coin_round: int | None = None
 
     def base_hp(self) -> int:
         return 90
@@ -56,7 +56,7 @@ class JaydenBrown(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Four-leaf Clover",
-                description="Once per round, while active, may force your first coinflip of the round to heads.",
+                description="While active, you may treat your first coin flip each turn as heads.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -77,13 +77,17 @@ class JaydenBrown(AVGECharacterCard):
                 return False
             if io_obj.user_for != self.owner_card.owner:
                 return False
+            if self.owner_card._four_leaf_clover_last_coin_round == self.env.round:
+                return False
+            self.owner_card._four_leaf_clover_last_coin_round = self.env.round
             if self.owner_card.deck_type != DeckType.ACTIVE_CARD:
                 return False
-            return self.owner_card._four_leaf_clover_last_used_round != self.env.round
+            return True
 
         async def modify(self, io_obj: IOType[object], response: object) -> object:
             owner = self.owner_card
-            owner._four_leaf_clover_last_used_round = self.env.round
+            if response == 1:
+                return response
             _id = AVGEEngineID(owner, ActionTypes.PASSIVE, JaydenBrown)
 
             choice = await self.env.report(StringSelectionQuery(

@@ -5,15 +5,15 @@ from typing import cast
 from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes
+from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import TransferCard
-from ...core.AVGEIOManager import CardSelectionQuery
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
 class StandardMusescoreFile(AVGEItemCard):
     '''Near-twin of `CorruptedMusescoreFile`: optionally discard a tool from one of your
-    own characters; if you do, optionally also take a chosen non-item card from deck to
+    own characters; if you do, optionally also take a chosen item card from deck to
     hand. Declining the tool discard (or having no eligible character to begin with)
     ends the card there. Unlike CorruptedMusescoreFile's item search, the second pick
     here is itself optional (allows a decline) even once a tool has been discarded.'''
@@ -50,6 +50,11 @@ class StandardMusescoreFile(AVGEItemCard):
             ]
             tool_targets = [c for c in own_chars if len(c.tools_attached.cards_holding) > 0]
             if not tool_targets:
+                await env.report(Notification(
+                    acting_card.owner,
+                    "Standard Musescore File found no tool to discard, so its search has no effect.",
+                    default_timeout,
+                ), AVGEEngineID(acting_card, self.action_type, StandardMusescoreFile))
                 return
 
             _id = AVGEEngineID(acting_card, self.action_type, StandardMusescoreFile)
@@ -73,13 +78,13 @@ class StandardMusescoreFile(AVGEItemCard):
                 TransferCard(_id, tool_to_discard, source.tools_attached, discard, env),
             ]
 
-            non_item_choices = [c for c in deck.cards_holding if not isinstance(c, AVGEItemCard)]
-            if non_item_choices:
+            item_choices = [c for c in deck.cards_holding if isinstance(c, AVGEItemCard)]
+            if item_choices:
                 deck_pick = await env.report(CardSelectionQuery(
                     acting_card.owner,
-                    "Standard Musescore File: Choose a non-item card from your deck to put into your hand (or None).",
+                    "Standard Musescore File: Choose an item card from your deck to put into your hand (or None).",
                     1,
-                    non_item_choices,
+                    item_choices,
                     list(deck.cards_holding),
                     True,
                     False,

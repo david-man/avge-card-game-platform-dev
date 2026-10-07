@@ -68,6 +68,13 @@ class RachelChen(AVGECharacterCard):
             discard = card.env.players[card.owner].card_piles[DeckType.DISCARD]
             return any(isinstance(c, (ConcertProgram, ConcertRoster, ConcertTicket)) for c in discard.cards_holding)
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            card = action_card
+            assert isinstance(card, RachelChen)
+            if card._active_last_used_round == card.env.round:
+                return "Rachel Chen has already used this ability this turn."
+            return "Rachel Chen needs a Concert card in your discard pile."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card
             assert isinstance(card, RachelChen)

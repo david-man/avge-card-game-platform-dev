@@ -48,7 +48,7 @@ class JessicaJung(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Cleric Spell",
-                description="Once per turn, flip a coin; on heads, may shuffle a supporter from your discard into your deck.",
+                description="Once per turn, you may flip a coin. On heads, shuffle a supporter from your discard into your deck.",
                 action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
@@ -58,6 +58,9 @@ class JessicaJung(AVGECharacterCard):
             # Ownership is verified centrally, server-side, before Phase2ActivateAbility is ever
             # constructed (server/io_adapter.py's _deserialize_phase2).
             return card._cleric_spell_last_used_round != card.env.round
+
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            return "Jessica Jung has already used Cleric Spell this turn."
 
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card

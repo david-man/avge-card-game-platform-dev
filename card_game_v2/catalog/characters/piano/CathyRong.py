@@ -43,7 +43,7 @@ class CathyRong(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Racket Smash",
-                description="Deal 20 damage to the opposing active. Optionally discard 1 energy from a chosen opposing benched character.",
+                description="Deal 20 damage to the opposing active. Discard 1 energy from a chosen opposing benched character.",
                 action_type=ActionTypes.ATK_1,
                 cost=2,
             )
@@ -71,7 +71,7 @@ class CathyRong(AVGECharacterCard):
                     1,
                     cast(list[AVGECard], bench_candidates),
                     list(opponent.card_piles[DeckType.BENCH].cards_holding),
-                    True,
+                    False,
                     False,
                 ), _id)
                 if picked:

@@ -35,6 +35,9 @@ class ConcertTicket(AVGEItemCard):
             hand = acting_card.env.players[acting_card.owner].card_piles[DeckType.HAND]
             return len(hand) > 1
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            return "Concert Ticket needs another card in your hand."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:

@@ -119,7 +119,12 @@ class RobertoGonzales(AVGECharacterCard):
                 return False
             if event.change_type != CardType.GUITAR:
                 return False
-            return event.id.calling_card is not None and event.id.calling_card.owner == self.owner
+            attacker = event.id.calling_card
+            return (
+                isinstance(attacker, AVGECharacterCard)
+                and attacker.owner == self.owner
+                and attacker.card_type == CardType.GUITAR
+            )
 
         async def modify(self, event: Event) -> None:
             assert isinstance(event, AVGECardHPChangeEvent)

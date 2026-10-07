@@ -47,7 +47,7 @@ class KathySun(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Analysis Paralysis",
-                description="Reveal the opponent's hand. They choose up to 2 cards to shuffle into their own deck.",
+                description="Reveal the opponent's hand. They choose two cards to shuffle into their own deck (or all cards if they have fewer than two).",
                 action_type=ActionTypes.ATK_1,
                 cost=1,
             )
@@ -72,11 +72,11 @@ class KathySun(AVGECharacterCard):
             await env.report(RevealCards(card.owner, list(opponent_hand.cards_holding)), _id)
             picked = await env.report(CardSelectionQuery(
                 opponent.id,
-                f"Analysis Paralysis: Choose up to {choose_count} cards to shuffle into your deck.",
+                f"Analysis Paralysis: Choose {choose_count} card{'s' if choose_count != 1 else ''} to shuffle into your deck.",
                 choose_count,
                 opponent_hand.cards_holding,
                 opponent_hand.cards_holding,
-                True,
+                False,
                 False,
             ), _id)
 
@@ -99,7 +99,7 @@ class KathySun(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Flutter Tongue",
-                description="Roll a D6 repeatedly until two consecutive rolls sum to 7. Deal 10 damage to the opposing active per roll taken.",
+                description="Roll a D6 repeatedly until two consecutive rolls sum to 7. For each roll, deal a separate 10-damage hit to the opposing active chosen when this attack begins.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

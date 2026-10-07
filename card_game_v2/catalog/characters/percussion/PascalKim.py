@@ -10,7 +10,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....constants import ActionTypes, EngineGroup, AVGEAttributeModifier, User, default_timeout
 from ....engine.event import Event, Generator, Packet
 from ....core.EventCatalog import AVGECardHPChangeEvent, TransferCard, ReorderDeck, TurnEnd
-from ....core.AVGEIOManager import BroadcastIO, CardSelectionQuery
+from ....core.AVGEIOManager import BroadcastIO, CardSelectionQuery, Notification
 
 if TYPE_CHECKING:
     from ....avge_abstracts.AVGEID import CardID
@@ -85,9 +85,13 @@ class PascalKim(AVGECharacterCard):
             _id = AVGEEngineID(card, self.action_type, PascalKim)
 
             if len(bench) == 0:
-                # Nothing to promote to active - fizzle rather than leaving the player
-                # with an empty ACTIVE_CARD pile (get_player_active() indexes into it
-                # unconditionally, which would crash the next attack/swap).
+                # The attack is spent, but explain why shuffling Pascal would leave
+                # the player without an active character.
+                await env.report(Notification(
+                    card.owner,
+                    "Ominous Chimes needs a benched character to become your new active.",
+                    default_timeout,
+                ), _id)
                 return
 
             resp = await env.report(CardSelectionQuery(

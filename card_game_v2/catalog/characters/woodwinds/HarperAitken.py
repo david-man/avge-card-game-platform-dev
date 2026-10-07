@@ -65,7 +65,7 @@ class HarperAitken(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Wipeout",
-                description="Choose up to 2 opposing characters to deal 80 damage each. Deal 80 recoil damage to yourself regardless.",
+                description="Deal 80 damage to two different characters in play. This character also takes 80 damage.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )
@@ -78,20 +78,20 @@ class HarperAitken(AVGECharacterCard):
             _id = AVGEEngineID(card, self.action_type, HarperAitken)
 
             chars_in_play: list[AVGECharacterCard] = [
-                c for c in opponent.card_piles[DeckType.ACTIVE_CARD] if isinstance(c, AVGECharacterCard)
-            ] + [
-                c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
+                c for player in (opponent, env.players[card.owner])
+                for pile in (DeckType.ACTIVE_CARD, DeckType.BENCH)
+                for c in player.card_piles[pile] if isinstance(c, AVGECharacterCard)
             ]
 
             targets: list[AVGECard] = []
             if chars_in_play:
                 targets = await env.report(CardSelectionQuery(
                     card.owner,
-                    "Wipeout: Choose up to two different targets in opponent's play area.",
-                    2,
+                    "Wipeout: Choose two different characters in play.",
+                    min(2, len(chars_in_play)),
                     cast(list[AVGECard], chars_in_play),
                     cast(list[AVGECard], chars_in_play),
-                    True,
+                    False,
                     False,
                 ), _id)
 

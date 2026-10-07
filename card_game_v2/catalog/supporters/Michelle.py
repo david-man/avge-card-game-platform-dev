@@ -32,6 +32,9 @@ class Michelle(AVGESupporterCard):
         def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
             return acting_card.env.round > 0
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            return "Michelle cannot be played on the first turn."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:

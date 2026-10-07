@@ -7,7 +7,7 @@ from ....avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ....avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ....avge_abstracts.AVGEID import AVGEEngineID
 from ....constants import ActionTypes, AVGEAttributeModifier, EngineGroup
-from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard
+from ....core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer, TransferCard, TurnEnd
 from ....engine.event import Event, Packet
 
 if TYPE_CHECKING:
@@ -96,8 +96,12 @@ class JadenOuyang(AVGECharacterCard):
             )
             self.owner_card = owner_card
             self.pending_hits = pending_hits
+            self.started_round = env.round
 
         def match(self, event: Event) -> bool:
+            if isinstance(event, TurnEnd) or self.env.round != self.started_round:
+                self.cleanup()
+                return False
             if self.pending_hits <= 0 or not isinstance(event, AVGECardHPChangeEvent):
                 return False
             if callable(event.modifier_type) or callable(event.target_card):

@@ -79,7 +79,11 @@ class Lucas(AVGESupporterCard):
             if remaining_eligible:
                 picked = await env.report(CardSelectionQuery(
                     acting_card.owner,
-                    "Lucas: Choose another deck character (a different type) to reveal and take to your hand.",
+                    (
+                        "Lucas: Choose another deck character of a different type to reveal and take to your hand."
+                        if top_deck_card is not None else
+                        "Lucas: Choose a deck character to reveal and take to your hand."
+                    ),
                     1,
                     cast(list[AVGECard], remaining_eligible),
                     cast(list[AVGECard], remaining_eligible),

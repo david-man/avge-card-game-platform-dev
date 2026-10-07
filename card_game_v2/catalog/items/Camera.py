@@ -6,14 +6,14 @@ from typing import cast
 from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGESupporterCard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes
+from ...constants import ActionTypes, default_timeout
 from ...core.EventCatalog import TransferCard, ReorderDeck
-from ...core.AVGEIOManager import CardSelectionQuery
+from ...core.AVGEIOManager import CardSelectionQuery, Notification
 from ...engine.event import Event, Generator, Packet
 
 
 class Camera(AVGEItemCard):
-    '''Optionally shuffle a chosen own Supporter or Stadium from discard into the deck
+    '''Shuffle a chosen own Supporter or Stadium from discard into the deck
     at a random position.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
@@ -42,6 +42,11 @@ class Camera(AVGEItemCard):
 
             eligible = [c for c in discard.cards_holding if isinstance(c, (AVGESupporterCard, AVGEStadiumCard))]
             if not eligible:
+                await env.report(Notification(
+                    acting_card.owner,
+                    "Camera found no Supporter or Stadium in your discard to shuffle.",
+                    default_timeout,
+                ), AVGEEngineID(acting_card, self.action_type, Camera))
                 return
 
             _id = AVGEEngineID(acting_card, self.action_type, Camera)
@@ -51,7 +56,7 @@ class Camera(AVGEItemCard):
                 1,
                 cast(list[AVGECard], eligible),
                 list(discard.cards_holding),
-                True,
+                False,
                 False,
             ), _id)
             if not picked:

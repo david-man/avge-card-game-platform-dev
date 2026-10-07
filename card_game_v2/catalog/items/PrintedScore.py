@@ -33,6 +33,11 @@ class PrintedScore(AVGEItemCard):
                 and len(opponent.card_piles[DeckType.HAND]) > 0
             )
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            if acting_card.env.round == 0:
+                return "Printed Score cannot be played on the first turn."
+            return "Printed Score needs a card in your opponent's hand."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:

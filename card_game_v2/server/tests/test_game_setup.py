@@ -1,12 +1,13 @@
 import unittest
 
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
+from ...avge_abstracts.AVGEEventListener import AVGEEventReactor
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...catalog import registry
 from ...catalog.characters.guitar.BenCherekIII import BenCherekIII
 from ...catalog.items.AVGEBirb import AVGEBirb
-from ...constants import User, ActionTypes, AVGEPlayerAttribute, INITIAL_HAND_SIZE, NO_STARTING_ACTIVE_CARDS
+from ...constants import User, ActionTypes, AVGEPlayerAttribute, EngineGroup, INITIAL_HAND_SIZE, NO_STARTING_ACTIVE_CARDS
 from ...core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer
 from ...avge_abstracts.AVGECard import CardType
 from ...constants import AVGEAttributeModifier
@@ -68,6 +69,37 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(updates), 2)  # broadcast to both players
         self.assertEqual(updates[0]["type"], "event_update")
         self.assertEqual(updates[0]["payload"]["magnitude"], 15)
+
+    async def test_board_update_precedes_post_core_reactor(self):
+        await perform_initial_setup(self.env)
+        sent = self.sent
+
+        class ObserveHit(AVGEEventReactor):
+            def match(self, event):
+                return isinstance(event, AVGECardHPChangeEvent)
+
+            async def react(self, event):
+                self.assert_sent = any(
+                    message.get("io_type") == "HPChangeUpdate" for _, message in sent
+                )
+                return None
+
+        observer = ObserveHit(
+            AVGEEngineID(None, ActionTypes.ENV, None),
+            self.env,
+            EngineGroup.INTERNAL_4,
+        )
+        self.env.engine.add_listener(observer)
+        target = self.env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
+        _id = AVGEEngineID(None, ActionTypes.ENV, None)
+        self.env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
+            _id, target, 15, AVGEAttributeModifier.SUBSTRACTIVE, CardType.ALL, self.env,
+        )]))
+        await self.env.engine.flush(lambda: False)
+        self.assertTrue(observer.assert_sent)
+        self.assertEqual(sum(
+            message.get("io_type") == "HPChangeUpdate" for _, message in self.sent
+        ), 2)
 
     async def test_regulate_fail_broadcasts_the_regulators_reason_and_a_resync_snapshot(self):
         '''AVGETokenTransferCheck (core/CoreListeners.py) REGULATE_FAILs an AVGEEnergyTransfer

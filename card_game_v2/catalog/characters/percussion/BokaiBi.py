@@ -44,7 +44,7 @@ class BokaiBi(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Algorithm",
-                description="Whenever the opponent plays a card of a type you're also holding in hand, may reveal it to deal 20 damage.",
+                description="Whenever the opponent plays a card matching a card in your hand, you may reveal your copy to deal 20 damage.",
                 action_type=ActionTypes.PASSIVE,
             )
 

@@ -56,7 +56,7 @@ class InaMa(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Borrow a Bow",
-                description="Once per turn, move 1 energy from another of your own STRING characters to this one.",
+                description="Once per turn, you may move 1 energy from another of your own STRING characters to this one.",
                 action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
@@ -69,12 +69,17 @@ class InaMa(AVGECharacterCard):
                 return False
             return len(card._candidates()) > 0
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            assert isinstance(action_card, InaMa)
+            if action_card._borrow_a_bow_last_used_round == action_card.env.round:
+                return "Borrow a Bow can only be used once per turn."
+            return "Borrow a Bow needs another friendly String character with energy."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card
             assert isinstance(card, InaMa)
             env = card.env
             candidates = card._candidates()
-            card._borrow_a_bow_last_used_round = env.round
             if not candidates:
                 return
 
@@ -85,13 +90,16 @@ class InaMa(AVGECharacterCard):
                 1,
                 cast(list[AVGECard], candidates),
                 cast(list[AVGECard], candidates),
-                False,
+                True,
                 False,
             ), _id)
+            if not picked:
+                return
             chosen = picked[0]
             assert isinstance(chosen, AVGECharacterCard)
             if len(chosen.energy_tokens) <= 0:
                 return
+            card._borrow_a_bow_last_used_round = env.round
             env.push_packet(Packet(_id, [AVGEEnergyTransfer(_id, chosen, card, env)]))
 
     class _TripleStop(Attack):

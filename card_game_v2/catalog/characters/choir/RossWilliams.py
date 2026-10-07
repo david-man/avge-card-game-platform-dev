@@ -86,9 +86,10 @@ class RossWilliams(AVGECharacterCard):
             # PlayCharacterCard.act()'s acting_card resolution. cost=0 so this never
             # checks/spends anyone's energy, matching the original's energy_requirement=0.
             _id = AVGEEngineID(active, ActionTypes.PASSIVE, RossWilliams)
+            ross_owner = "your" if self.owner_card.owner == current_player.id else "your opponent's"
             choice = await self.env.report(StringSelectionQuery(
                 current_player.id,
-                f"I Am Become Ross: Use {self.owner_card.owner.name}'s Ross's attack?",
+                f"I Am Become Ross: Use {ross_owner} Ross's attack?",
                 1,
                 ["Yes", "No"],
                 ["Yes", "No"],

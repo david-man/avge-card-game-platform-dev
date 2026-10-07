@@ -48,13 +48,17 @@ class FelixChen(AVGECharacterCard):
 
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
-        return
+        if (deck_from.deck_type in (DeckType.ACTIVE_CARD, DeckType.BENCH)
+                and deck_to.deck_type not in (DeckType.ACTIVE_CARD, DeckType.BENCH)
+                and self._synesthesia is not None):
+            self._synesthesia.cleanup()
+            self._synesthesia = None
 
     class _SynesthesiaPassive(Ability):
         def __init__(self):
             super().__init__(
                 name="Synesthesia",
-                description="While your whole team has all-distinct card types, reduce incoming opponent attack damage by 10.",
+                description="While your characters in play all have different types, each takes 10 less damage from attacks.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -71,20 +75,18 @@ class FelixChen(AVGECharacterCard):
             self.owner_card = owner_card
 
         def match(self, event: Event) -> bool:
+            if self.owner_card.deck_type not in (DeckType.ACTIVE_CARD, DeckType.BENCH):
+                return False
             if not isinstance(event, AVGECardHPChangeEvent):
                 return False
             if callable(event.modifier_type) or callable(event.change_type) or callable(event.target_card):
                 return False
             if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
                 return False
-            if event.change_type == CardType.ALL:
-                return False
             if event.id.calling_action not in (ActionTypes.ATK_1, ActionTypes.ATK_2):
                 return False
             attacker = event.id.calling_card
             if not isinstance(attacker, AVGECharacterCard):
-                return False
-            if attacker.owner != self.env.get_opponent(self.owner_card.owner).id:
                 return False
             if event.target_card.owner != self.owner_card.owner:
                 return False
@@ -102,7 +104,7 @@ class FelixChen(AVGECharacterCard):
             assert isinstance(event, AVGECardHPChangeEvent)
             event.modify_magnitude(-10)
             await self.env.broadcast(BroadcastIO(
-                "Synesthesia: Damage from opponent attacks reduced by 10.", default_timeout,
+                "Synesthesia: Attack damage reduced by 10.", default_timeout,
             ))
 
     class _Multiphonics(Attack):

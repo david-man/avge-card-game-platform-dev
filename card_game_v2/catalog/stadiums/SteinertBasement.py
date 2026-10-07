@@ -18,15 +18,9 @@ if TYPE_CHECKING:
 
 
 class SteinertBasement(AVGEStadiumCard):
-    '''"Duo Queue": at the start of a turn where the active player has exactly 2
-    characters in play, draw 1 extra card. "15 Minute Walk": +1 energy cost on every
-    attack. DemiLu (piano, still deferred) imports `_AttackExtraCostModifier` by name
-    to build an exemption for itself - since v2's `AVGEConstrainer.match()` only sees
-    a listener's own static identity (no per-event "attached_event" context like v1's
-    constrainers had, confirmed by LukeXu's `_NullifyConstraint` precedent), DemiLu
-    will most likely need its own separate modifier that adds the energy back for
-    itself specifically, rather than trying to exclude this modifier via a
-    constrainer the way v1 did - flagged here for whoever builds DemiLu next.'''
+    '''Duo Queue: At the start of each turn, a player with exactly two characters
+    in play draws one additional card. 15 Minute Walk: attacks cost one additional
+    energy.'''
 
     def __init__(self, cardID: CardID, env: AVGEEnvironment, owner: User, deck_in: DeckType):
         super().__init__(cardID, env, owner, deck_in)
@@ -40,7 +34,7 @@ class SteinertBasement(AVGEStadiumCard):
     class _PlayAction(Ability):
         def __init__(self):
             super().__init__(
-                name="SteinertBasement",
+                name="Duo Queue / 15 Minute Walk",
                 description=SteinertBasement.__doc__ or "",
                 action_type=ActionTypes.NONCHAR,
             )

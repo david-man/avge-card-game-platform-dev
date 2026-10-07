@@ -137,7 +137,7 @@ class MeyaGao(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Distortion",
-                description="Deal 40 damage to the opposing active. Your next GUITAR attack on your own following turn deals +40 damage.",
+                description="Deal 40 damage to the opposing active. On your following turn, your Guitar characters deal +40 damage to opposing characters.",
                 action_type=ActionTypes.ATK_1,
                 cost=3,
             )
@@ -179,7 +179,12 @@ class MeyaGao(AVGECharacterCard):
                 return False
             if event.change_type != CardType.GUITAR:
                 return False
-            return event.id.calling_card is not None and event.id.calling_card.owner == self.owner
+            return (
+                event.id.calling_card is not None
+                and event.id.calling_card.owner == self.owner
+                and not callable(event.target_card)
+                and event.target_card.owner != self.owner
+            )
 
         async def modify(self, event: Event) -> None:
             assert isinstance(event, AVGECardHPChangeEvent)

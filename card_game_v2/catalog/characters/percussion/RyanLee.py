@@ -66,13 +66,15 @@ class RyanLee(AVGECharacterCard):
                 1,
                 cast(list[AVGECard], candidates),
                 list(bench.cards_holding),
-                False,
+                True,
                 False,
             ), _id)
+            if not picked:
+                return
             chosen = picked[0]
             assert isinstance(chosen, AVGECharacterCard)
 
-            amount = await env.report(IntInput(card.owner, "Choose energy to attach (up to 2)", 1, max_attach), _id)
+            amount = await env.report(IntInput(card.owner, "Choose energy to attach (up to 2)", 0, max_attach), _id)
             transfer_count = min(amount, max_attach)
             if transfer_count <= 0:
                 return

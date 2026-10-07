@@ -316,8 +316,8 @@ async def detach_tool(env, player, tool):
 async def retreat(env, player, incoming=None):
     '''Drives a real retreat: the exact two-TransferCard packet shape
     core/EventCatalog.py's Phase2CardMovement case builds for a BENCH -> ACTIVE_CARD
-    move - the incoming bench card swaps in, the outgoing active card swaps out to
-    bench, carrying its own retreat_cost as that leg's cost (see TransferCard's own
+    move - the outgoing active card swaps out to bench, the incoming bench card swaps
+    in, carrying its own retreat_cost on the outgoing leg (see TransferCard's own
     cost field and A2's retreat-cost fix), both tagged PLAYER_CHOICE in one packet.
     Constructing a single bare TransferCard(ACTIVE_CARD -> BENCH) directly instead -
     an easy trap, since that's the event that actually pays the cost - bypasses the
@@ -337,8 +337,8 @@ async def retreat(env, player, incoming=None):
     active_deck = player.card_piles[DeckType.ACTIVE_CARD]
     _id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
     pkt = Packet(_id, [
-        TransferCard(_id, incoming, bench_deck, active_deck, env),
         TransferCard(_id, outgoing, active_deck, bench_deck, env, outgoing.retreat_cost),
+        TransferCard(_id, incoming, bench_deck, active_deck, env),
     ])
     env.push_packet(pkt)
     await env.engine.flush(lambda: False)

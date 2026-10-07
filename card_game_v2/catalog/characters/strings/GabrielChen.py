@@ -45,7 +45,7 @@ class GabrielChen(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="You Know What It Is",
-                description="The first time your HP drops below 60, may deal 70 damage to a random opposing character.",
+                description="The first time your HP drops to 60 or less, may deal 70 damage to a random opposing character.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -58,8 +58,7 @@ class GabrielChen(AVGECharacterCard):
 
     class _ThresholdReactor(AVGEEventReactor):
         '''Fires (once) the first time a matching AVGECardHPChange leaves the owner
-        below 60 HP (an absolute threshold, not 60% of max HP - confirmed against v1
-        source, which reads `self.owner_card.hp < 60` directly). Stays registered
+        at or below 60 HP (an absolute threshold, not 60% of max HP). Stays registered
         forever if answered "Yes" while the opponent has no characters in play (no v1
         cleanup() call on that path either) - matches v1 exactly, not a bug.'''
 
@@ -76,7 +75,7 @@ class GabrielChen(AVGECharacterCard):
                 return False
             if self.owner_card.deck_type not in (DeckType.ACTIVE_CARD, DeckType.BENCH):
                 return False
-            return self.owner_card.hp < 60
+            return self.owner_card.hp <= 60
 
         async def react(self, event: Event) -> None:
             owner = self.owner_card

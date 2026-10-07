@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import random
 from typing import cast
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGEToolCard, AVGEStadiumCard, Ability
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard, AVGEStadiumCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import ActionTypes
-from ...core.EventCatalog import TransferCard
+from ...core.EventCatalog import TransferCard, ReorderDeck
 from ...core.AVGEIOManager import CardSelectionQuery, BroadcastIO, default_timeout
 from ...engine.event import Packet
 
 
 class ConcertRoster(AVGEItemCard):
-    '''Peek the top 3 of your deck; optionally take a tool or stadium from among them
-    to hand.'''
+    '''Peek the top 3 of your deck; optionally take a character or stadium from
+    among them to hand, then shuffle the deck.'''
 
     async def on_transfer(self, deck_from: AVGEDeck, deck_to: AVGEDeck, transfer_event: TransferCard) -> None:
         return
@@ -40,26 +41,28 @@ class ConcertRoster(AVGEItemCard):
             hand = player.card_piles[DeckType.HAND]
 
             considered = list(deck.cards_holding[:3])
-            pick_choices = [c for c in considered if isinstance(c, (AVGEToolCard, AVGEStadiumCard))]
-            if not pick_choices:
-                return
-
+            pick_choices = [c for c in considered if isinstance(c, (AVGECharacterCard, AVGEStadiumCard))]
             _id = AVGEEngineID(acting_card, self.action_type, ConcertRoster)
-            picked = await env.report(CardSelectionQuery(
-                acting_card.owner,
-                "Concert Roster: Choose a tool or stadium from the top 3 to take to hand.",
-                1,
-                cast(list[AVGECard], pick_choices),
-                considered,
-                True,
-                False,
-            ), _id)
-            if not picked:
-                return
+            picked: list[AVGECard] = []
+            if pick_choices:
+                picked = await env.report(CardSelectionQuery(
+                    acting_card.owner,
+                    "Concert Roster: Choose a character or stadium from the top 3 to take to hand.",
+                    1,
+                    cast(list[AVGECard], pick_choices),
+                    considered,
+                    True,
+                    False,
+                ), _id)
 
-            picked_card = picked[0]
-            env.push_packet(Packet(_id, [TransferCard(_id, picked_card, deck, hand, env)]))
-            await env.broadcast(BroadcastIO(
-                f"Concert Roster: revealed and took {picked_card} to hand!",
-                default_timeout,
-            ))
+            events = []
+            if picked:
+                picked_card = picked[0]
+                events.append(TransferCard(_id, picked_card, deck, hand, env))
+            events.append(ReorderDeck(_id, deck, lambda: random.sample(list(deck.cards_holding), len(deck.cards_holding)), env))
+            env.push_packet(Packet(_id, events))
+            if picked:
+                await env.broadcast(BroadcastIO(
+                    f"Concert Roster: revealed and took {picked_card} to hand!",
+                    default_timeout,
+                ))

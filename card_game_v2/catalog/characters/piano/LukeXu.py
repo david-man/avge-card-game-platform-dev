@@ -27,6 +27,7 @@ class LukeXu(AVGECharacterCard):
         super().__init__(cardID, env, owner, deck_in)
         self._nullify_reactor: LukeXu._NullifyTransferReactor | None = None
         self._nullify_activated_round: int | None = None
+        self._pending_halving: LukeXu._NextAttackHalved | None = None
 
     def base_hp(self) -> int:
         return 90
@@ -57,7 +58,7 @@ class LukeXu(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Nullify",
-                description="While active on your own turn, opposing characters' passive/active abilities have no effect for the rest of this turn.",
+                description="If Luke Xu switched or was played into your active slot this turn, opposing abilities have no effect for the rest of your turn.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -144,9 +145,12 @@ class LukeXu(AVGECharacterCard):
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
             )]))
-            modifier = LukeXu._NextAttackHalved(card.owner, env)
-            card.add_listener(modifier)
-            card.add_packet_listener(LukeXu._NextAttackHalvedPacketReactor(modifier, env))
+            assert isinstance(action_card, LukeXu)
+            if action_card._pending_halving is None:
+                modifier = LukeXu._NextAttackHalved(action_card, env)
+                action_card._pending_halving = modifier
+                card.add_listener(modifier)
+                card.add_packet_listener(LukeXu._NextAttackHalvedPacketReactor(modifier, env))
 
     class _NextAttackHalved(AVGEEventModifier):
         '''Cleans itself up via the companion `_NextAttackHalvedPacketReactor` below (once that
@@ -155,9 +159,10 @@ class LukeXu(AVGECharacterCard):
         match()/modify() once per qualifying event in that same packet, and cleaning up
         immediately after the first would leave every later hit in that same packet unhalved.'''
 
-        def __init__(self, owner: User, env: AVGEEnvironment):
+        def __init__(self, owner_card: LukeXu, env: AVGEEnvironment):
             super().__init__(AVGEEngineID(None, ActionTypes.ATK_1, LukeXu), env, EngineGroup.EXTERNAL_MODIFIERS_2)
-            self.owner = owner
+            self.owner_card = owner_card
+            self.owner = owner_card.owner
             self.fired = False
 
         def match(self, event: Event) -> bool:
@@ -197,4 +202,5 @@ class LukeXu(AVGECharacterCard):
 
         async def react(self, packet: Packet) -> None:
             self.modifier.cleanup()
+            self.modifier.owner_card._pending_halving = None
             self.cleanup()

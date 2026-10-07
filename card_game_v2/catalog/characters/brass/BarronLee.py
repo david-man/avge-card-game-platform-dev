@@ -98,7 +98,7 @@ class BarronLee(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Get Served",
-                description="Opposing characters cannot hold more than 3 energy at a time.",
+                description="Opposing characters cannot hold more than 3 energy at a time. When this character is first played, remove any excess energy already attached to each opposing character.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -136,7 +136,7 @@ class BarronLee(AVGECharacterCard):
                 name="Embouchure",
                 description="Deal 20 damage to the opposing active character. Then, rearrange all energy currently on your characters however you like.",
                 action_type=ActionTypes.ATK_1,
-                cost=1,
+                cost=2,
             )
 
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:

@@ -94,49 +94,48 @@ class IrisYang(AVGECharacterCard):
             assert isinstance(card, AVGECharacterCard)
             env = card.env
             opponent = env.get_opponent(card.owner)
-            opponent_bench: list[AVGECharacterCard] = [
-                c for c in opponent.card_piles[DeckType.BENCH] if isinstance(c, AVGECharacterCard)
-            ]
             _id = AVGEEngineID(card, self.action_type, IrisYang)
+            target = env.get_player_active(opponent)
+            env.push_packet(Packet(_id, [
+                AVGECardHPChangeEvent(_id, target, 30, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env),
+                IrisYang._SpikeSwitchEvent(_id, card, env),
+            ]))
 
-            selected_bench: AVGECharacterCard | None = None
-            if opponent_bench:
-                picked = await env.report(CardSelectionQuery(
-                    card.owner,
-                    "Spike: You may switch your opponent's Active character with one of their Benched characters.",
-                    1,
-                    cast(list[AVGECard], opponent_bench),
-                    cast(list[AVGECard], opponent_bench),
-                    True,
-                    False,
-                ), _id)
-                if picked:
-                    assert isinstance(picked[0], AVGECharacterCard)
-                    selected_bench = picked[0]
+    class _SpikeSwitchEvent(Event):
+        """Ask for the optional switch after damage and any KO promotion resolve."""
 
-            def gen_damage() -> list[Event | Generator]:
-                target = env.get_player_active(opponent)
-                return [AVGECardHPChangeEvent(_id, target, 30, AVGEAttributeModifier.SUBSTRACTIVE, CardType.STRING, env)]
+        def __init__(self, id: AVGEEngineID, attacker: AVGECharacterCard, env: AVGEEnvironment):
+            super().__init__(id, attacker=attacker, env=env)
+            self.attacker = attacker
+            self.env = env
 
-            events: list[Event | Generator] = [gen_damage]
+        async def act(self) -> None:
+            opponent = self.env.get_opponent(self.attacker.owner)
+            active_deck = opponent.card_piles[DeckType.ACTIVE_CARD]
+            bench_deck = opponent.card_piles[DeckType.BENCH]
+            if len(active_deck) == 0:
+                return
+            candidates = [c for c in bench_deck if isinstance(c, AVGECharacterCard)]
+            if not candidates:
+                return
+            picked = await self.env.report(CardSelectionQuery(
+                self.attacker.owner,
+                "Spike: You may switch the opponent's Active with one of their Benched characters.",
+                1,
+                cast(list[AVGECard], candidates),
+                cast(list[AVGECard], candidates),
+                True,
+                False,
+            ), self.id)
+            if not picked:
+                return
+            active = active_deck[0]
+            chosen = picked[0]
+            if isinstance(active, AVGECharacterCard) and chosen in bench_deck.cards_holding:
+                self.push_event([
+                    TransferCard(self.id, active, active_deck, bench_deck, self.env),
+                    TransferCard(self.id, chosen, bench_deck, active_deck, self.env),
+                ])
 
-            if selected_bench is not None:
-                chosen_bench = selected_bench
-
-                def gen_switch() -> list[Event | Generator]:
-                    active_deck = opponent.card_piles[DeckType.ACTIVE_CARD]
-                    bench_deck = opponent.card_piles[DeckType.BENCH]
-                    if len(active_deck) == 0:
-                        return []
-                    active = active_deck[0]
-                    if not isinstance(active, AVGECharacterCard):
-                        return []
-                    if chosen_bench not in bench_deck.cards_holding:
-                        return []
-                    return [
-                        TransferCard(_id, active, active_deck, bench_deck, env),
-                        TransferCard(_id, chosen_bench, bench_deck, active_deck, env),
-                    ]
-                events.append(gen_switch)
-
-            env.push_packet(Packet(_id, events))
+        def rollback(self) -> None:
+            pass

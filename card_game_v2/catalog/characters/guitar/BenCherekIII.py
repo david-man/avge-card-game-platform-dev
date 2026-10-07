@@ -40,33 +40,27 @@ class BenCherekIII(AVGECharacterCard):
         return
 
     class _Loudmouth(Ability):
-        '''On entering bench, offers to immediately swap into active (if there is
-        already an active character). Only offered once for a given hand-to-bench
-        entry - the guard searches `IMMUTABLE` history for an earlier matching
-        transfer, which doesn't see the very transfer that's currently triggering this
-        same passive call (not yet solidified), so it only suppresses a *second*,
-        separate hand-to-bench entry later in the same chapter - same resolved shape as
-        `HappyRuthJara`'s own "did I just enter bench from hand" guard.'''
+        '''Offers to swap into active only when this bench entry came from hand.'''
 
         def __init__(self):
             super().__init__(
                 name="Loudmouth",
-                description="On entering bench, may immediately swap into active.",
+                description="When played from hand to bench, may immediately swap into active.",
                 action_type=ActionTypes.PASSIVE,
             )
 
-        def _already_entered_bench_from_hand(self, card: AVGECharacterCard) -> bool:
+        def _entered_bench_from_hand(self, card: AVGECharacterCard) -> bool:
             index = 0
+            last_source: DeckType | None = None
             while True:
                 event, index = card.env.search_history(TransferCard, None, increment=0, index_to_start=index)
                 if event is None:
-                    return False
+                    return last_source == DeckType.HAND
                 if (event.card == card
                     and isinstance(event.deck_from, AVGEDeck)
                     and isinstance(event.deck_to, AVGEDeck)
-                    and event.deck_from.deck_type == DeckType.HAND
                         and event.deck_to.deck_type == DeckType.BENCH):
-                    return True
+                    last_source = event.deck_from.deck_type
                 index += 1
 
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
@@ -80,7 +74,7 @@ class BenCherekIII(AVGECharacterCard):
             active_holder = player.card_piles[DeckType.ACTIVE_CARD]
             if len(active_holder) == 0:
                 return
-            if self._already_entered_bench_from_hand(card):
+            if not self._entered_bench_from_hand(card):
                 return
 
             _id = AVGEEngineID(card, ActionTypes.PASSIVE, BenCherekIII)

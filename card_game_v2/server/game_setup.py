@@ -58,7 +58,19 @@ def _wire_event_broadcast_hooks(
     env: AVGEEnvironment,
     extra_on_packet_failed: Callable[[EnginePacket], Awaitable[None]] | None,
 ) -> None:
+    async def handle_event_acted(event: Event) -> None:
+        # Post-core listeners may block on an order/selection prompt. Send the
+        # event's board update before that prompt so both players see the draw,
+        # hit, KO, or play that caused it. Packet rejection still sends an
+        # authoritative snapshot through ActionRejectedUpdate.
+        update = event_broadcasting.event_to_update_io(event)
+        if update is not None:
+            await env.broadcast(update)
+            event.scrachboard["_board_update_sent"] = True
+
     async def handle_event_committed(event: Event) -> None:
+        if event.scrachboard.get("_board_update_sent"):
+            return
         update = event_broadcasting.event_to_update_io(event)
         if update is not None:
             await env.broadcast(update)
@@ -73,6 +85,7 @@ def _wire_event_broadcast_hooks(
         if extra_on_packet_failed is not None:
             await extra_on_packet_failed(packet)
 
+    env.engine.on_event_acted = handle_event_acted
     env.engine.on_event_committed = handle_event_committed
     env.engine.on_packet_failed = handle_packet_failed
 

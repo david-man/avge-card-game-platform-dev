@@ -6,6 +6,11 @@ import re
 # it without a circular import - registry.py imports from AVGECard.py, so AVGECard.py can't import
 # label_for back from registry.py. Pure string logic, no dependency on any card class.
 _CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_DISPLAY_NAMES = {
+    "KikisHeadband": "Kiki's Headband",
+    "SteinertBasement": "Steinert Basement Studio",
+    "Victoria": "Victoria Chen",
+}
 
 
 def label_for(class_name: str) -> str:
@@ -14,4 +19,4 @@ def label_for(class_name: str) -> str:
     and AVGECard.__str__, not for any lookup) - imperfect on some acronym-adjacent edge cases
     (e.g. "AVGETShirt" -> "AVGET Shirt") is an acceptable tradeoff for a simple,
     dependency-free splitter.'''
-    return _CAMEL_SPLIT_RE.sub(" ", class_name)
+    return _DISPLAY_NAMES.get(class_name, _CAMEL_SPLIT_RE.sub(" ", class_name))

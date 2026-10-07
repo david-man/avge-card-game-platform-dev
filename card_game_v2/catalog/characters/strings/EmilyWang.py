@@ -60,6 +60,12 @@ class EmilyWang(AVGECharacterCard):
                 return False
             return card._profit_margins_last_used_round != card.env.round
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            assert isinstance(action_card, EmilyWang)
+            if not action_card.tools_attached.cards_holding:
+                return "Profit Margins requires an attached tool."
+            return "Profit Margins can only be used once per turn."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = action_card
             assert isinstance(card, EmilyWang)
@@ -76,8 +82,9 @@ class EmilyWang(AVGECharacterCard):
             _id = AVGEEngineID(card, ActionTypes.ACTIVATE_ABILITY, EmilyWang)
 
             events: list[Event | Generator] = [TransferCard(_id, tool, card.tools_attached, discard, env)]
-            if len(deck) > 0:
-                events.append(TransferCard(_id, lambda: deck.get_top(), deck, hand, env))
+            def draw_after_discard() -> list[Event | Generator]:
+                return [TransferCard(_id, deck.get_top(), deck, hand, env)] if len(deck) > 0 else []
+            events.append(draw_after_discard)
             env.push_packet(Packet(_id, events))
 
     class _TripleStop(Attack):

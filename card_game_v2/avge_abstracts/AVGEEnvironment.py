@@ -10,6 +10,7 @@ from .AVGEPlayer import AVGEPlayer
 from .AVGEDeck import AVGEDeck, DeckType
 from ..constants import *
 from ..engine.global_cache import Cache
+from ..engine.event import Packet
 from .AVGECard import AVGECharacterCard
 if TYPE_CHECKING:
     from .AVGECard import AVGECard
@@ -61,11 +62,15 @@ class AVGEEnvironment:
         self.cache = Cache(owners)
         self.engine: Engine = Engine(io_manager, self.cache)
         self.engine.listeners = [listener(self) for listener in core_listeners] # type: ignore
+        self.engine.on_idle = self._next_main_phase_packet
         self.stadium_cardholder : AVGEDeck = AVGEDeck(None, DeckType.STADIUM, []) #type: ignore
 
         #sets up turn
         self.turn : User = random.sample([User.PLAYER_1, User.PLAYER_2], 1)[0]
         self.round : int = 0
+        # Phase2 is generated when the packet queue becomes idle, so actions
+        # that end the turn cannot leave a stale main-phase prompt behind.
+        self.phase: str = "setup"
 
         #sets up a winner variable
         self.winner : User | None = None
@@ -75,6 +80,14 @@ class AVGEEnvironment:
     async def run(self):
         from ..core.EventCatalog import TurnEnd
         await self.engine.flush(lambda : self.search_history(TurnEnd)[0] is not None)
+
+    def _next_main_phase_packet(self) -> Packet | None:
+        if self.phase != "main" or self.winner is not None:
+            return None
+        from ..avge_abstracts.AVGEID import AVGEEngineID
+        from ..core.EventCatalog import Phase2
+        _id = AVGEEngineID(None, ActionTypes.ENV, None)
+        return Packet(_id, [Phase2(_id, self)])
 
     # Cache API
 

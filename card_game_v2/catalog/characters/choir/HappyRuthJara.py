@@ -47,7 +47,7 @@ class HappyRuthJara(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Leave Rehearsal Early",
-                description="Once per turn, if you haven't just benched this character, return it to your hand.",
+                description="While benched, if you did not play this character from your hand this turn and she has no tools attached, you may move her to your hand.",
                 action_type=ActionTypes.ACTIVATE_ABILITY,
             )
 
@@ -60,6 +60,17 @@ class HappyRuthJara(AVGECharacterCard):
             if len(card.tools_attached) > 0:
                 return False
             return not self._entered_bench_from_hand_this_turn(card)
+
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            if not isinstance(action_card, HappyRuthJara):
+                return None
+            if action_card.deck_type != DeckType.BENCH:
+                return "Happy Ruth Jara must be on your bench to leave rehearsal early."
+            if len(action_card.tools_attached) > 0:
+                return "Remove Happy Ruth Jara's attached tool before using Leave Rehearsal Early."
+            if self._entered_bench_from_hand_this_turn(action_card):
+                return "Happy Ruth Jara cannot leave rehearsal on the turn she was benched from hand."
+            return None
 
         def _entered_bench_from_hand_this_turn(self, card: AVGECharacterCard) -> bool:
             index = 0
@@ -103,7 +114,7 @@ class HappyRuthJara(AVGECharacterCard):
                 name="Coloratura",
                 description="Flip 2 coins. Deal 30 damage. If both are heads, deal 40 more.",
                 action_type=ActionTypes.ATK_1,
-                cost=3,
+                cost=2,
             )
 
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:

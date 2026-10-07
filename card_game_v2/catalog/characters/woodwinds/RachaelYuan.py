@@ -47,7 +47,7 @@ class RachaelYuan(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Circular Breathing",
-                description="Deal 10 damage, plus 10 more per consecutive prior turn this attack was used (uncapped).",
+                description="Deal 10 damage, plus 10 damage for every consecutive use after the first, up to +40.",
                 action_type=ActionTypes.ATK_1,
                 cost=1,
             )

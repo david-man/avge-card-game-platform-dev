@@ -119,13 +119,14 @@ class EdwardWibowo(AVGECharacterCard):
                 return False
             if not isinstance(event, AVGECardHPChangeEvent):
                 return False
-            if callable(event.modifier_type) or callable(event.change_type):
+            if callable(event.modifier_type) or callable(event.change_type) or callable(event.target_card):
                 return False
             if event.modifier_type != AVGEAttributeModifier.SUBSTRACTIVE:
                 return False
             if event.change_type != CardType.GUITAR:
                 return False
-            return event.id.calling_card is not None and event.id.calling_card.owner == self.owner
+            return (event.id.calling_card is not None and event.id.calling_card.owner == self.owner
+                    and event.target_card.owner != self.owner)
 
         async def modify(self, event: Event) -> None:
             assert isinstance(event, AVGECardHPChangeEvent)

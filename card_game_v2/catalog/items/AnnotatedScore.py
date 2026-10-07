@@ -37,6 +37,12 @@ class AnnotatedScore(AVGEItemCard):
                 and len(opponent.card_piles[DeckType.DISCARD]) > 0
             )
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str:
+            opponent = acting_card.env.get_opponent(acting_card.owner)
+            if len(opponent.card_piles[DeckType.HAND]) == 0:
+                return "Annotated Score needs a card in your opponent's hand."
+            return "Annotated Score needs a card in your opponent's discard pile."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:

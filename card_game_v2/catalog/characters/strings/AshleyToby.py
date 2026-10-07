@@ -44,7 +44,7 @@ class AshleyToby(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Instagram Viral",
-                description="Doubles this character's own attack damage while both benches are completely full.",
+                description="This character's attacks deal +40 damage while both benches are completely full.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -78,8 +78,8 @@ class AshleyToby(AVGECharacterCard):
         async def modify(self, event: Event) -> None:
             assert isinstance(event, AVGECardHPChangeEvent)
             assert not callable(event.magnitude)
-            event.modify_magnitude(event.magnitude)
-            await self.env.broadcast(BroadcastIO("Instagram Viral: Ashley Toby doubled her damage!", default_timeout))
+            event.modify_magnitude(40)
+            await self.env.broadcast(BroadcastIO("Instagram Viral: Ashley Toby's attack deals +40 damage!", default_timeout))
 
     class _SealAttack(Attack):
         def __init__(self):

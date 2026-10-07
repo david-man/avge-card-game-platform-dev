@@ -44,7 +44,7 @@ class KatieXiang(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Nausicaa's Undying Heartbeat",
-                description="Whenever the opponent's turn ends, if this character is below 50 HP, heal your whole team 20.",
+                description="At the end of your turn, if this character is below 50 HP, heal your whole team 20.",
                 action_type=ActionTypes.PASSIVE,
             )
 
@@ -65,10 +65,9 @@ class KatieXiang(AVGECharacterCard):
                 return False
             if self.owner_card.deck_type not in (DeckType.ACTIVE_CARD, DeckType.BENCH):
                 return False
-            # TurnEnd.act() already flipped env.turn before EXTERNAL_REACTORS runs
-            # (see Section 2), so "the opponent's turn just ended" reads as
-            # "env.turn is now mine again" post-flip.
-            if self.env.turn != self.owner_card.owner:
+            # TurnEnd.act() flips env.turn before reactors run. The owner's turn
+            # just ended when the new turn belongs to the opponent.
+            if self.env.turn == self.owner_card.owner:
                 return False
             return self.owner_card.hp < 50
 
@@ -92,7 +91,7 @@ class KatieXiang(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Rubato",
-                description="Deal 20 damage to the opposing active now, and 30 more at the end of your own next turn.",
+                description="Deal 20 damage to the opposing active now, and 30 more at the end of your opponent's next turn.",
                 action_type=ActionTypes.ATK_1,
                 cost=2,
             )
@@ -108,14 +107,9 @@ class KatieXiang(AVGECharacterCard):
             env.push_packet(Packet(_id, [AVGECardHPChangeEvent(
                 _id, target, 20, AVGEAttributeModifier.SUBSTRACTIVE, CardType.PIANO, env,
             )]))
-            # Same delayed-cross-turn idiom as PascalKim (percussion), independently
-            # implemented. round_active = env.round + 3, not v1's `+2`
-            # (`player.get_next_turn()`), for the same post-act-state reason as
-            # PascalKim's `+2` (see Section 2): TurnEnd.act() advances env.round
-            # before EXTERNAL_REACTORS runs, and Katie targets the TurnEnd that ends
-            # the owner's *own* next turn, one full turn-boundary later than
-            # PascalKim's "opponent's next turn" target.
-            env.add_listener(KatieXiang._RubatoDelayed(card, env.round + 3, env))
+            # TurnEnd.act() advances the round before reactors run. The opponent's
+            # next turn ends two round numbers after this attack.
+            env.add_listener(KatieXiang._RubatoDelayed(card, env.round + 2, env))
 
     class _RubatoDelayed(AVGEEventReactor):
         def __init__(self, attacker: AVGECharacterCard, round_active: int, env: AVGEEnvironment):

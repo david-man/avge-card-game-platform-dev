@@ -51,6 +51,12 @@ class HenryWang(AVGECharacterCard):
                 cost=2,
             )
 
+        def can_play(self, action_card: AVGECard, acting_card: AVGECard) -> bool:
+            return isinstance(action_card, HenryWang) and action_card._last_glissando_round != action_card.env.round - 2
+
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            return "Glissando cannot be used on the turn after it was last used."
+
         async def __call__(self, action_card: AVGECard, acting_card: AVGECard) -> None:
             card = acting_card
             assert isinstance(card, AVGECharacterCard)

@@ -86,7 +86,7 @@ class LoangChiang(AVGECharacterCard):
         def __init__(self):
             super().__init__(
                 name="Excused Absence",
-                description="Heal all of your own in-play characters 30. Discard 1 of your own energy.",
+                description="Heal each of your characters in play by 30. Remove 1 energy from this character.",
                 action_type=ActionTypes.ATK_2,
                 cost=3,
             )

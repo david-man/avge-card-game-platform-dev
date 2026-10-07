@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, Ability
+from ...avge_abstracts.AVGECard import AVGEItemCard, AVGECard, AVGECharacterCard, Ability
 from ...avge_abstracts.AVGEDeck import AVGEDeck, DeckType
 from ...avge_abstracts.AVGEEventListener import AVGEEventModifier
 from ...avge_abstracts.AVGEID import AVGEEngineID
-from ...constants import ActionTypes, EngineGroup, User, default_timeout
+from ...constants import ActionTypes, EngineGroup, default_timeout
 from ...core.EventCatalog import PlayCharacterCard, TransferCard
 from ...core.AVGEIOManager import BroadcastIO, Notification
 from ...engine.event import Event
@@ -26,8 +26,8 @@ _PERFORMANCE_HALLS = (AlumnaeHall, FriedmanHall, RileyHall, MainHall, SalomonDEC
 
 class MikuOtamatone(AVGEItemCard):
     '''Requires one of 5 named "performance hall" stadiums active, and can't be
-    played on the first turn. Reduces the owner's active character's next attack's
-    energy cost by 2, for the rest of this turn. **Fixed a real v1 bug on sight**:
+    played on the first turn. Gives the character active when played two effective
+    energy for attacks and retreat this turn, without creating tokens. **Fixed a real v1 bug on sight**:
     v1 imports `FriedmanHall` but its actual gating tuple only checks
     `(AlumnaeHall, RileyHall, MainHall, SalomonDECI)` - 4 of the 5 imported classes,
     silently excluding FriedmanHall. All 5 are equally "performance hall"-themed and
@@ -57,6 +57,12 @@ class MikuOtamatone(AVGEItemCard):
             stadium = env.stadium_cardholder.cards_holding[0] if len(env.stadium_cardholder) > 0 else None
             return env.round > 0 and isinstance(stadium, _PERFORMANCE_HALLS)
 
+        def unavailable_reason(self, action_card: AVGECard, acting_card: AVGECard) -> str | None:
+            env = acting_card.env
+            if env.round == 0:
+                return "Miku Otamatone cannot be played on the first turn."
+            return "Miku Otamatone requires a performance hall stadium in play."
+
         async def __call__(
             self, action_card: AVGECard, acting_card: AVGECard,
         ) -> None:
@@ -77,16 +83,18 @@ class MikuOtamatone(AVGEItemCard):
                 ), _id)
                 return
 
-            acting_card.add_listener(MikuOtamatone._ThisTurnEnergyDiscount(acting_card.owner, env))
+            active = env.get_player_active(acting_card.owner)
+            acting_card.add_listener(MikuOtamatone._ThisTurnEnergyDiscount(active, env))
+            acting_card.add_listener(MikuOtamatone._ThisTurnRetreatDiscount(active, env))
 
 
     class _ThisTurnEnergyDiscount(AVGEEventModifier):
         '''Same shape as Otamatone's identical -1 discount, independently
         implemented here with -2 and an active-character-only restriction.'''
 
-        def __init__(self, owner: User, env: AVGEEnvironment):
+        def __init__(self, active: AVGECharacterCard, env: AVGEEnvironment):
             super().__init__(AVGEEngineID(None, ActionTypes.NONCHAR, MikuOtamatone), env, EngineGroup.EXTERNAL_MODIFIERS_1)
-            self.owner = owner
+            self.active = active
             self.round_played = env.round
 
         def match(self, event: Event) -> bool:
@@ -104,14 +112,38 @@ class MikuOtamatone(AVGEItemCard):
                 return False
             if event.action not in (ActionTypes.ATK_1, ActionTypes.ATK_2):
                 return False
-            if event.cost <= 0:
-                return False
-            return event.target_card is self.env.get_player_active(self.owner)
+            return event.target_card is self.active and self.active.deck_type == DeckType.ACTIVE_CARD
 
         async def modify(self, event: Event) -> None:
             assert isinstance(event, PlayCharacterCard)
             assert not callable(event.cost)
-            event.cost = max(0, event.cost - 2)
+            event.cost -= 2
             await self.env.broadcast(BroadcastIO(
-                "Miku Otamatone: Active has +2 effective energy this turn.", default_timeout,
+                "Miku Otamatone reduces this character's attack cost by 2 this turn.", default_timeout,
             ))
+
+    class _ThisTurnRetreatDiscount(AVGEEventModifier):
+        def __init__(self, active: AVGECharacterCard, env: AVGEEnvironment):
+            super().__init__(AVGEEngineID(None, ActionTypes.NONCHAR, MikuOtamatone), env, EngineGroup.EXTERNAL_MODIFIERS_1)
+            self.active = active
+            self.round_played = env.round
+
+        def match(self, event: Event) -> bool:
+            if self.env.round > self.round_played:
+                self.cleanup()
+                return False
+            if self.env.round != self.round_played or not isinstance(event, TransferCard):
+                return False
+            if callable(event.card) or callable(event.deck_from) or callable(event.deck_to) or callable(event.cost):
+                return False
+            return (
+                event.id.calling_action == ActionTypes.PLAYER_CHOICE
+                and event.card is self.active
+                and event.deck_from.deck_type == DeckType.ACTIVE_CARD
+                and event.deck_to.deck_type == DeckType.BENCH
+            )
+
+        async def modify(self, event: Event) -> None:
+            assert isinstance(event, TransferCard)
+            assert not callable(event.cost)
+            event.cost -= 2
