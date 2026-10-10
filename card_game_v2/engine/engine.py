@@ -37,10 +37,6 @@ class Engine:
 
         self.terminate_flag : bool = False #When terminate_flag is set, the game engine will finish the current event before terminating.
 
-        # Called just after CORE act(), before a post-core listener can open a
-        # prompt. The packet may still roll back, so clients must resync on reject.
-        self.on_event_acted: Callable[[Event], Awaitable[None]] | None = None
-        self.on_event_committed: Callable[[Event], Awaitable[None]] | None = None
         self.on_packet_failed: Callable[[Packet], Awaitable[None]] | None = None
         # A game may need to ask for its next decision only after every packet
         # produced by the previous decision has finished. In particular, a main

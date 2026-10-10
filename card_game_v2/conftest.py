@@ -20,6 +20,8 @@ from __future__ import annotations
 import pytest
 
 from .engine.engine import Engine
+from .engine.event import IOEvent
+from .engine.record import HistoricalStatus
 
 _MAX_EVENTS_PER_FLUSH = 2000
 
@@ -29,22 +31,22 @@ def _cap_engine_flush_for_tests(monkeypatch):
     original_flush = Engine.flush
 
     async def capped_flush(self, new_chapter_condition):
-        previous_hook = self.on_event_committed
+        previous_add_record = self.history.add_record
         committed = 0
 
-        async def count_and_stop(event):
+        def count_and_stop(status, event):
             nonlocal committed
-            committed += 1
-            if committed > _MAX_EVENTS_PER_FLUSH:
-                self.terminate_flag = True
-            if previous_hook is not None:
-                await previous_hook(event)
+            previous_add_record(status, event)
+            if status == HistoricalStatus.PENDING and not isinstance(event, IOEvent):
+                committed += 1
+                if committed > _MAX_EVENTS_PER_FLUSH:
+                    self.terminate_flag = True
 
-        self.on_event_committed = count_and_stop
+        self.history.add_record = count_and_stop
         try:
             result = await original_flush(self, new_chapter_condition)
         finally:
-            self.on_event_committed = previous_hook
+            self.history.add_record = previous_add_record
 
         if committed > _MAX_EVENTS_PER_FLUSH:
             raise AssertionError(

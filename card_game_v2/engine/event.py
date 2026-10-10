@@ -116,11 +116,6 @@ class Packet:
                 await event.act()
                 event.requires_rollback = True
                 self._rollback_log.append(event)
-                # A post-core reactor may ask the player for a choice before this
-                # event reaches the commit hook. Publish the event's board change
-                # now so that the prompt opens over the current board.
-                if self._engine.on_event_acted is not None:
-                    await self._engine.on_event_acted(event)
             else:
                 # Step 1: Gather the required listeners for the required group
                 ordering: list[EventListener] = [
@@ -195,8 +190,6 @@ class Packet:
                     self.event_log.append(self.current_event)
                     self._engine.history.add_record(
                         HistoricalStatus.PENDING, self.current_event)
-                    if self._engine.on_event_committed is not None:
-                        await self._engine.on_event_committed(self.current_event)
                     queue = self._call_stack[-1]
                     for e in reversed(self._requested_event_pushes):  # type: ignore
                         queue.appendleft(e)

@@ -53,9 +53,9 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(active.cardID, hand_ids)
         self.assertEqual(len(hand_ids), INITIAL_HAND_SIZE)
 
-    async def test_wires_on_event_committed_to_a_real_broadcast(self):
+    async def test_catalog_event_broadcasts_after_setup(self):
         await perform_initial_setup(self.env)
-        self.assertIsNotNone(self.env.engine.on_event_committed)
+        self.assertTrue(self.env.event_updates_enabled)
         self.assertIsNotNone(self.env.engine.on_packet_failed)
 
         target = self.env.players[User.PLAYER_1].card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
@@ -69,6 +69,10 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(updates), 2)  # broadcast to both players
         self.assertEqual(updates[0]["type"], "event_update")
         self.assertEqual(updates[0]["payload"]["magnitude"], 15)
+
+    async def test_initial_deal_sends_no_event_updates(self):
+        await perform_initial_setup(self.env)
+        self.assertEqual(self.sent, [])
 
     async def test_board_update_precedes_post_core_reactor(self):
         await perform_initial_setup(self.env)

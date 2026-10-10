@@ -9,13 +9,14 @@ from ...avge_abstracts.AVGEEnvironment import EnergyToken
 from ...engine.event import Packet
 from ...core.EventCatalog import (
     AVGECardHPChangeEvent, AVGECardMaxHPChangeEvent, AVGECardTypeChange, AVGECardStatusChange,
-    AVGEEnergyTransfer, AVGEPlayerAttributeChange, ReorderDeck, PhasePickCard, Phase2, AtkPhase,
+    AVGEEnergyTransfer, AVGEPlayerAttributeChange, TransferCard, ReorderDeck, PhasePickCard, Phase2, AtkPhase,
     TurnEnd, Broadcast, GameEnd,
 )
 from ...core.AVGEIOManager import (
     HPChangeUpdate, MaxHPChangeUpdate, CardTypeChangeUpdate, StatusChangeUpdate,
     EnergyTransferUpdate, PlayerAttributeUpdate, CardMovedUpdate, DeckReorderedUpdate,
     CharacterActionUpdate, NonCharacterPlayUpdate, TurnEndUpdate, PhaseChangedUpdate, BroadcastIO,
+    Phase2IO, Phase2EnergyAttach,
 )
 from ...testing.helpers import (
     Dummy, Attacker, TestIO, core_listeners, put_into_play, bench, run_attack, play_stadium,
@@ -36,6 +37,16 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         self.active = await put_into_play(self.env, self.p1)
         self.benched = await bench(self.env, self.p1)
         self.opp_active = await put_into_play(self.env, self.p2)
+        self.sent_updates: list = []
+
+        async def record_update(update):
+            self.sent_updates.append(update)
+
+        self.env.broadcast = record_update
+        self.env.event_updates_enabled = True
+
+    def assert_broadcast_once(self, update) -> None:
+        self.assertEqual(sum(sent == update for sent in self.sent_updates), 1)
 
     async def _flush_single_event(self, event) -> None:
         '''For non-cascading events (no follow-up packets pushed by their own act()) - a plain
@@ -68,6 +79,7 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update.original_hp, self.opp_active.hp + 20)
         self.assertEqual(update.final_change, self.opp_active.hp)
         self.assertFalse(update.is_crit)
+        self.assert_broadcast_once(update)
 
     async def test_max_hp_change_update(self):
         event = AVGECardMaxHPChangeEvent(
@@ -80,6 +92,7 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(update, MaxHPChangeUpdate)
         self.assertEqual(update.original_max_hp, starting_max)
         self.assertEqual(update.final_max_hp, starting_max + 10)
+        self.assert_broadcast_once(update)
 
     async def test_card_type_change_update(self):
         event = AVGECardTypeChange(AVGEEngineID(None, ActionTypes.ENV, None), self.active, CardType.BRASS, self.env)
@@ -89,6 +102,7 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(update, CardTypeChangeUpdate)
         self.assertEqual(update.original_type, original)
         self.assertEqual(update.new_type, CardType.BRASS)
+        self.assert_broadcast_once(update)
 
     async def test_status_change_update(self):
         event = AVGECardStatusChange(
@@ -102,6 +116,7 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update.status, StatusEffect.MAID)
         self.assertEqual(update.change, AVGEStatusModifier.ADD)
         self.assertTrue(update.made_modification)
+        self.assert_broadcast_once(update)
 
     async def test_energy_transfer_update(self):
         self.active.energy_tokens.append(EnergyToken("e1"))
@@ -111,6 +126,15 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(update, EnergyTransferUpdate)
         self.assertIs(update.token_from, self.active)
         self.assertIs(update.token_to, self.benched)
+        self.assert_broadcast_once(update)
+
+    async def test_empty_energy_transfer_still_broadcasts_when_act_runs(self):
+        event = AVGEEnergyTransfer(
+            AVGEEngineID(None, ActionTypes.ENV, None), self.benched, self.active, self.env,
+        )
+        await event.act()
+        self.assertFalse(event.did_transfer)
+        self.assert_broadcast_once(event_to_update_io(event))
 
     async def test_player_attribute_update(self):
         event = AVGEPlayerAttributeChange(
@@ -122,21 +146,33 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(update, PlayerAttributeUpdate)
         self.assertIs(update.player, self.p1)
         self.assertEqual(update.new_value, 1)
+        self.assert_broadcast_once(update)
 
     async def test_card_moved_update(self):
-        captured: list = []
-
-        async def record(event):
-            captured.append(event)
-
-        self.env.engine.on_event_committed = record
         deck_card = self.p1.card_piles[DeckType.DECK].cards_holding[0]
         moved = await bench(self.env, self.p1, deck_card)
-        transfer_events = [e for e in captured if type(e).__name__ == "TransferCard" and getattr(e, "card", None) is moved]
+        transfer_events = [
+            e for chapter in self.env.engine.history.records for _, e in chapter
+            if type(e).__name__ == "TransferCard" and getattr(e, "card", None) is moved
+        ]
         self.assertEqual(len(transfer_events), 1)
         update = event_to_update_io(transfer_events[0])
         assert isinstance(update, CardMovedUpdate)
         self.assertIs(update.card, moved)
+        self.assert_broadcast_once(update)
+
+    async def test_nested_reset_broadcasts_before_outer_transfer(self):
+        self.benched.hp -= 20
+        hand = self.p1.card_piles[DeckType.HAND]
+        event = TransferCard(
+            AVGEEngineID(None, ActionTypes.ENV, None), self.benched,
+            self.p1.card_piles[DeckType.BENCH], hand, self.env,
+        )
+        await self._flush_single_event(event)
+        self.assertEqual(
+            [type(update) for update in self.sent_updates],
+            [HPChangeUpdate, CardMovedUpdate],
+        )
 
     async def test_deck_reordered_update(self):
         deck = self.p1.card_piles[DeckType.DECK]
@@ -147,39 +183,36 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(update, DeckReorderedUpdate)
         self.assertIs(update.deck, deck)
         self.assertEqual(update.new_order, new_order)
+        self.assert_broadcast_once(update)
 
     async def test_character_action_update(self):
         # Move the Attacker into active so it can attack.
         swapped = await self._swap_attacker_into_active()
-        captured: list = []
-
-        async def record(event):
-            captured.append(event)
-
-        self.env.engine.on_event_committed = record
         await run_attack(self.env, swapped, ActionTypes.ATK_1)
-        play_events = [e for e in captured if type(e).__name__ == "PlayCharacterCard"]
+        play_events = [
+            e for chapter in self.env.engine.history.records for _, e in chapter
+            if type(e).__name__ == "PlayCharacterCard"
+        ]
         self.assertEqual(len(play_events), 1)
         update = event_to_update_io(play_events[0])
         assert isinstance(update, CharacterActionUpdate)
         self.assertIs(update.target_card, swapped)
         self.assertEqual(update.action, ActionTypes.ATK_1)
+        self.assert_broadcast_once(update)
 
     async def test_non_character_play_update(self):
-        captured: list = []
-
-        async def record(event):
-            captured.append(event)
-
-        self.env.engine.on_event_committed = record
         stadium = RedRoom("rr", self.env, User.PLAYER_1, DeckType.HAND)
         self.p1.card_piles[DeckType.HAND].cards_holding.append(stadium)
         await play_stadium(self.env, self.p1, stadium)
-        play_events = [e for e in captured if type(e).__name__ == "PlayNonCharacterCard"]
+        play_events = [
+            e for chapter in self.env.engine.history.records for _, e in chapter
+            if type(e).__name__ == "PlayNonCharacterCard"
+        ]
         self.assertEqual(len(play_events), 1)
         update = event_to_update_io(play_events[0])
         assert isinstance(update, NonCharacterPlayUpdate)
         self.assertIs(update.target_card, stadium)
+        self.assert_broadcast_once(update)
 
     async def test_turn_end_update(self):
         event = TurnEnd(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
@@ -190,12 +223,14 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(update, TurnEndUpdate)
         self.assertEqual(update.new_turn, self.env.turn)
         self.assertEqual(update.new_round, self.env.round)
+        self.assert_broadcast_once(update)
 
     async def test_phase_pick_card_update(self):
         event = PhasePickCard(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
         await self._flush_single_event_no_cascade(event)
         update = event_to_update_io(event)
         self.assertEqual(update, PhaseChangedUpdate(phase="draw"))
+        self.assert_broadcast_once(update)
 
     async def test_phase2_update(self):
         event = Phase2(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
@@ -209,12 +244,33 @@ class EventToUpdateIoTests(unittest.IsolatedAsyncioTestCase):
         await self._flush_single_event_no_cascade(event)
         self.assertIsNone(event_to_update_io(event))
 
+    async def test_phase2_stays_main_and_broadcasts_after_prompt(self):
+        send = self.env.io_manager.send
+        self.pending_phase_answered = False
+
+        async def answer_main(user, io):
+            if isinstance(io, Phase2IO):
+                self.assertEqual(self.sent_updates, [])
+                self.pending_phase_answered = True
+                self.env.io_manager.pending[user].future_obj.set_result(
+                    Phase2EnergyAttach(self.env, self.active),
+                )
+                return
+            await send(user, io)
+
+        self.env.io_manager.send = answer_main
+        event = Phase2(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
+        await self._flush_single_event_no_cascade(event)
+        self.assertTrue(self.pending_phase_answered)
+        self.assert_broadcast_once(PhaseChangedUpdate(phase="main"))
+
     async def test_atk_phase_update(self):
         self.env.round = 1  # AtkPhase only makes sense past turn 0
         event = AtkPhase(AVGEEngineID(None, ActionTypes.ENV, None), self.env)
         await self._flush_single_event_no_cascade(event)
         update = event_to_update_io(event)
         self.assertEqual(update, PhaseChangedUpdate(phase="attack"))
+        self.assert_broadcast_once(update)
 
     async def test_broadcast_event_returns_none(self):
         event = Broadcast(AVGEEngineID(None, ActionTypes.ENV, None), self.env, BroadcastIO("hi", None))

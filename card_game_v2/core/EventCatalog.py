@@ -4,13 +4,28 @@ from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
 from ..avge_abstracts.AVGEPlayer import AVGEPlayer
 from collections.abc import Callable
 from ..engine.event import Event, Generator, Packet
+from ..engine.engine_io import IOType
 from ..constants import *
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..avge_abstracts.AVGEDeck import *
 from .AVGEIOManager import *
 
 
-class Broadcast(Event):
+class AVGEEvent(Event):
+    '''Catalog events build their own client update after act() has resolved its fields.'''
+    env: AVGEEnvironment
+
+    def to_update_io(self) -> IOType[None] | None:
+        return None
+
+    async def publish_update(self) -> None:
+        if self.env.event_updates_enabled:
+            update = self.to_update_io()
+            if update is not None:
+                await self.env.broadcast(update)
+
+
+class Broadcast(AVGEEvent):
     '''An event that broadcasts a list of IO events to everyone. Waits on all futures before continuing'''
 
     def __init__(self,
@@ -31,7 +46,7 @@ class Broadcast(Event):
         return
 
 
-class AVGECardHPChangeEvent(Event):
+class AVGECardHPChangeEvent(AVGEEvent):
     '''An event that causes a card's HP to change'''
 
     def __init__(self,
@@ -81,6 +96,16 @@ class AVGECardHPChangeEvent(Event):
         self.original_hp = self.target_card.hp
         self.target_card.hp = self.current_proposed_hp()
         self.final_change = self.target_card.hp
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.target_card) and not callable(self.magnitude)
+        assert not callable(self.modifier_type) and not callable(self.change_type)
+        assert self.original_hp is not None and self.final_change is not None
+        return HPChangeUpdate(
+            self.target_card, self.magnitude, self.modifier_type, self.change_type,
+            self.original_hp, self.final_change, self.is_crit,
+        )
 
     def rollback(self) -> None:
         assert not callable(self.target_card)
@@ -88,7 +113,7 @@ class AVGECardHPChangeEvent(Event):
         self.target_card.hp = self.original_hp
 
 
-class AVGECardMaxHPChangeEvent(Event):
+class AVGECardMaxHPChangeEvent(AVGEEvent):
     '''An event that causes a card's MAX HP to change.'''
 
     def __init__(self,
@@ -142,6 +167,17 @@ class AVGECardMaxHPChangeEvent(Event):
         self.target_card.hp = min(self.target_card.max_hp, self.target_card.hp)
         self.final_hp = self.target_card.hp
         self.final_max_hp = self.target_card.max_hp
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.target_card) and not callable(self.magnitude)
+        assert not callable(self.modifier_type) and not callable(self.change_type)
+        assert self.original_hp is not None and self.original_max_hp is not None
+        assert self.final_hp is not None and self.final_max_hp is not None
+        return MaxHPChangeUpdate(
+            self.target_card, self.magnitude, self.modifier_type, self.change_type,
+            self.original_hp, self.original_max_hp, self.final_hp, self.final_max_hp,
+        )
 
     def rollback(self) -> None:
         assert not callable(self.target_card)
@@ -151,7 +187,7 @@ class AVGECardMaxHPChangeEvent(Event):
         self.target_card.hp = self.original_hp
 
 
-class AVGECardTypeChange(Event):
+class AVGECardTypeChange(AVGEEvent):
     '''An event that causes a card's type to change'''
 
     def __init__(self,
@@ -173,6 +209,12 @@ class AVGECardTypeChange(Event):
         assert not callable(self.new_type)
         self.original_type = self.target.card_type
         self.target.card_type = self.new_type
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.target) and not callable(self.new_type)
+        assert self.original_type is not None
+        return CardTypeChangeUpdate(self.target, self.original_type, self.new_type)
 
     def rollback(self) -> None:
         assert not callable(self.target)
@@ -180,7 +222,7 @@ class AVGECardTypeChange(Event):
         self.target.card_type = self.original_type
 
 
-class AVGECardStatusChange(Event):
+class AVGECardStatusChange(AVGEEvent):
     '''An event that causes a card's status to change'''
 
     def __init__(self,
@@ -219,6 +261,12 @@ class AVGECardStatusChange(Event):
         elif (self.change == AVGEStatusModifier.REMOVE and self.giver in self.target.statuses_attached[self.status]):
             self.target.statuses_attached[self.status].remove(self.giver)
             self._made_modification = True
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.target) and not callable(self.giver)
+        assert not callable(self.status) and not callable(self.change)
+        return StatusChangeUpdate(self.target, self.giver, self.status, self.change, self.made_modification)
 
     def rollback(self) -> None:
         assert not callable(self.target)
@@ -231,7 +279,7 @@ class AVGECardStatusChange(Event):
             self.target.statuses_attached[self.status].add(self.giver)
 
 
-class AVGEEnergyTransfer(Event):
+class AVGEEnergyTransfer(AVGEEvent):
     '''An event that transfers an arbitrary energy token from one thing to another. Will not do anything if the thing being transferred from has no tokens'''
 
     def __init__(self,
@@ -256,10 +304,14 @@ class AVGEEnergyTransfer(Event):
         '''Defines what the event does'''
         assert not callable(self.token_from)
         assert not callable(self.token_to)
-        if (len(self.token_from.energy_tokens) == 0):
-            return
-        self._transferred_token = self.token_from.energy_tokens.pop(0)
-        self.token_to.energy_tokens.append(self._transferred_token)
+        if self.token_from.energy_tokens:
+            self._transferred_token = self.token_from.energy_tokens.pop(0)
+            self.token_to.energy_tokens.append(self._transferred_token)
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.token_from) and not callable(self.token_to)
+        return EnergyTransferUpdate(self.token_from, self.token_to)
 
     def rollback(self) -> None:
         assert not callable(self.token_from)
@@ -269,7 +321,7 @@ class AVGEEnergyTransfer(Event):
             self.token_from.energy_tokens.append(self._transferred_token)
 
 
-class AVGEPlayerAttributeChange(Event):
+class AVGEPlayerAttributeChange(AVGEEvent):
     '''An event that changes a player attribute'''
 
     def __init__(self,
@@ -301,6 +353,15 @@ class AVGEPlayerAttributeChange(Event):
             self.player.attributes[self.attribute] += self.magnitude
         elif (self.modifier_type == AVGEAttributeModifier.SUBSTRACTIVE):
             self.player.attributes[self.attribute] -= self.magnitude
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.player) and not callable(self.attribute)
+        assert not callable(self.modifier_type) and not callable(self.magnitude)
+        return PlayerAttributeUpdate(
+            self.player, self.attribute, self.modifier_type, self.magnitude,
+            self.player.attributes[self.attribute],
+        )
 
     def rollback(self) -> None:
         assert self._original_value is not None
@@ -309,7 +370,7 @@ class AVGEPlayerAttributeChange(Event):
         self.player.attributes[self.attribute] = self._original_value
 
 
-class TransferCard(Event):
+class TransferCard(AVGEEvent):
     '''An event that transfers a card from X to Y'''
 
     def __init__(self,
@@ -459,6 +520,11 @@ class TransferCard(Event):
             assert isinstance(self.card, AVGEToolCard)
             self.card.parent_card = None
         self.card.deck_type = self.deck_to.deck_type
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.card) and not callable(self.deck_from) and not callable(self.deck_to)
+        return CardMovedUpdate(self.card, self.deck_from, self.deck_to)
 
     def rollback(self):
         assert not callable(self.card)
@@ -474,7 +540,7 @@ class TransferCard(Event):
         self.card.deck_type = self.deck_from.deck_type
 
 
-class ReorderDeck(Event):
+class ReorderDeck(AVGEEvent):
     '''An event that reorders a deck with a new reordering'''
 
     def __init__(self,
@@ -496,6 +562,11 @@ class ReorderDeck(Event):
             [r in self.deck.cards_holding for r in self.reordering])
         self._old_order = list(self.deck.cards_holding)
         self.deck.cards_holding = self.reordering
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.deck) and not callable(self.reordering)
+        return DeckReorderedUpdate(self.deck, self.reordering)
 
     def rollback(self):
         assert not callable(self.deck)
@@ -503,7 +574,7 @@ class ReorderDeck(Event):
         self.deck.cards_holding = self._old_order
 
 
-class PlayCharacterCard(Event):
+class PlayCharacterCard(AVGEEvent):
     def __init__(self,
                  id: AVGEEngineID,
                  target_card: AVGECharacterCard | Callable[[], AVGECharacterCard],
@@ -523,15 +594,20 @@ class PlayCharacterCard(Event):
         acting_card = self.target_card if not isinstance(
             self.id.calling_card, AVGECharacterCard) else self.id.calling_card
         action = self.target_card.actions.get(self.action)
-        if action is None:
-            return
-        await action(self.target_card, acting_card)
+        if action is not None:
+            await action(self.target_card, acting_card)
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.target_card) and not callable(self.action) and not callable(self.cost)
+        calling_card = self.id.calling_card if isinstance(self.id.calling_card, AVGECharacterCard) else None
+        return CharacterActionUpdate(self.target_card, self.action, self.cost, calling_card)
 
     def rollback(self):
         return
 
 
-class PlayNonCharacterCard(Event):
+class PlayNonCharacterCard(AVGEEvent):
     def __init__(self,
                  id: AVGEEngineID,
                  target_card: AVGENonCharacterCard | Callable[[], AVGENonCharacterCard],
@@ -547,15 +623,19 @@ class PlayNonCharacterCard(Event):
         acting_card = self.target_card if not isinstance(
             self.id.calling_card, AVGECard) else self.id.calling_card
         action = self.target_card.actions.get(ActionTypes.NONCHAR)
-        if action is None:
-            return
-        await action(self.target_card, acting_card)
+        if action is not None:
+            await action(self.target_card, acting_card)
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        assert not callable(self.target_card) and not callable(self.action)
+        return NonCharacterPlayUpdate(self.target_card, self.action)
 
     def rollback(self):
         return
 
 
-class PhasePickCard(Event):
+class PhasePickCard(AVGEEvent):
     def __init__(self, id: AVGEEngineID, env: AVGEEnvironment):
         super().__init__(id=id, env=env)
         self.id = id
@@ -584,12 +664,16 @@ class PhasePickCard(Event):
         self.env.append_packet(Packet(
             AVGEEngineID(None, ActionTypes.ENV, None),
             [draw_top_card]))
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        return PhaseChangedUpdate(phase="draw")
 
     def rollback(self):
         return
 
 
-class Phase2(Event):
+class Phase2(AVGEEvent):
     def __init__(self, id: AVGEEngineID, env: AVGEEnvironment):
         super().__init__(id=id, env=env)
         self.id = id
@@ -765,12 +849,17 @@ class Phase2(Event):
                 ))
             case _:
                 raise Exception("Bad Phase 2 Event")
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None] | None:
+        # The prompt has completed. AtkPhase announces attack separately.
+        return PhaseChangedUpdate(phase="main") if self.env.phase == "main" else None
 
     def rollback(self):
         return
 
 
-class AtkPhase(Event):
+class AtkPhase(AVGEEvent):
     def __init__(self, id: AVGEEngineID, env: AVGEEnvironment):
         super().__init__(id=id, env=env)
         self.id = id
@@ -835,6 +924,7 @@ class AtkPhase(Event):
             active_card = self.env.get_player_active(self.env.turn)
             action = active_card.actions.get(res)
             if not isinstance(action, Attack):
+                await self.publish_update()
                 return
             base_packet += [
                 PlayCharacterCard(
@@ -853,12 +943,16 @@ class AtkPhase(Event):
             _id,
             base_packet))
         self.env.append_packet(Packet(_id, [_attack_switch]))
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        return PhaseChangedUpdate(phase="attack")
 
     def rollback(self):
         return
 
 
-class TurnEnd(Event):
+class TurnEnd(AVGEEvent):
     def __init__(self, id: AVGEEngineID, env: AVGEEnvironment):
         super().__init__(id=id, env=env)
         self.id = id
@@ -913,12 +1007,16 @@ class TurnEnd(Event):
                 )
             ]))
         self.env.round += 1
+        await self.publish_update()
+
+    def to_update_io(self) -> IOType[None]:
+        return TurnEndUpdate(self.env.turn, self.env.round)
 
     def rollback(self):
         raise Exception("A Turn End event should never be rolled back")
 
 
-class GameEnd(Event):
+class GameEnd(AVGEEvent):
     def __init__(self, id: AVGEEngineID, winner: User, reason: WinReasons, env: AVGEEnvironment):
         super().__init__(id=id, winner=winner, reason=reason, env=env)
         self.id = id

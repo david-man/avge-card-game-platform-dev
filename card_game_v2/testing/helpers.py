@@ -14,6 +14,7 @@ from ..avge_abstracts.AVGECard import AVGECharacterCard, CardType, AVGEStadiumCa
 from ..constants import User, ActionTypes, StatusEffect, AVGEStatusModifier, AVGEPlayerAttribute, AVGEAttributeModifier
 from ..avge_abstracts.AVGEID import AVGEEngineID
 from ..engine.event import Packet
+from ..engine.record import HistoricalStatus
 from ..core.EventCatalog import (
     TransferCard, PlayCharacterCard, AVGECardStatusChange, PhasePickCard, PlayNonCharacterCard,
     AVGEPlayerAttributeChange,
@@ -412,22 +413,21 @@ async def phase_pick_card_limit(env, n=1):
     resolves within the same n=1 turn; see test_tools.py's
     test_heads_draws_an_extra_card_resolves_within_the_same_turn.'''
     seen = 0
-    previous_hook = env.engine.on_event_committed
+    previous_add_record = env.engine.history.add_record
 
-    async def stop_after_nth_turn(event):
+    def stop_after_nth_turn(status, event):
         nonlocal seen
-        if isinstance(event, PhasePickCard):
+        previous_add_record(status, event)
+        if status == HistoricalStatus.PENDING and isinstance(event, PhasePickCard):
             seen += 1
             if seen > n:
                 env.engine.terminate_flag = True
-        if previous_hook is not None:
-            await previous_hook(event)
 
-    env.engine.on_event_committed = stop_after_nth_turn
+    env.engine.history.add_record = stop_after_nth_turn
     try:
         yield
     finally:
-        env.engine.on_event_committed = previous_hook
+        env.engine.history.add_record = previous_add_record
         env.engine.terminate_flag = False
 
 

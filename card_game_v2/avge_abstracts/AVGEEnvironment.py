@@ -63,6 +63,8 @@ class AVGEEnvironment:
         self.engine: Engine = Engine(io_manager, self.cache)
         self.engine.listeners = [listener(self) for listener in core_listeners] # type: ignore
         self.engine.on_idle = self._next_main_phase_packet
+        # Initial transfers are already represented by game_start's snapshot.
+        self.event_updates_enabled = False
         self.stadium_cardholder : AVGEDeck = AVGEDeck(None, DeckType.STADIUM, []) #type: ignore
 
         #sets up turn

@@ -13,7 +13,7 @@ from . import event_broadcasting
 if TYPE_CHECKING:
     from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
     from ..avge_abstracts.AVGEPlayer import AVGEPlayer
-    from ..engine.event import Event, Generator
+    from ..engine.event import Generator
     from ..engine.event import Packet as EnginePacket
 
 
@@ -58,23 +58,6 @@ def _wire_event_broadcast_hooks(
     env: AVGEEnvironment,
     extra_on_packet_failed: Callable[[EnginePacket], Awaitable[None]] | None,
 ) -> None:
-    async def handle_event_acted(event: Event) -> None:
-        # Post-core listeners may block on an order/selection prompt. Send the
-        # event's board update before that prompt so both players see the draw,
-        # hit, KO, or play that caused it. Packet rejection still sends an
-        # authoritative snapshot through ActionRejectedUpdate.
-        update = event_broadcasting.event_to_update_io(event)
-        if update is not None:
-            await env.broadcast(update)
-            event.scrachboard["_board_update_sent"] = True
-
-    async def handle_event_committed(event: Event) -> None:
-        if event.scrachboard.get("_board_update_sent"):
-            return
-        update = event_broadcasting.event_to_update_io(event)
-        if update is not None:
-            await env.broadcast(update)
-
     async def handle_packet_failed(packet: EnginePacket) -> None:
         # extra_on_packet_failed (GameSession's own lifecycle logging) is composed in here, at
         # the single place on_packet_failed gets assigned, rather than as a second mutation of
@@ -85,9 +68,8 @@ def _wire_event_broadcast_hooks(
         if extra_on_packet_failed is not None:
             await extra_on_packet_failed(packet)
 
-    env.engine.on_event_acted = handle_event_acted
-    env.engine.on_event_committed = handle_event_committed
     env.engine.on_packet_failed = handle_packet_failed
+    env.event_updates_enabled = True
 
 
 async def perform_initial_setup(
@@ -95,8 +77,8 @@ async def perform_initial_setup(
     extra_on_packet_failed: Callable[[EnginePacket], Awaitable[None]] | None = None,
 ) -> None:
     '''Deals each player's opening hand and starting active card (the engine has no built-in
-    equivalent - this must run before the first PhasePickCard is ever seeded), and wires
-    env.engine.on_event_committed/on_packet_failed to broadcast the per-event update IOTypes.
+    equivalent - this must run before the first PhasePickCard is ever seeded), then enables
+    catalog event updates and wires on_packet_failed for rejection resync.
     `extra_on_packet_failed`, if given, runs after the broadcast on every packet rejection - the
     caller's hook into the same event, composed in directly rather than wrapped on afterward.'''
     for player in env.players.values():

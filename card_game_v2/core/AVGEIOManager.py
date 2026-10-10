@@ -129,8 +129,8 @@ class CoinflipData(UserIOType[int]):  # heads = 1, tails = 0
     header_msg: str
 
 
-# Per-event update IO types (server -> client, broadcast via env.broadcast() from the engine's
-# on_event_committed/on_packet_failed hooks - see engine/engine.py and engine/event.py). One
+# Per-event update IO types (server -> client, broadcast by catalog events through
+# env.broadcast()). One
 # dataclass per player-visible Event subclass in core/EventCatalog.py, mirroring that event's own
 # constructor fields plus whatever it computes at runtime (e.g. original_hp, final_change).
 
