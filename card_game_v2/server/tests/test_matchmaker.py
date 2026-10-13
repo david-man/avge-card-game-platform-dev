@@ -3,7 +3,9 @@ import unittest
 from ...avge_abstracts.AVGECard import AVGECard
 from ...avge_abstracts.AVGEDeck import DeckType
 from ...constants import CARDS_PER_DECK, User
-from ...testing.helpers import Attacker, Dummy
+from ...catalog.characters.guitar.BenCherekIII import BenCherekIII
+from ...catalog.characters.piano.JoshuaKou import JoshuaKou
+from ...testing.helpers import Attacker, Dummy, DummySupporter
 from ..matchmaker import Matchmaker
 
 
@@ -46,6 +48,28 @@ class MatchmakerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(session.task)
         self.assertEqual(session.seats[User.PLAYER_1].account_id, "acct-1")
 
+    async def test_blocked_only_deck_cannot_enter_or_disrupt_the_queue(self):
+        blocked_decks = (
+            [BenCherekIII] + [DummySupporter] * 19,
+            [JoshuaKou] + [DummySupporter] * 19,
+            [BenCherekIII, JoshuaKou] + [DummySupporter] * 18,
+        )
+        for index, deck in enumerate(blocked_decks):
+            with self.subTest(deck=index):
+                with self.assertRaises(ValueError):
+                    await self.mm.join(f"blocked-{index}", deck)
+                self.assertIsNone(self.mm._waiting)
+                self.assertIsNone(self.mm.find_active_game(f"blocked-{index}"))
+                self.assertEqual(self.mm.sessions, {})
+        waiting, _ = await self._join("good")
+        for index, deck in enumerate(blocked_decks):
+            with self.subTest(deck=index):
+                with self.assertRaises(ValueError):
+                    await self.mm.join(f"blocked-{index}", deck)
+                self.assertIs(self.mm._waiting, waiting)
+                self.assertIsNone(self.mm.find_active_game(f"blocked-{index}"))
+                self.assertEqual(list(self.mm.sessions), [waiting.id])
+
     async def test_second_join_pairs_into_the_same_session_as_player2_and_prepares_it(self):
         session_a, user_a = await self._join("acct-1")
         session_b, user_b = await self._join("acct-2")
@@ -53,14 +77,17 @@ class MatchmakerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_a, User.PLAYER_1)
         self.assertEqual(user_b, User.PLAYER_2)
         self.assertEqual(session_b.seats[User.PLAYER_2].account_id, "acct-2")
-        # join() only prepares (deals hands) - it deliberately does NOT spawn the running task,
-        # so the caller (ws_routes.py) can deliver game_start to both clients first via
-        # session.begin_running() before any event traffic can be produced.
+        # Pairing deals opening options but gameplay must wait for both setup confirmations.
         self.assertIsNone(session_b.task)
+        self.assertEqual(session_b.stage, "setup")
         for user in (User.PLAYER_1, User.PLAYER_2):
             self.assertGreater(len(session_b.env.players[user].card_piles[DeckType.HAND]), 0)
 
         session_b.begin_running()
+        self.assertIsNone(session_b.task)
+        for user in User:
+            active = session_b.env.players[user].card_piles[DeckType.ACTIVE_CARD][0]
+            self.assertIsNone(await session_b.submit_setup(user, active.cardID, []))
         self.assertIsNotNone(session_b.task)
 
     async def test_third_join_starts_a_brand_new_session(self):

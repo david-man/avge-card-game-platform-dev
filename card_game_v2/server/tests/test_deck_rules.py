@@ -120,13 +120,15 @@ class ValidateDeckCardsTests(unittest.TestCase):
             deck_rules.validate_deck_cards(deck)
         self.assertEqual(ctx.exception.code, "no_character_card")
 
-    def test_deck_whose_only_characters_cannot_start_is_rejected(self):
-        deck = ["BenCherekIII"] + _unique_items(CARDS_PER_DECK - 1, exclude=set())
-        with self.assertRaises(deck_rules.DeckValidationError) as ctx:
-            deck_rules.validate_deck_cards(deck)
-        self.assertEqual(ctx.exception.code, "no_starter_character")
+    def test_deck_whose_only_character_is_blocked_from_setup_is_rejected(self):
+        for blocked in (["BenCherekIII"], ["JoshuaKou"], ["BenCherekIII", "JoshuaKou"]):
+            with self.subTest(characters=blocked):
+                deck = blocked + _unique_items(CARDS_PER_DECK - len(blocked), exclude=set())
+                with self.assertRaises(deck_rules.DeckValidationError) as ctx:
+                    deck_rules.validate_deck_cards(deck)
+                self.assertEqual(ctx.exception.code, "no_starter_character")
 
-    def test_a_restricted_character_is_fine_alongside_one_that_can_start(self):
+    def test_ben_is_fine_alongside_another_character(self):
         deck = ["BenCherekIII", "AshleyToby"] + _unique_items(CARDS_PER_DECK - 2, exclude=set())
         self.assertEqual(sorted(deck_rules.validate_deck_cards(deck)), sorted(deck))
 

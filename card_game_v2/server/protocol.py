@@ -40,7 +40,13 @@ class IoResponseMessage(BaseModel):
     payload: dict[str, Any]
 
 
-ClientMessage = LoginMessage | JoinMessage | LeaveMessage | ConcedeMessage | IoResponseMessage
+class SetupDoneMessage(BaseModel):
+    type: Literal["setup_done"] = "setup_done"
+    active_card_id: str
+    bench_card_ids: list[str]
+
+
+ClientMessage = LoginMessage | JoinMessage | LeaveMessage | ConcedeMessage | IoResponseMessage | SetupDoneMessage
 
 _CLIENT_MESSAGE_TYPES: dict[str, type[ClientMessage]] = {
     "login": LoginMessage,
@@ -48,6 +54,7 @@ _CLIENT_MESSAGE_TYPES: dict[str, type[ClientMessage]] = {
     "leave": LeaveMessage,
     "concede": ConcedeMessage,
     "io_response": IoResponseMessage,
+    "setup_done": SetupDoneMessage,
 }
 
 
@@ -100,6 +107,21 @@ class JoinedMessage(BaseModel):
 class GameStartMessage(BaseModel):
     type: Literal["game_start"] = "game_start"
     snapshot: dict[str, Any]
+
+
+class SetupStartMessage(BaseModel):
+    type: Literal["setup_start"] = "setup_start"
+    snapshot: dict[str, Any]
+    blocked_card_classes: list[str]
+    self_ready: bool
+    opponent_ready: bool
+    submitted_setup: dict[str, Any] | None = None
+
+
+class SetupStateMessage(BaseModel):
+    type: Literal["setup_state"] = "setup_state"
+    self_ready: bool
+    opponent_ready: bool
 
 
 class IoRequestMessage(BaseModel):

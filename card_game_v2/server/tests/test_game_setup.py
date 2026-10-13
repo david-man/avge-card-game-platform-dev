@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -6,6 +7,8 @@ from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...catalog import registry
 from ...catalog.characters.guitar.BenCherekIII import BenCherekIII
+from ...catalog.characters.piano.JoshuaKou import JoshuaKou
+from ...catalog.characters.strings.YuelinHu import YuelinHu
 from ...catalog.items.AVGEBirb import AVGEBirb
 from ...constants import User, ActionTypes, AVGEPlayerAttribute, EngineGroup, INITIAL_HAND_SIZE, NO_STARTING_ACTIVE_CARDS
 from ...core.EventCatalog import AVGECardHPChangeEvent, AVGEEnergyTransfer
@@ -26,6 +29,8 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
 
         async def send_message(user, message):
             self.sent.append((user, message))
+            if message.get("io_type") == "Notification":
+                asyncio.create_task(self.io.receive(user, {}))
 
         async def on_failure(user):
             pass
@@ -124,8 +129,16 @@ class PerformInitialSetupTests(unittest.IsolatedAsyncioTestCase):
         self.env.push_packet(Packet(_id, [AVGEEnergyTransfer(_id, self.env, active, self.env)]))
         await self.env.engine.flush(lambda: False)
 
+        notices = [(user, m) for user, m in self.sent if m.get("io_type") == "Notification"]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0][0], User.PLAYER_1)
+        self.assertEqual(notices[0][1]["payload"]["message"], "You've already attached energy this turn.")
         rejected = [m for _, m in self.sent if m.get("io_type") == "ActionRejectedUpdate"]
         self.assertEqual(len(rejected), 2)  # broadcast to both players
+        self.assertLess(
+            next(i for i, (_, m) in enumerate(self.sent) if m.get("io_type") == "Notification"),
+            next(i for i, (_, m) in enumerate(self.sent) if m.get("io_type") == "ActionRejectedUpdate"),
+        )
         payload = rejected[0]["payload"]
         self.assertEqual(payload["reason"], "You've already attached energy this turn.")
         self.assertEqual(payload["snapshot"], serialization.snapshot(self.env))
@@ -232,11 +245,25 @@ class MixedDeckDealingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(active), 1)
         self.assertIsInstance(active[0], Dummy)
 
-    async def test_deck_whose_only_characters_are_excluded_raises_a_clear_error(self):
-        deck = [BenCherekIII] + [DummySupporter] * (CARDS_PER_DECK - 1)
+    async def test_blocked_characters_remain_in_deck_instead_of_opening_hand(self):
+        deck = [BenCherekIII, JoshuaKou, Dummy] + [DummySupporter] * (CARDS_PER_DECK - 3)
         env = self._make_env(deck)
-        with self.assertRaises(ValueError):
-            await perform_initial_setup(env)
+        await perform_initial_setup(env)
+        player = env.players[User.PLAYER_1]
+        self.assertIsInstance(player.card_piles[DeckType.ACTIVE_CARD][0], Dummy)
+        self.assertEqual(len(player.card_piles[DeckType.HAND]), INITIAL_HAND_SIZE)
+        self.assertFalse(any(isinstance(card, (BenCherekIII, JoshuaKou))
+                             for card in player.card_piles[DeckType.HAND]))
+        self.assertTrue(any(isinstance(card, BenCherekIII) for card in player.card_piles[DeckType.DECK]))
+        self.assertTrue(any(isinstance(card, JoshuaKou) for card in player.card_piles[DeckType.DECK]))
+
+    async def test_deck_whose_only_characters_are_excluded_raises_a_clear_error(self):
+        for blocked in (BenCherekIII, JoshuaKou):
+            with self.subTest(character=blocked.__name__):
+                deck = [blocked] + [DummySupporter] * (CARDS_PER_DECK - 1)
+                env = self._make_env(deck)
+                with self.assertRaises(ValueError):
+                    await perform_initial_setup(env)
 
 
 class _PromptRecordingIO(TestIO):
@@ -278,3 +305,8 @@ class StartingActivePromptSweepTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(character=entry.class_name, player=as_player.name):
                     prompts = await self._prompts_for_starter(entry.card_class, as_player=as_player)
                     self.assertEqual(prompts, [])
+
+    async def test_yuelin_starts_with_birbs_without_an_opening_prompt(self):
+        for as_player in User:
+            with self.subTest(player=as_player.name):
+                self.assertEqual(await self._prompts_for_starter(YuelinHu, as_player=as_player), [])

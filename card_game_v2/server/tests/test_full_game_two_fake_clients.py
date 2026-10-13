@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from ..app import create_app
-from ._ws_test_utils import QueuedWebSocket, drain_for_type, first_io_request, login_with_deck
+from ._ws_test_utils import QueuedWebSocket, drain_for_type, first_io_request, login_with_deck, submit_default_setup
 
 
 class FullGameWiringTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class FullGameWiringTests(unittest.TestCase):
         self.client.__enter__()
         self.addCleanup(lambda: self.client.__exit__(None, None, None))
 
-    def test_two_clients_join_pair_and_receive_game_start(self):
+    def test_two_clients_complete_setup_before_game_start(self):
         with self.client.websocket_connect("/ws") as ws1:
             login_with_deck(self.client, ws1, "alice")
             ws1.send_json({"type": "join"})
@@ -51,12 +51,14 @@ class FullGameWiringTests(unittest.TestCase):
                 self.assertEqual(joined2["user"], "PLAYER_2")
                 self.assertEqual(joined2["game_id"], game_id)
 
-                start2 = ws2.receive_json()
-                self.assertEqual(start2["type"], "game_start")
-                self.assertIn("players", start2["snapshot"])
-
-                start1 = ws1.receive_json()
-                self.assertEqual(start1["type"], "game_start")
+                setup2 = ws2.receive_json()
+                setup1 = ws1.receive_json()
+                self.assertEqual(setup2["type"], "setup_start")
+                self.assertEqual(setup1["type"], "setup_start")
+                submit_default_setup(ws1, setup1, "PLAYER_1")
+                submit_default_setup(ws2, setup2, "PLAYER_2")
+                self.assertEqual(_drain_raw_for_type(ws1, "game_start")["snapshot"]["round"], 0)
+                self.assertEqual(_drain_raw_for_type(ws2, "game_start")["snapshot"]["round"], 0)
 
     def test_io_request_response_roundtrip_and_concede(self):
         with self.client.websocket_connect("/ws") as raw1, self.client.websocket_connect("/ws") as raw2:
@@ -70,8 +72,12 @@ class FullGameWiringTests(unittest.TestCase):
             login_with_deck(self.client, ws2, "bob")
             ws2.send_json({"type": "join"})
             ws2.receive_json()  # joined
-            ws2.receive_json()  # game_start
-            ws1.receive_json()  # game_start
+            setup2 = ws2.receive_json()  # setup_start
+            setup1 = ws1.receive_json()  # setup_start
+            submit_default_setup(ws1, setup1, "PLAYER_1")
+            submit_default_setup(ws2, setup2, "PLAYER_2")
+            drain_for_type(ws1, "game_start")
+            drain_for_type(ws2, "game_start")
 
             # Whoever env.turn actually is receives the first io_request (Phase2IO, since round 0
             # skips attacking) - which player that is depends on the random per-game deck shuffle,
@@ -88,6 +94,14 @@ class FullGameWiringTests(unittest.TestCase):
             game_over_2 = drain_for_type(ws2, "game_over")
             self.assertEqual(game_over_1["reason"], "concede")
             self.assertEqual(game_over_2, game_over_1)
+
+
+def _drain_raw_for_type(ws, expected_type: str) -> dict:
+    for _ in range(20):
+        message = ws.receive_json()
+        if message["type"] == expected_type:
+            return message
+    raise AssertionError(f"never received {expected_type}")
 
 
 if __name__ == "__main__":

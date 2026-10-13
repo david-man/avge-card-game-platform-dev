@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment, EnergyToken
@@ -25,6 +26,8 @@ class OwnershipAndLegalityTestBase(unittest.IsolatedAsyncioTestCase):
 
         async def send_message(user, message):
             self.sent.append((user, message))
+            if message.get("io_type") == "Notification":
+                asyncio.create_task(self.io.receive(user, {}))
 
         async def on_failure(user):
             pass
@@ -53,6 +56,12 @@ class OwnershipAndLegalityTestBase(unittest.IsolatedAsyncioTestCase):
             )])
             self.env.push_packet(pkt)
             await self.env.engine.flush(lambda: False)
+
+    def assert_player_notification(self, reason: str) -> None:
+        notices = [(user, message) for user, message in self.sent if message.get("io_type") == "Notification"]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0][0], User.PLAYER_1)
+        self.assertEqual(notices[0][1]["payload"]["message"], reason)
 
 
 class CardMovementOwnershipTests(OwnershipAndLegalityTestBase):
@@ -149,6 +158,7 @@ class CardMovementOwnershipTests(OwnershipAndLegalityTestBase):
         self.assertIn(overflow_card, p1.card_piles[DeckType.HAND].cards_holding)
         self.assertEqual(len(p1.card_piles[DeckType.BENCH]), MAX_BENCH_SIZE)
         self.assertIsNotNone(pkt.rejection_reason)
+        self.assert_player_notification(pkt.rejection_reason)
 
     async def test_a_tool_card_cannot_be_moved_to_the_bench_via_the_deserializer(self):
         # Unreachable with the old all-character preset pool (nothing but a character ever passed
@@ -193,6 +203,7 @@ class CardMovementOwnershipTests(OwnershipAndLegalityTestBase):
         self.assertIn(tool, self.p1.card_piles[DeckType.HAND].cards_holding)
         self.assertNotIn(tool, self.p1.card_piles[DeckType.BENCH].cards_holding)
         self.assertIsNotNone(pkt.rejection_reason)
+        self.assert_player_notification(pkt.rejection_reason)
 
     async def test_a_non_stadium_transfer_to_stadium_is_regulate_failed_at_the_engine_level(self):
         # The authoritative engine-level guard for the STADIUM destination, mirroring the
@@ -211,6 +222,7 @@ class CardMovementOwnershipTests(OwnershipAndLegalityTestBase):
         self.assertIn(self.p1_hand_card, self.p1.card_piles[DeckType.HAND].cards_holding)
         self.assertNotIn(self.p1_hand_card, self.env.stadium_cardholder.cards_holding)
         self.assertIsNotNone(pkt.rejection_reason)
+        self.assert_player_notification(pkt.rejection_reason)
 
     async def test_a_non_tool_transfer_to_offhand_is_regulate_failed_at_the_engine_level(self):
         # Same guard, for the OFFHAND destination.
@@ -225,6 +237,7 @@ class CardMovementOwnershipTests(OwnershipAndLegalityTestBase):
         self.assertIn(self.p1_hand_card, self.p1.card_piles[DeckType.HAND].cards_holding)
         self.assertNotIn(self.p1_hand_card, self.p1_active.tools_attached.cards_holding)
         self.assertIsNotNone(pkt.rejection_reason)
+        self.assert_player_notification(pkt.rejection_reason)
 
 
 class PlayCardOwnershipTests(OwnershipAndLegalityTestBase):
@@ -365,6 +378,7 @@ class ToolAttachTests(OwnershipAndLegalityTestBase):
         await self.env.engine.flush(lambda: False)
         self.assertEqual(len(self.p1_active.tools_attached), 1)
         self.assertIn(second, self.p1.card_piles[DeckType.HAND].cards_holding)
+        self.assert_player_notification("That character already has a tool attached.")
 
 
 class KOWinConditionTests(unittest.IsolatedAsyncioTestCase):

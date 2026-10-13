@@ -42,8 +42,8 @@ class DisconnectForfeitIntegrationTests(unittest.TestCase):
                 login_with_deck(self.client, ws2, "bob")
                 ws2.send_json({"type": "join"})
                 ws2.receive_json()  # joined
-                ws2.receive_json()  # game_start
-                ws1.receive_json()  # game_start
+                ws2.receive_json()  # setup_start
+                ws1.receive_json()  # setup_start
                 # ws2 closes here (end of the inner `with` block) without conceding - PLAYER_2
                 # just vanishes, exactly like a dropped connection in the real world.
 

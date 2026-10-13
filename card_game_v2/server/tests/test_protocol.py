@@ -47,6 +47,17 @@ class ParseClientMessageTests(unittest.TestCase):
         self.assertEqual(msg.request_id, "r1")
         self.assertEqual(msg.payload, {"value": 3})
 
+    def test_parses_setup_done(self):
+        msg = protocol.parse_client_message({
+            "type": "setup_done", "active_card_id": "card_1", "bench_card_ids": ["card_2"],
+        })
+        self.assertIsInstance(msg, protocol.SetupDoneMessage)
+        self.assertEqual(msg.bench_card_ids, ["card_2"])
+
+    def test_rejects_setup_done_without_bench_list(self):
+        with self.assertRaises(ValidationError):
+            protocol.parse_client_message({"type": "setup_done", "active_card_id": "card_1"})
+
     def test_rejects_unknown_type(self):
         with self.assertRaises(ValueError):
             protocol.parse_client_message({"type": "not_a_real_message"})
@@ -61,6 +72,16 @@ class ParseClientMessageTests(unittest.TestCase):
 
 
 class ServerMessageRoundtripTests(unittest.TestCase):
+    def test_setup_start_and_ready_state_roundtrip(self):
+        start = protocol.SetupStartMessage(
+            snapshot={"round": 0}, blocked_card_classes=["BenCherekIII", "JoshuaKou"],
+            self_ready=True, opponent_ready=False,
+            submitted_setup={"active_card_id": "card_1", "bench_card_ids": []},
+        )
+        self.assertEqual(protocol.SetupStartMessage.model_validate(start.model_dump()), start)
+        state = protocol.SetupStateMessage(self_ready=True, opponent_ready=False)
+        self.assertEqual(protocol.SetupStateMessage.model_validate(state.model_dump()), state)
+
     def test_io_request_roundtrip(self):
         msg = protocol.IoRequestMessage(request_id="r1", io_type="Phase2IO", payload={"can_finish": True})
         dumped = msg.model_dump()

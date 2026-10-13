@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Awaitable, Callable
 
-from ..avge_abstracts.AVGECard import AVGECharacterCard
 from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEID import AVGEEngineID
-from ..constants import ActionTypes, INITIAL_HAND_SIZE, NO_STARTING_ACTIVE_CARDS
+from ..constants import ActionTypes
 from ..core.EventCatalog import TransferCard
 from ..engine.event import Packet
 from . import event_broadcasting
+from .setup_stage import select_opening_cards
 
 if TYPE_CHECKING:
     from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
@@ -20,35 +20,20 @@ if TYPE_CHECKING:
 async def _deal_starting_hand(env: AVGEEnvironment, player: AVGEPlayer) -> None:
     deck = player.card_piles[DeckType.DECK]
     hand = player.card_piles[DeckType.HAND]
+    bench = player.card_piles[DeckType.BENCH]
     active = player.card_piles[DeckType.ACTIVE_CARD]
     _id = AVGEEngineID(None, ActionTypes.ENV, None)
+    placement_id = AVGEEngineID(None, ActionTypes.PLAYER_CHOICE, None)
 
-    # The deck's own order is already fully shuffled by whoever built it (server/decks.py's
-    # build_preset_decks/build_game_deck) before it ever reaches here - so "the first eligible
-    # character found from the top" is a uniformly random selection among the characters allowed to
-    # start (constants.NO_STARTING_ACTIVE_CARDS are skipped), not necessarily (and, once decks can
-    # contain non-character cards, not safely assumable to be) deck.cards_holding[0].
-    # deck.transfer_card removes by identity (list.remove), not index, so pulling a card from the
-    # middle of the pile is no different from pulling the top one.
-    active_card = next(
-        (
-            c for c in deck.cards_holding
-            if isinstance(c, AVGECharacterCard) and type(c).__name__ not in NO_STARTING_ACTIVE_CARDS
-        ),
-        None,
-    )
-    if active_card is None:
-        raise ValueError(
-            f"{player.id.name}'s deck contains no character that can start in the active slot - "
-            "this should be unreachable for any deck that passed deck_rules.validate_deck_cards()."
-        )
-    events: list[Event | Generator] = [TransferCard(_id, active_card, deck, active, env)]
-    for _ in range(INITIAL_HAND_SIZE):
-        # Lazy - each of these 5 draws must read the CURRENT top of deck at the moment it
-        # actually runs (not when this function builds the packet), since earlier draws in the
-        # same packet have already shifted what's on top. Same idiom as SteinertBasement's own
-        # duplicate-draw reactor.
-        events.append(TransferCard(_id, lambda: deck.cards_holding[0], deck, hand, env))
+    active_card, hand_cards = select_opening_cards(deck)
+    # Draw before deploying the active card so its listeners cannot react to the opening hand.
+    # Use the same hand -> bench -> active path as setup finalization.
+    events: list[Event | Generator] = [TransferCard(_id, active_card, deck, hand, env)]
+    events.extend(TransferCard(_id, card, deck, hand, env) for card in hand_cards)
+    events.extend([
+        TransferCard(placement_id, active_card, hand, bench, env),
+        TransferCard(_id, active_card, bench, active, env),
+    ])
 
     env.push_packet(Packet(_id, events))
     await env.engine.flush(lambda: False)

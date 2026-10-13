@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from ..app import create_app
-from ._ws_test_utils import QueuedWebSocket, drain_for_type, login, login_with_deck
+from ._ws_test_utils import QueuedWebSocket, drain_for_type, login, login_with_deck, submit_default_setup
 
 
 class LoginPrecedenceIntegrationTests(unittest.TestCase):
@@ -49,8 +49,12 @@ class LoginPrecedenceIntegrationTests(unittest.TestCase):
                 login_with_deck(self.client, ws2, "bob")
                 ws2.send_json({"type": "join"})
                 ws2.receive_json()  # joined
-                ws2.receive_json()  # game_start
-                ws1.receive_json()  # game_start
+                setup2 = ws2.receive_json()
+                setup1 = ws1.receive_json()
+                submit_default_setup(ws1, setup1, "PLAYER_1")
+                submit_default_setup(ws2, setup2, "PLAYER_2")
+                drain_for_type(ws1, "game_start")
+                drain_for_type(ws2, "game_start")
 
                 # A brand new connection (a different tab/context) logs in as "alice" again -
                 # no client-sent join/rejoin message is needed; the server resends a JoinedMessage

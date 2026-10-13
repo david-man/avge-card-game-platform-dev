@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from ..avge_abstracts.AVGECard import AVGECard
-from ..constants import User
+from ..avge_abstracts.AVGECard import AVGECard, AVGECharacterCard
+from ..constants import INITIAL_HAND_SIZE, SETUP_BLOCKED_CARDS, User
 from . import protocol
 from .session import GameSession, Transport, safe_send
 
@@ -69,13 +69,17 @@ class Matchmaker:
         same account, e.g. a duplicate "join" message, can never seat one account twice - and
         never re-resolves their deck either, since a reconnect to a live game must use whatever
         deck the game already started with), or a freshly paired/created one otherwise. The caller
-        (ws_routes.py) is responsible for calling session.attach(user, websocket) immediately
-        after this returns, and - when this call paired two players (PLAYER_2's return) - for
-        calling session.begin_running() only once both clients have received game_start, so no
-        event traffic can race ahead of it.'''
+        (ws_routes.py) attaches each socket and sends setup_start when both seats are filled;
+        GameSession starts gameplay only after both setup_done submissions.'''
         found = self.find_active_game(account_id)
         if found is not None:
             return found
+
+        opening_eligible = [card for card in deck if card.__name__ not in SETUP_BLOCKED_CARDS]
+        if not any(issubclass(card, AVGECharacterCard) for card in opening_eligible):
+            raise ValueError("A deck needs a character eligible to start setup.")
+        if len(opening_eligible) < INITIAL_HAND_SIZE + 1:
+            raise ValueError("A deck needs five eligible opening hand cards.")
 
         if self._waiting is not None and not self._waiting.finished:
             session = self._waiting

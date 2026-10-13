@@ -90,6 +90,14 @@ def login_with_deck(client: Any, ws: Any, username: str) -> dict[str, Any]:
     return message
 
 
+def submit_default_setup(ws: Any, setup_start: dict[str, Any], user: str) -> None:
+    assert setup_start["type"] == "setup_start"
+    active = setup_start["snapshot"]["players"][user]["active"]
+    ws.send_json({
+        "type": "setup_done", "active_card_id": active["id"], "bench_card_ids": [],
+    })
+
+
 def drain_for_type(qws: QueuedWebSocket, expected_type: str, timeout: float = 5.0) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     while True:

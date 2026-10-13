@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from ...avge_abstracts.AVGEEnvironment import AVGEEnvironment, EnergyToken
@@ -25,6 +26,8 @@ class RetreatCostTests(unittest.IsolatedAsyncioTestCase):
 
         async def send_message(user, message):
             self.sent.append((user, message))
+            if message.get("io_type") == "Notification":
+                asyncio.create_task(self.io.receive(user, {}))
 
         async def on_failure(user):
             pass
@@ -93,6 +96,13 @@ class RetreatCostTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.player.card_piles[DeckType.ACTIVE_CARD].cards_holding[0], self.active)
         self.assertIn(self.incoming, self.player.card_piles[DeckType.BENCH].cards_holding)
         self.assertEqual(len(self.active.energy_tokens), 1)  # untouched - nothing was charged
+        notices = [(user, m) for user, m in self.sent if m.get("io_type") == "Notification"]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0][0], User.PLAYER_1)
+        self.assertEqual(
+            notices[0][1]["payload"]["message"],
+            "Your active character doesn't have enough energy attached to retreat.",
+        )
 
 
 if __name__ == "__main__":

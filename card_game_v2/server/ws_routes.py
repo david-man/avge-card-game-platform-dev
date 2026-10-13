@@ -109,12 +109,20 @@ async def websocket_endpoint(
                     game_id=session.id, user=user.name,
                 ).model_dump())
 
-                if session.task is None:
+                if session.stage == "waiting":
                     # Reconnecting to a session that's still waiting for an opponent - prepare()/
                     # begin_running() haven't happened yet, so session.env has no dealt hands and
                     # there is nothing to resume. Re-send the same "still waiting" state instead of
                     # a game_start built from an unprepared (empty) environment.
                     await safe_send(websocket, protocol.WaitingForOpponentMessage().model_dump())
+                elif session.stage == "setup":
+                    await safe_send(websocket, session.setup_start_message(user))
+                    other = session.seats[user.next]
+                    if other.connected and other.websocket is not None:
+                        await safe_send(other.websocket, protocol.SetupStateMessage(
+                            self_ready=session.setup_submissions[user.next] is not None,
+                            opponent_ready=session.setup_submissions[user] is not None,
+                        ).model_dump())
                 else:
                     snapshot = serialization.snapshot(session.env, session.usernames())
                     await safe_send(websocket, protocol.GameStartMessage(snapshot=snapshot).model_dump())
@@ -182,16 +190,12 @@ async def _message_loop(
                     else:
                         # Pairing just happened and session.prepare() already ran inside
                         # matchmaker.join() - tell BOTH players, including the one who's been
-                        # waiting on an earlier connection, before starting the engine running -
-                        # otherwise its own event_update broadcasts could race ahead of game_start
-                        # on the wire.
-                        start_message = protocol.GameStartMessage(
-                            snapshot=serialization.snapshot(session.env, session.usernames()),
-                        ).model_dump()
-                        for seat in session.seats.values():
+                        # waiting on an earlier connection. Both may arrange cards before either
+                        # player receives a normal gameplay decision.
+                        for seat_user, seat in session.seats.items():
                             if seat.websocket is not None:
-                                await safe_send(seat.websocket, start_message)
-                        session.begin_running()
+                                await safe_send(seat.websocket, session.setup_start_message(seat_user))
+                        session._arm_grace_timers_for_already_disconnected_seats()
                 # Anything else while not yet in a game (a stray IoResponse/Concede, or a second
                 # LoginMessage) is not a valid state - ignore and keep waiting for a join.
                 continue
@@ -207,7 +211,22 @@ async def _message_loop(
                 await session.force_end(winner=user.next, reason="concede")
                 return
 
+            if isinstance(message, protocol.SetupDoneMessage):
+                error = await session.submit_setup(
+                    user, message.active_card_id, message.bench_card_ids,
+                )
+                if error is not None:
+                    await safe_send(websocket, protocol.ErrorMessage(
+                        code="setup_rejected", message=error,
+                    ).model_dump())
+                continue
+
             if isinstance(message, protocol.IoResponseMessage):
+                if session.stage != "playing":
+                    await safe_send(websocket, protocol.ErrorMessage(
+                        code="setup_in_progress", message="Finish setup before taking game actions.",
+                    ).model_dump())
+                    continue
                 current = session.io.current_request_id(user)
                 if current is None or message.request_id != current:
                     await safe_send(websocket, protocol.ErrorMessage(

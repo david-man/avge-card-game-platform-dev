@@ -3,7 +3,8 @@ import logging
 from ..avge_abstracts.AVGEEventListener import *
 from ..avge_abstracts.AVGECard import *
 from .EventCatalog import *
-from ..constants import ResponseStatus
+from ..constants import ResponseStatus, default_timeout
+from .AVGEIOManager import Notification
 from ..engine.event import Event
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,9 @@ class AVGETokenTransferCheck(AVGEEventRegulator):
         if (event.id.calling_action == ActionTypes.PLAYER_CHOICE):
             if (isinstance(event.token_to, AVGECharacterCard)):
                 if (self.env.players[event.token_to.owner].attributes[AVGEPlayerAttribute.ENERGY_ADD_REMAINING_IN_TURN] == 0):
-                    return _reject(event, "You've already attached energy this turn.")
+                    reason = "You've already attached energy this turn."
+                    await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+                    return _reject(event, reason)
         return ResponseStatus.REGULATE_PASS
 
 
@@ -248,11 +251,9 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
         ):
             action = event.card.actions.get(ActionTypes.NONCHAR)
             if action is not None and not action.can_play(event.card, event.card):
-                return _reject(
-                    event,
-                    action.unavailable_reason(event.card, event.card)
-                    or "That stadium cannot be played right now.",
-                )
+                reason = action.unavailable_reason(event.card, event.card) or "That stadium cannot be played right now."
+                await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+                return _reject(event, reason)
         # Was comparing deck_to against DeckType.DECK (the draw pile) instead of DeckType.BENCH -
         # HAND -> DECK never happens in real play, so the bench-size cap was completely
         # unenforced; a client could bench unlimited characters via the real HAND -> BENCH path.
@@ -267,20 +268,30 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
             event.deck_to.deck_type in (DeckType.BENCH, DeckType.ACTIVE_CARD)
             and not isinstance(event.card, AVGECharacterCard)
         ):
-            return _reject(event, "Only character cards can go on the bench or in the active slot.")
+            reason = "Only character cards can go on the bench or in the active slot."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         # Symmetric guard for the other two typed destinations - without this, a mismatched
         # card/destination pairing (however it got constructed - not just a raw client request,
         # any future card effect building its own TransferCard) would reach
         # TransferCard.act()'s isinstance assert instead of a clean rejection, crashing the engine
         # and ending the match with reason="server_error" for both players.
         elif event.deck_to.deck_type == DeckType.STADIUM and not isinstance(event.card, AVGEStadiumCard):
-            return _reject(event, "Only stadium cards can go in the stadium slot.")
+            reason = "Only stadium cards can go in the stadium slot."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         elif event.deck_to.deck_type == DeckType.OFFHAND and not isinstance(event.card, AVGEToolCard):
-            return _reject(event, "Only tool cards can be attached as offhand items.")
+            reason = "Only tool cards can be attached as offhand items."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         elif (event.deck_from.deck_type == DeckType.HAND and event.deck_to.deck_type == DeckType.BENCH and len(event.deck_to) >= MAX_BENCH_SIZE):
-            return _reject(event, "Your bench is already full.")
+            reason = "Your bench is already full."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         elif (event.deck_from.deck_type == DeckType.BENCH and event.deck_to.deck_type == DeckType.ACTIVE_CARD and self.env.players[event.card.owner].attributes[AVGEPlayerAttribute.SWAP_REMAINING_IN_TURN] == 0):
-            return _reject(event, "You've already swapped your active character this turn.")
+            reason = "You've already swapped your active character this turn."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         # Retreat cost: this is the ACTIVE_CARD -> BENCH leg (the outgoing character's
         # own event.card and event.cost - see TransferCard's own cost field and A2's
         # retreat-cost fix), not the BENCH -> ACTIVE_CARD swap-in leg. event.cost is
@@ -291,12 +302,16 @@ class AVGETransferValidityCheck(AVGEEventRegulator):
         # surcharge included - not just the undiscounted base cost the swap-in leg
         # used to check instead, which could never see any of those modifiers.
         elif (isinstance(event.card, AVGECharacterCard) and event.deck_from.deck_type == DeckType.ACTIVE_CARD and event.deck_to.deck_type == DeckType.BENCH and not callable(event.cost) and len(event.card.energy_tokens) < max(0, event.cost)):
-            return _reject(event, "Your active character doesn't have enough energy attached to retreat.")
+            reason = "Your active character doesn't have enough energy attached to retreat."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         # No server-side cap existed at all before this - the frontend's own noExistingTool guard
         # (useGestureLegality.ts) was the only thing preventing a second tool attach, which a raw
         # client request could always bypass.
         elif (event.deck_to.deck_type == DeckType.OFFHAND and len(event.deck_to) > 0):
-            return _reject(event, "That character already has a tool attached.")
+            reason = "That character already has a tool attached."
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
+            return _reject(event, reason)
         else:
             return ResponseStatus.REGULATE_PASS
 
@@ -372,5 +387,6 @@ class AVGEPlayCardValidityCheck(AVGEEventRegulator):
         if reason is None:
             return ResponseStatus.REGULATE_PASS
         if event.id.calling_action == ActionTypes.PLAYER_CHOICE:
+            await self.env.report(Notification(self.env.turn, reason, default_timeout), event.id)
             return _reject(event, reason)
         return ResponseStatus.REGULATE_IGNORE

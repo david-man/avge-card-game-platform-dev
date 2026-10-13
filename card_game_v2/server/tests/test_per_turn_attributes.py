@@ -7,6 +7,7 @@ from ...avge_abstracts.AVGEDeck import DeckType
 from ...avge_abstracts.AVGEID import AVGEEngineID
 from ...constants import User, ActionTypes, AVGEPlayerAttribute
 from ...core.EventCatalog import TransferCard, Phase2
+from ...core.AVGEIOManager import Phase2IO
 from ...engine.event import Packet
 from ...testing.helpers import Dummy, core_listeners
 from ..decks import CARDS_PER_DECK
@@ -28,6 +29,8 @@ class PerTurnAttributeDecrementTests(unittest.IsolatedAsyncioTestCase):
 
         async def send_message(user, message):
             self.sent.append((user, message))
+            if message.get("io_type") == "Notification":
+                asyncio.create_task(self.io.receive(user, {}))
 
         async def on_failure(user):
             pass
@@ -56,7 +59,13 @@ class PerTurnAttributeDecrementTests(unittest.IsolatedAsyncioTestCase):
     async def _next_request_id(self, previous_id: str | None) -> str:
         for _ in range(200):
             current = self.io.current_request_id(User.PLAYER_1)
-            if current is not None and current != previous_id:
+            pending = self.io.pending.get(User.PLAYER_1)
+            if (
+                current is not None
+                and current != previous_id
+                and pending is not None
+                and isinstance(pending.io_obj, Phase2IO)
+            ):
                 return current
             await asyncio.sleep(0)
         raise AssertionError("no new Phase2IO request appeared for PLAYER_1")
@@ -101,6 +110,10 @@ class PerTurnAttributeDecrementTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(second_bench, self.player.card_piles[DeckType.BENCH].cards_holding)
         rejected = [m for _, m in self.sent if m.get("io_type") == "ActionRejectedUpdate"]
         self.assertTrue(len(rejected) > 0)
+        self.assertIn(
+            "You've already swapped your active character this turn.",
+            [m["payload"]["message"] for _, m in self.sent if m.get("io_type") == "Notification"],
+        )
 
     async def test_energy_attach_decrements_and_blocks_a_second_attach_same_turn(self):
         active = self.player.card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
@@ -126,6 +139,10 @@ class PerTurnAttributeDecrementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(active.energy_tokens), 1)
         rejected = [m for _, m in self.sent if m.get("io_type") == "ActionRejectedUpdate"]
         self.assertTrue(len(rejected) > 0)
+        self.assertIn(
+            "You've already attached energy this turn.",
+            [m["payload"]["message"] for _, m in self.sent if m.get("io_type") == "Notification"],
+        )
 
 
 if __name__ == "__main__":

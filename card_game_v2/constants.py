@@ -9,15 +9,10 @@ INITIAL_HAND_SIZE = 5
 MAX_BENCH_SIZE = 5
 KOS_TO_WIN = 3
 
-# Characters that can never be the one placed in the active slot when the game starts (class names,
-# as in the catalog registry). The starting active card and opening hand are dealt before the
-# clients have even been told the game began, so a character whose deploy effect asks the player
-# something (or only makes sense mid-game) doesn't belong there:
-#   BenCherekIII  - Loudmouth's whole effect is a "switch me into active?" prompt on entering play.
-# They can still be in a deck, played normally, and drawn/benched like any other character.
-# (Every other character was checked by test_game_setup's sweep: none prompts during the opening
-# deal, as passives run as their own packet right after the one that draws the opening hand.)
-NO_STARTING_ACTIVE_CARDS: frozenset[str] = frozenset({"BenCherekIII"})
+# These characters can request player input when deployed hand -> bench or bench -> active.
+# Setup cannot accept interactive requests, so they stay in the deck until gameplay starts.
+SETUP_BLOCKED_CARDS: frozenset[str] = frozenset({"BenCherekIII", "JoshuaKou"})
+NO_STARTING_ACTIVE_CARDS = SETUP_BLOCKED_CARDS
 
 
 PER_TURN_TOKEN_ADD = 1

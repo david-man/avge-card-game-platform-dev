@@ -6,14 +6,16 @@ import time
 from typing import Any, Callable, Literal, Protocol
 
 from ..avge_abstracts.AVGECard import AVGECard
+from ..avge_abstracts.AVGEDeck import DeckType
 from ..avge_abstracts.AVGEEnvironment import AVGEEnvironment
-from ..avge_abstracts.AVGEID import AVGEEngineID
-from ..constants import ActionTypes, User, WinReasons
-from ..core.EventCatalog import PhasePickCard
+from ..constants import User, WinReasons
 from ..engine.event import Packet
 from . import config
 from . import game_setup
 from . import match_log
+from . import protocol
+from . import serialization
+from . import setup_stage
 from .decks import build_preset_decks
 from .io_adapter import NetworkIO
 from .listeners import default_core_listeners
@@ -88,6 +90,9 @@ class GameSession:
         self.env = AVGEEnvironment(self.io, build_preset_decks(), default_core_listeners())
         self.task: asyncio.Task[None] | None = None
         self.finished = False
+        self.stage: Literal["waiting", "setup", "playing"] = "waiting"
+        self.setup_submissions: dict[User, dict[str, object] | None] = {user: None for user in User}
+        self._setup_lock = asyncio.Lock()
         self._lifecycle: list[dict[str, Any]] = []
 
     def configure_decks(self) -> None:
@@ -125,14 +130,94 @@ class GameSession:
     # --- Lifecycle ---
 
     async def prepare(self) -> None:
-        '''Deals hands and queues the opening packet, but does NOT start the engine running yet -
-        callers that need to notify both clients before any event traffic can arrive (ws_routes.py,
-        to guarantee game_start is the first substantive message either socket sees) call this and
-        begin_running() separately. start() below is a same-effect convenience for callers (mostly
-        tests) that don't care about that ordering.'''
-        await game_setup.perform_initial_setup(self.env, extra_on_packet_failed=self._log_packet_rejection)
-        _id = AVGEEngineID(None, ActionTypes.ENV, None)
-        self.env.push_packet(Packet(_id, [PhasePickCard(_id, self.env)]))
+        '''Deal the provisional board; gameplay starts only after both setup submissions.'''
+        setup_stage.deal_preview(self.env)
+        game_setup._wire_event_broadcast_hooks(self.env, self._log_packet_rejection)
+        self.stage = "setup"
+
+    def setup_start_message(self, user: User) -> dict[str, Any]:
+        from ..constants import SETUP_BLOCKED_CARDS
+        return protocol.SetupStartMessage(
+            snapshot=serialization.snapshot(self.env, self.usernames()),
+            blocked_card_classes=sorted(SETUP_BLOCKED_CARDS),
+            self_ready=self.setup_submissions[user] is not None,
+            opponent_ready=self.setup_submissions[user.next] is not None,
+            submitted_setup=self.setup_submissions[user],
+        ).model_dump()
+
+    async def _send_setup_state(self) -> None:
+        for user, seat in self.seats.items():
+            if seat.connected and seat.websocket is not None:
+                await safe_send(seat.websocket, protocol.SetupStateMessage(
+                    self_ready=self.setup_submissions[user] is not None,
+                    opponent_ready=self.setup_submissions[user.next] is not None,
+                ).model_dump())
+
+    async def submit_setup(
+        self, user: User, active_card_id: str, bench_card_ids: list[str],
+    ) -> str | None:
+        '''Return a user-facing error or finalize atomically once both seats are ready.'''
+        async with self._setup_lock:
+            if self.finished or self.stage != "setup":
+                return "Setup is no longer active."
+            if self.setup_submissions[user] is not None:
+                return "Your setup is already confirmed."
+            try:
+                self.setup_submissions[user] = setup_stage.validate_submission(
+                    self.env, user, active_card_id, bench_card_ids,
+                )
+            except setup_stage.SetupError as exc:
+                return str(exc)
+            if any(choice is None for choice in self.setup_submissions.values()):
+                await self._send_setup_state()
+                return None
+
+            assert all(choice is not None for choice in self.setup_submissions.values())
+            decks: dict[User, list[type[AVGECard]]] = {}
+            for seat_user, seat in self.seats.items():
+                assert seat.deck is not None
+                decks[seat_user] = seat.deck
+            choices = {
+                seat_user: choice for seat_user, choice in self.setup_submissions.items()
+                if choice is not None
+            }
+            try:
+                candidate = await setup_stage.build_final_environment(
+                    self.env, decks, choices,
+                )
+            except Exception as exc:
+                if isinstance(exc, setup_stage.SetupPromptError):
+                    logger.warning("Setup finalization requested an interactive prompt: %s", exc)
+                else:
+                    logger.exception("Setup finalization failed for session %s", self.id)
+                self.setup_submissions = {seat_user: None for seat_user in User}
+                await self._send_setup_state()
+                message = protocol.ErrorMessage(
+                    code="setup_finalize_failed",
+                    message=f"Setup could not finish: {exc}. Adjust your board and try again.",
+                ).model_dump()
+                for seat in self.seats.values():
+                    if seat.connected and seat.websocket is not None:
+                        await safe_send(seat.websocket, message)
+                return None
+
+            if self.finished:
+                return "This match has already ended."
+            self.env = candidate
+            self.env.io_manager = self.io
+            self.env.engine.io_manager = self.io
+            self.io.register_to_environment(self.env)
+            game_setup._wire_event_broadcast_hooks(self.env, self._log_packet_rejection)
+            self.env.phase = "main"  # idle engine generates round 0 Phase2 without a draw
+            self.stage = "playing"
+            start = protocol.GameStartMessage(
+                snapshot=serialization.snapshot(self.env, self.usernames()),
+            ).model_dump()
+            for seat in self.seats.values():
+                if seat.connected and seat.websocket is not None:
+                    await safe_send(seat.websocket, start)
+            self.begin_running()
+            return None
 
     async def _log_packet_rejection(self, packet: Packet) -> None:
         '''Passed into game_setup.perform_initial_setup() as extra_on_packet_failed, so it runs
@@ -152,6 +237,8 @@ class GameSession:
 
     def begin_running(self) -> None:
         self._arm_grace_timers_for_already_disconnected_seats()
+        if self.stage != "playing":
+            return
         self.task = asyncio.create_task(self._run_wrapper())
 
     def _arm_grace_timers_for_already_disconnected_seats(self) -> None:
@@ -175,8 +262,16 @@ class GameSession:
                 asyncio.create_task(self._notify_disconnected(other))
 
     async def start(self) -> None:
+        for user, seat in self.seats.items():
+            if seat.deck is None:
+                seat.deck = [
+                    type(card) for card in self.env.players[user].card_piles[DeckType.DECK].cards_holding
+                ]
         await self.prepare()
-        self.begin_running()
+        # Test convenience: use each seat's provisional active with an empty bench.
+        for user in User:
+            active = self.env.players[user].card_piles[DeckType.ACTIVE_CARD].cards_holding[0]
+            await self.submit_setup(user, active.cardID, [])
 
     async def _run_wrapper(self) -> None:
         try:
