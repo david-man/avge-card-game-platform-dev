@@ -91,6 +91,8 @@ class GameSession:
         self.task: asyncio.Task[None] | None = None
         self.finished = False
         self.stage: Literal["waiting", "setup", "playing"] = "waiting"
+        self.match_mode: Literal["public", "private"] = "public"
+        self.invite_code: str | None = None
         self.setup_submissions: dict[User, dict[str, object] | None] = {user: None for user in User}
         self._setup_lock = asyncio.Lock()
         self._lifecycle: list[dict[str, Any]] = []
@@ -143,6 +145,18 @@ class GameSession:
             self_ready=self.setup_submissions[user] is not None,
             opponent_ready=self.setup_submissions[user.next] is not None,
             submitted_setup=self.setup_submissions[user],
+        ).model_dump()
+
+    def joined_message(self, user: User) -> dict[str, Any]:
+        return protocol.JoinedMessage(
+            game_id=self.id,
+            user=user.name,
+            match_mode=self.match_mode,
+            invite_code=(
+                self.invite_code
+                if self.match_mode == "private" and self.stage == "waiting" and user == User.PLAYER_1
+                else None
+            ),
         ).model_dump()
 
     async def _send_setup_state(self) -> None:

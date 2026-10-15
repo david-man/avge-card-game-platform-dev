@@ -1,11 +1,33 @@
 from __future__ import annotations
 
+import re
+import secrets
 import uuid
 
 from ..avge_abstracts.AVGECard import AVGECard, AVGECharacterCard
 from ..constants import INITIAL_HAND_SIZE, SETUP_BLOCKED_CARDS, User
 from . import protocol
 from .session import GameSession, Transport, safe_send
+
+PRIVATE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+PRIVATE_CODE_LENGTH = 10
+
+
+def normalize_private_code(code: str) -> str:
+    normalized = re.sub(r"[\s-]", "", code.upper())
+    if len(normalized) != PRIVATE_CODE_LENGTH or any(
+        char not in PRIVATE_CODE_ALPHABET for char in normalized
+    ):
+        raise ValueError("Enter a valid private game code.")
+    return normalized
+
+
+def _validate_opening_deck(deck: list[type[AVGECard]]) -> None:
+    opening_eligible = [card for card in deck if card.__name__ not in SETUP_BLOCKED_CARDS]
+    if not any(issubclass(card, AVGECharacterCard) for card in opening_eligible):
+        raise ValueError("A deck needs a character eligible to start setup.")
+    if len(opening_eligible) < INITIAL_HAND_SIZE + 1:
+        raise ValueError("A deck needs five eligible opening hand cards.")
 
 
 class Matchmaker:
@@ -20,6 +42,8 @@ class Matchmaker:
         self._active_game_by_account: dict[str, tuple[str, User]] = {}
         self._active_connections: dict[str, Transport] = {}
         self._waiting: GameSession | None = None
+        self._private_waiting: dict[str, GameSession] = {}
+        self._issued_private_codes: set[str] = set()
 
     async def claim(self, account_id: str, websocket: Transport) -> None:
         '''Registers websocket as this account's current active connection. If the account
@@ -75,11 +99,7 @@ class Matchmaker:
         if found is not None:
             return found
 
-        opening_eligible = [card for card in deck if card.__name__ not in SETUP_BLOCKED_CARDS]
-        if not any(issubclass(card, AVGECharacterCard) for card in opening_eligible):
-            raise ValueError("A deck needs a character eligible to start setup.")
-        if len(opening_eligible) < INITIAL_HAND_SIZE + 1:
-            raise ValueError("A deck needs five eligible opening hand cards.")
+        _validate_opening_deck(deck)
 
         if self._waiting is not None and not self._waiting.finished:
             session = self._waiting
@@ -104,19 +124,90 @@ class Matchmaker:
         self._waiting = session
         return session, User.PLAYER_1
 
+    def create_private(
+        self, account_id: str, deck: list[type[AVGECard]],
+    ) -> tuple[GameSession, User]:
+        if self.find_active_game(account_id) is not None:
+            raise ValueError("You are already in a game.")
+        _validate_opening_deck(deck)
+        while True:
+            raw_code = "".join(secrets.choice(PRIVATE_CODE_ALPHABET) for _ in range(PRIVATE_CODE_LENGTH))
+            if raw_code not in self._issued_private_codes:
+                break
+        self._issued_private_codes.add(raw_code)
+        session = GameSession(str(uuid.uuid4()), self._on_session_finished)
+        session.match_mode = "private"
+        session.invite_code = f"{raw_code[:5]}-{raw_code[5:]}"
+        session.seats[User.PLAYER_1].account_id = account_id
+        session.seats[User.PLAYER_1].deck = deck
+        self.sessions[session.id] = session
+        self._active_game_by_account[account_id] = (session.id, User.PLAYER_1)
+        self._private_waiting[raw_code] = session
+        return session, User.PLAYER_1
+
+    async def join_private(
+        self, account_id: str, deck: list[type[AVGECard]], code: str,
+    ) -> tuple[GameSession, User]:
+        if self.find_active_game(account_id) is not None:
+            raise ValueError("You are already in a game.")
+        raw_code = normalize_private_code(code)
+        session = self._private_waiting.get(raw_code)
+        if session is None or session.finished or session.stage != "waiting":
+            raise ValueError("That private game code is invalid or no longer available.")
+        if session.seats[User.PLAYER_1].account_id == account_id:
+            raise ValueError("You cannot join your own private game.")
+        _validate_opening_deck(deck)
+
+        # Consume the code and claim the seat before the first await, so concurrent joiners
+        # cannot both enter the same room. A failed deck check above leaves the code available.
+        del self._private_waiting[raw_code]
+        session.seats[User.PLAYER_2].account_id = account_id
+        session.seats[User.PLAYER_2].deck = deck
+        self._active_game_by_account[account_id] = (session.id, User.PLAYER_2)
+        try:
+            session.configure_decks()
+            await session.prepare()
+        except Exception:
+            session.finished = True
+            self._on_session_finished(session.id)
+            host = session.seats[User.PLAYER_1]
+            if host.connected and host.websocket is not None:
+                await safe_send(host.websocket, protocol.LeftMessage().model_dump())
+                await safe_send(host.websocket, protocol.ErrorMessage(
+                    code="private_start_failed", message="The private game could not start. Create a new one.",
+                ).model_dump())
+            raise
+        return session, User.PLAYER_2
+
     def leave_waiting(self, account_id: str) -> bool:
         '''Cancels the queued game `account_id` opened, if it is still the lone occupant of the
         waiting session. Returns False (changing nothing) once an opponent has paired in - join()
         clears `_waiting` synchronously before it awaits prepare(), so a leave landing mid-pairing
         loses cleanly and the game starts as normal.'''
-        session = self._waiting
-        if session is None or session.finished:
+        found = self.find_active_game(account_id)
+        if found is None or found[1] != User.PLAYER_1:
             return False
-        if session.seats[User.PLAYER_1].account_id != account_id:
+        session = found[0]
+        if session.finished or session.stage != "waiting":
+            return False
+        if session.seats[User.PLAYER_2].account_id is not None:
             return False
         session.finished = True
         self._on_session_finished(session.id)
         return True
+
+    def cancel_private_on_disconnect(self, account_id: str, websocket: Transport) -> None:
+        found = self.find_active_game(account_id)
+        if found is None:
+            return
+        session, user = found
+        if (
+            user == User.PLAYER_1
+            and session.match_mode == "private"
+            and session.stage == "waiting"
+            and session.seats[user].websocket is websocket
+        ):
+            self.leave_waiting(account_id)
 
     def _on_session_finished(self, game_id: str) -> None:
         session = self.sessions.pop(game_id, None)
@@ -126,3 +217,7 @@ class Matchmaker:
                     self._active_game_by_account.pop(seat.account_id, None)
         if self._waiting is not None and self._waiting.id == game_id:
             self._waiting = None
+        if session is not None and session.invite_code is not None:
+            code = normalize_private_code(session.invite_code)
+            if self._private_waiting.get(code) is session:
+                del self._private_waiting[code]

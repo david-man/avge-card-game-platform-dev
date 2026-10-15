@@ -105,9 +105,7 @@ async def websocket_endpoint(
                 # A reconnect never goes through the "join" flow again, but JoinedMessage is the
                 # only message that ever tells the client which seat it holds - without resending
                 # it here, a reconnecting client has no way to know its own `user`/`game_id`.
-                await safe_send(websocket, protocol.JoinedMessage(
-                    game_id=session.id, user=user.name,
-                ).model_dump())
+                await safe_send(websocket, session.joined_message(user))
 
                 if session.stage == "waiting":
                     # Reconnecting to a session that's still waiting for an opponent - prepare()/
@@ -158,8 +156,15 @@ async def _message_loop(
                 await safe_send(websocket, protocol.ErrorMessage(message=str(exc)).model_dump())
                 continue
 
+            # A failed private-game preparation sends `left` to the host and removes the
+            # session from the matchmaker. The host can create another table on this socket.
+            if session is not None and session.finished and matchmaker.find_active_game(account.account_id) is None:
+                session, user = None, None
+
             if session is None:
-                if isinstance(message, protocol.JoinMessage):
+                if isinstance(message, (
+                    protocol.JoinMessage, protocol.CreatePrivateMessage, protocol.JoinPrivateMessage,
+                )):
                     resolved_deck = await _resolve_selected_deck(decks, account.account_id)
                     if resolved_deck is None:
                         await safe_send(websocket, protocol.ErrorMessage(
@@ -167,9 +172,32 @@ async def _message_loop(
                             message="Select a valid deck in the deck builder before playing.",
                         ).model_dump())
                         continue
-                    joined_session, joined_user = await matchmaker.join(
-                        account.account_id, resolved_deck,
-                    )
+                    try:
+                        if isinstance(message, protocol.CreatePrivateMessage):
+                            joined_session, joined_user = matchmaker.create_private(
+                                account.account_id, resolved_deck,
+                            )
+                        elif isinstance(message, protocol.JoinPrivateMessage):
+                            joined_session, joined_user = await matchmaker.join_private(
+                                account.account_id, resolved_deck, message.code,
+                            )
+                        else:
+                            joined_session, joined_user = await matchmaker.join(
+                                account.account_id, resolved_deck,
+                            )
+                    except ValueError as exc:
+                        await safe_send(websocket, protocol.ErrorMessage(
+                            code="private_join_failed" if isinstance(message, protocol.JoinPrivateMessage)
+                            else "invalid_deck",
+                            message=str(exc),
+                        ).model_dump())
+                        continue
+                    except Exception:
+                        logger.exception("Could not prepare game for account %s", account.account_id)
+                        await safe_send(websocket, protocol.ErrorMessage(
+                            code="game_start_failed", message="The game could not start. Try again.",
+                        ).model_dump())
+                        continue
                     joined_session.seats[joined_user].username = account.username
                     if not joined_session.attach(joined_user, websocket):
                         # Narrow defense-in-depth window: joined_session.finished could in
@@ -181,9 +209,7 @@ async def _message_loop(
                         ).model_dump())
                         continue
                     session, user = joined_session, joined_user
-                    await safe_send(websocket, protocol.JoinedMessage(
-                        game_id=session.id, user=user.name,
-                    ).model_dump())
+                    await safe_send(websocket, session.joined_message(user))
 
                     if user == User.PLAYER_1:
                         await safe_send(websocket, protocol.WaitingForOpponentMessage().model_dump())
@@ -246,4 +272,5 @@ async def _message_loop(
         # re-logging them here too would just be the same traceback twice). detach() is a no-op
         # if this connection was already superseded or the session already finished.
         if session is not None and user is not None:
+            matchmaker.cancel_private_on_disconnect(account.account_id, websocket)
             session.detach(user, websocket)

@@ -20,6 +20,15 @@ class JoinMessage(BaseModel):
     type: Literal["join"] = "join"
 
 
+class CreatePrivateMessage(BaseModel):
+    type: Literal["create_private"] = "create_private"
+
+
+class JoinPrivateMessage(BaseModel):
+    type: Literal["join_private"] = "join_private"
+    code: str
+
+
 class LeaveMessage(BaseModel):
     '''Backs out of matchmaking: only honored while the sender is the lone occupant of a session
     nobody has paired into yet (see Matchmaker.leave_waiting()). Once an opponent has paired in,
@@ -46,11 +55,13 @@ class SetupDoneMessage(BaseModel):
     bench_card_ids: list[str]
 
 
-ClientMessage = LoginMessage | JoinMessage | LeaveMessage | ConcedeMessage | IoResponseMessage | SetupDoneMessage
+ClientMessage = LoginMessage | JoinMessage | CreatePrivateMessage | JoinPrivateMessage | LeaveMessage | ConcedeMessage | IoResponseMessage | SetupDoneMessage
 
 _CLIENT_MESSAGE_TYPES: dict[str, type[ClientMessage]] = {
     "login": LoginMessage,
     "join": JoinMessage,
+    "create_private": CreatePrivateMessage,
+    "join_private": JoinPrivateMessage,
     "leave": LeaveMessage,
     "concede": ConcedeMessage,
     "io_response": IoResponseMessage,
@@ -102,6 +113,8 @@ class JoinedMessage(BaseModel):
     type: Literal["joined"] = "joined"
     game_id: str
     user: str
+    match_mode: Literal["public", "private"] = "public"
+    invite_code: str | None = None
 
 
 class GameStartMessage(BaseModel):
